@@ -1,0 +1,88 @@
+---
+# PrometheusRule for Node-related alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: node-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: node-health
+    rules:
+    # Node not ready
+    - alert: NodeNotReady
+      expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Node {{ $labels.node }} is not ready"
+        description: "Node {{ $labels.node }} has been unready for more than 5 minutes"
+
+    # Node unreachable
+    - alert: NodeUnreachable
+      expr: (kube_node_spec_taint{key="node.kubernetes.io/unreachable",effect="NoSchedule"}) == 1
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Node {{ $labels.node }} is unreachable"
+        description: "Node {{ $labels.node }} is unreachable and workloads may be affected"
+
+  - name: node-resources
+    rules:
+    # High CPU usage
+    - alert: NodeHighCPUUsage
+      expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Node {{ $labels.instance }} has high CPU usage"
+        description: "Node {{ $labels.instance }} CPU usage is above 85% for more than 15 minutes"
+
+    # High memory usage
+    - alert: NodeHighMemoryUsage
+      expr: |
+        (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Node {{ $labels.instance }} has high memory usage"
+        description: "Node {{ $labels.instance }} memory usage is above 85%"
+
+    # High disk usage
+    - alert: NodeHighDiskUsage
+      expr: |
+        (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Node {{ $labels.instance }} has high disk usage on {{ $labels.mountpoint }}"
+        description: "Disk usage on {{ $labels.mountpoint }} is above 85%"
+
+    - alert: NodeDiskFull
+      expr: |
+        (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 95
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Node {{ $labels.instance }} disk is almost full on {{ $labels.mountpoint }}"
+        description: "Disk usage on {{ $labels.mountpoint }} is above 95%"
+
+    # Disk will fill soon
+    - alert: NodeDiskFillingUp
+      expr: |
+        predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 24*60*60) < 0
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "Node {{ $labels.instance }} disk {{ $labels.mountpoint }} will fill in 24h"
+        description: "At current write rate, disk {{ $labels.mountpoint }} will be full within 24 hours"

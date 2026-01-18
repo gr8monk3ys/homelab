@@ -1,0 +1,109 @@
+---
+# PrometheusRule for Homelab service-specific alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: homelab-service-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: critical-services
+    rules:
+    # Authelia down - authentication is critical
+    - alert: AutheliaDown
+      expr: up{job="authelia"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Authelia authentication service is down"
+        description: "Authelia has been down for more than 2 minutes. Authentication may be affected."
+
+    # Vaultwarden down - password manager is critical
+    - alert: VaultwardenDown
+      expr: up{job="vaultwarden"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Vaultwarden password manager is down"
+        description: "Vaultwarden has been down for more than 5 minutes."
+
+    # Pi-hole down - DNS is critical
+    - alert: PiholeDown
+      expr: absent(pihole_domains_being_blocked) or pihole_status == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Pi-hole DNS service is down"
+        description: "Pi-hole DNS blocking service appears to be down."
+
+    # Gitea down
+    - alert: GiteaDown
+      expr: up{job="gitea"} == 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Gitea git server is down"
+        description: "Gitea has been down for more than 5 minutes."
+
+    # Nextcloud down
+    - alert: NextcloudDown
+      expr: up{job="nextcloud"} == 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Nextcloud is down"
+        description: "Nextcloud has been down for more than 5 minutes."
+
+  - name: backup-alerts
+    rules:
+    # Velero backup failed
+    - alert: VeleroBackupFailed
+      expr: increase(velero_backup_failure_total[24h]) > 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Velero backup failed"
+        description: "A Velero backup has failed in the last 24 hours"
+
+    # No recent backup
+    - alert: VeleroNoRecentBackup
+      expr: time() - velero_backup_last_successful_timestamp > 86400 * 2
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "No successful Velero backup in 48 hours"
+        description: "No successful backup has been completed in the last 48 hours"
+
+  - name: database-alerts
+    rules:
+    # PostgreSQL connection issues
+    - alert: PostgresHighConnections
+      expr: |
+        sum by (namespace, pod) (pg_stat_activity_count)
+        / sum by (namespace, pod) (pg_settings_max_connections) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "PostgreSQL {{ $labels.namespace }}/{{ $labels.pod }} has high connection usage"
+        description: "PostgreSQL is using more than 80% of max connections"
+
+    # Redis memory usage
+    - alert: RedisHighMemoryUsage
+      expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Redis has high memory usage"
+        description: "Redis is using more than 90% of configured max memory"
