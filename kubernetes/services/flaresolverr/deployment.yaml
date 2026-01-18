@@ -1,0 +1,88 @@
+---
+# FlareSolverr - Cloudflare bypass proxy for Prowlarr
+# https://github.com/FlareSolverr/FlareSolverr
+#
+# FlareSolverr uses a headless browser to solve Cloudflare challenges.
+# Configure in Prowlarr under Settings -> Indexers -> Add -> FlareSolverr
+# URL: http://flaresolverr.flaresolverr.svc.cluster.local:8191
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flaresolverr
+  labels:
+    app.kubernetes.io/name: flaresolverr
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaresolverr
+  namespace: flaresolverr
+  labels:
+    app: flaresolverr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flaresolverr
+  template:
+    metadata:
+      labels:
+        app: flaresolverr
+    spec:
+      securityContext:
+        runAsNonRoot: false  # Chromium requires root in container
+      containers:
+      - name: flaresolverr
+        image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - SYS_ADMIN  # Required for Chromium sandbox
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        - name: LOG_HTML
+          value: "false"
+        - name: TZ
+          value: "UTC"
+        - name: CAPTCHA_SOLVER
+          value: "none"
+        ports:
+        - containerPort: 8191
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8191
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8191
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaresolverr
+  namespace: flaresolverr
+spec:
+  selector:
+    app: flaresolverr
+  ports:
+  - name: http
+    port: 8191
+    targetPort: 8191
+  type: ClusterIP

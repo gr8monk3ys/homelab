@@ -1,0 +1,174 @@
+---
+# qBittorrent - BitTorrent Client for arr-stack
+# https://www.qbittorrent.org/
+#
+# Default credentials: admin / adminadmin (change immediately!)
+# Configure download paths to match arr-stack shared storage
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: qbittorrent
+  labels:
+    app: qbittorrent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: qbittorrent
+        image: lscr.io/linuxserver/qbittorrent:4.6.7
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        - name: WEBUI_PORT
+          value: "8080"
+        ports:
+        - containerPort: 8080
+          name: webui
+        - containerPort: 6881
+          name: torrent-tcp
+          protocol: TCP
+        - containerPort: 6881
+          name: torrent-udp
+          protocol: UDP
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: downloads
+          mountPath: /downloads
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: qbittorrent-config-pvc
+      - name: downloads
+        persistentVolumeClaim:
+          claimName: qbittorrent-downloads-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent-config-pvc
+  namespace: qbittorrent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent-downloads-pvc
+  namespace: qbittorrent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: qbittorrent
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+  - name: webui
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+# Service for BitTorrent traffic (optional - use with LoadBalancer or NodePort)
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent-torrent
+  namespace: qbittorrent
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+  - name: torrent-tcp
+    port: 6881
+    targetPort: 6881
+    protocol: TCP
+  - name: torrent-udp
+    port: 6881
+    targetPort: 6881
+    protocol: UDP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qbittorrent-ingress
+  namespace: qbittorrent
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - torrent.homelab.local
+    secretName: qbittorrent-tls
+  rules:
+  - host: torrent.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: qbittorrent
+            port:
+              number: 8080

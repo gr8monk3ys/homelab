@@ -1,0 +1,133 @@
+---
+# Uptime Kuma - Self-hosted monitoring and status page
+# https://github.com/louislam/uptime-kuma
+#
+# Features:
+# - Monitor HTTP(s), TCP, Ping, DNS, Docker containers
+# - Beautiful status pages
+# - Notifications via Discord, Slack, Telegram, Email, etc.
+# - Multi-language support
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uptime-kuma
+  labels:
+    app.kubernetes.io/name: uptime-kuma
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+  labels:
+    app: uptime-kuma
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: uptime-kuma
+  template:
+    metadata:
+      labels:
+        app: uptime-kuma
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: uptime-kuma
+        image: louislam/uptime-kuma:1.23.15
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN
+          value: "0"
+        ports:
+        - containerPort: 3001
+          name: http
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: uptime-kuma-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uptime-kuma-data-pvc
+  namespace: uptime-kuma
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+spec:
+  selector:
+    app: uptime-kuma
+  ports:
+  - name: http
+    port: 3001
+    targetPort: 3001
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: uptime-kuma-ingress
+  namespace: uptime-kuma
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - status.homelab.local
+    secretName: uptime-kuma-tls
+  rules:
+  - host: status.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: uptime-kuma
+            port:
+              number: 3001

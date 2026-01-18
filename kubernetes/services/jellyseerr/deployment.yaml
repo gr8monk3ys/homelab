@@ -1,0 +1,125 @@
+---
+# Jellyseerr - Media Request Management for Jellyfin
+# https://github.com/Fallenbagel/jellyseerr
+#
+# Jellyseerr is a fork of Overseerr specifically for Jellyfin users.
+# It integrates with Sonarr/Radarr to fulfill media requests.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyseerr
+  namespace: jellyseerr
+  labels:
+    app: jellyseerr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jellyseerr
+  template:
+    metadata:
+      labels:
+        app: jellyseerr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: jellyseerr
+        image: fallenbagel/jellyseerr:1.9.2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: LOG_LEVEL
+          value: "info"
+        ports:
+        - containerPort: 5055
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 5055
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 5055
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: jellyseerr-config-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyseerr-config-pvc
+  namespace: jellyseerr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyseerr
+  namespace: jellyseerr
+spec:
+  selector:
+    app: jellyseerr
+  ports:
+  - name: http
+    port: 5055
+    targetPort: 5055
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyseerr-ingress
+  namespace: jellyseerr
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - requests.homelab.local
+    secretName: jellyseerr-tls
+  rules:
+  - host: requests.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jellyseerr
+            port:
+              number: 5055

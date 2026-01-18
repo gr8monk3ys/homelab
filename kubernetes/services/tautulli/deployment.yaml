@@ -1,0 +1,131 @@
+---
+# Tautulli - Media Server Statistics and Monitoring
+# https://tautulli.com/
+#
+# Tautulli monitors Plex/Jellyfin activity and provides:
+# - Watch history and statistics
+# - User activity tracking
+# - Notifications for media events
+# - Graphs and reports
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tautulli
+  namespace: tautulli
+  labels:
+    app: tautulli
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tautulli
+  template:
+    metadata:
+      labels:
+        app: tautulli
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: tautulli
+        image: lscr.io/linuxserver/tautulli:2.14.5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 8181
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: 8181
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: 8181
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: tautulli-config-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tautulli-config-pvc
+  namespace: tautulli
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tautulli
+  namespace: tautulli
+spec:
+  selector:
+    app: tautulli
+  ports:
+  - name: http
+    port: 8181
+    targetPort: 8181
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tautulli-ingress
+  namespace: tautulli
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - stats.homelab.local
+    secretName: tautulli-tls
+  rules:
+  - host: stats.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tautulli
+            port:
+              number: 8181
