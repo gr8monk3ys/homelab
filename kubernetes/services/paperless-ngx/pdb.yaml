@@ -1,0 +1,15 @@
+---
+# PodDisruptionBudget for Paperless-ngx
+# Ensures document management remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: paperless-pdb
+  namespace: paperless-ngx
+  labels:
+    app: paperless-ngx
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: paperless-ngx

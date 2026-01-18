@@ -1,0 +1,15 @@
+---
+# PodDisruptionBudget for Vaultwarden
+# Ensures password manager remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vaultwarden-pdb
+  namespace: vaultwarden
+  labels:
+    app: vaultwarden
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: vaultwarden

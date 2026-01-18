@@ -1,0 +1,29 @@
+---
+# PodDisruptionBudget for Gitea
+# Ensures Git service remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gitea-pdb
+  namespace: gitea
+  labels:
+    app: gitea
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gitea
+---
+# PDB for Gitea PostgreSQL
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gitea-postgres-pdb
+  namespace: gitea
+  labels:
+    app: gitea-postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gitea-postgres

@@ -1,0 +1,43 @@
+---
+# PodDisruptionBudget for Immich Server
+# Ensures photo service remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: immich-server-pdb
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: immich-server
+---
+# PDB for Immich PostgreSQL
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: immich-postgres-pdb
+  namespace: immich
+  labels:
+    app: immich-postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: immich-postgres
+---
+# PDB for Immich Redis
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: immich-redis-pdb
+  namespace: immich
+  labels:
+    app: immich-redis
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: immich-redis
