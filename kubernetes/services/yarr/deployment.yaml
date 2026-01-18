@@ -22,6 +22,7 @@ spec:
         image: nkanaev/yarr:v2.4
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
@@ -40,6 +41,8 @@ spec:
         volumeMounts:
         - name: yarr-data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "64Mi"
@@ -65,6 +68,8 @@ spec:
       - name: yarr-data
         persistentVolumeClaim:
           claimName: yarr-data-pvc
+      - name: tmp
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

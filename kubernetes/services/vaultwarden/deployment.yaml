@@ -24,6 +24,7 @@ spec:
         image: vaultwarden/server:1.32.5
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
@@ -45,6 +46,8 @@ spec:
         volumeMounts:
         - name: vaultwarden-data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "128Mi"
@@ -70,6 +73,8 @@ spec:
       - name: vaultwarden-data
         persistentVolumeClaim:
           claimName: vaultwarden-pvc
+      - name: tmp
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
