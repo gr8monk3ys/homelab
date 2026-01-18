@@ -1,0 +1,123 @@
+# Default values for nextcloud
+# This is a YAML-formatted file.
+
+global:
+  storageClass: "local-path"
+
+nextcloud:
+  image:
+    repository: nextcloud
+    tag: "28-apache"
+    pullPolicy: IfNotPresent
+
+  # Admin user configuration
+  admin:
+    # These will be populated from secrets
+    username: ""  # Set via secret
+    password: ""  # Set via secret
+
+  # Domain configuration
+  domain: "nextcloud.homelab.local"
+  trustedDomains:
+    - "nextcloud.homelab.local"
+    - "localhost"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  # Health checks
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+  # Security context
+  securityContext:
+    runAsUser: 33
+    runAsGroup: 33
+    fsGroup: 33
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "local-path"
+    accessMode: ReadWriteOnce
+
+  config:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: "local-path"
+      accessMode: ReadWriteOnce
+
+mysql:
+  enabled: true
+  auth:
+    rootPassword: ""  # Set via secret
+    database: "nextcloud"
+    username: "nextcloud"
+    password: ""  # Set via secret
+
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: "local-path"
+
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+
+    configuration: |-
+      [mysqld]
+      innodb_buffer_pool_size = 512M
+      max_connections = 100
+      query_cache_size = 32M
+      character_set_server = utf8mb4
+      collation_server = utf8mb4_unicode_ci
+      slow_query_log = 1
+      long_query_time = 2
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+  hosts:
+    - host: nextcloud.homelab.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: nextcloud-tls
+      hosts:
+        - nextcloud.homelab.local
+
+# External secrets configuration
+externalSecrets:
+  enabled: true
+  secretStore: "homelab-secret-store"
+  refreshInterval: "1h"

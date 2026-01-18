@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calibre-web
+  namespace: calibre-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: calibre-web
+  template:
+    metadata:
+      labels:
+        app: calibre-web
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: calibre-web
+        image: lscr.io/linuxserver/calibre-web:0.6.23
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8083
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        - name: DOCKER_MODS
+          value: "linuxserver/mods:universal-calibre"
+        - name: OAUTHLIB_RELAX_TOKEN_SCOPE
+          value: "1"
+        volumeMounts:
+        - name: calibre-config
+          mountPath: /config
+        - name: calibre-books
+          mountPath: /books
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8083
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8083
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: calibre-config
+        persistentVolumeClaim:
+          claimName: calibre-config-pvc
+      - name: calibre-books
+        persistentVolumeClaim:
+          claimName: calibre-books-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: calibre-config-pvc
+  namespace: calibre-web
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: calibre-books-pvc
+  namespace: calibre-web
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: calibre-web
+  namespace: calibre-web
+spec:
+  selector:
+    app: calibre-web
+  ports:
+  - port: 8083
+    targetPort: 8083
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: calibre-web-ingress
+  namespace: calibre-web
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - books.homelab.local
+    secretName: calibre-web-tls
+  rules:
+  - host: books.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: calibre-web
+            port:
+              number: 8083
+---
+# Optional: Calibre server for ebook conversion
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calibre-server
+  namespace: calibre-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: calibre-server
+  template:
+    metadata:
+      labels:
+        app: calibre-server
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: calibre-server
+        image: lscr.io/linuxserver/calibre:7.23.0
+        ports:
+        - containerPort: 8080
+          name: web
+        - containerPort: 8081
+          name: server
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        volumeMounts:
+        - name: calibre-config
+          mountPath: /config
+        - name: calibre-books
+          mountPath: /books
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - IPC_LOCK
+      volumes:
+      - name: calibre-config
+        persistentVolumeClaim:
+          claimName: calibre-config-pvc
+      - name: calibre-books
+        persistentVolumeClaim:
+          claimName: calibre-books-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: calibre-server
+  namespace: calibre-web
+spec:
+  selector:
+    app: calibre-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: web
+  - port: 8081
+    targetPort: 8081
+    name: server
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: calibre-server-ingress
+  namespace: calibre-web
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - calibre.homelab.local
+    secretName: calibre-server-tls
+  rules:
+  - host: calibre.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: calibre-server
+            port:
+              number: 8080

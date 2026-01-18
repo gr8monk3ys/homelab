@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnsmasq-dhcp-config
+  namespace: dnsmasq-dhcp
+data:
+  dnsmasq.conf: |
+    # DHCP Configuration for Homelab
+    # Listen on all interfaces
+    interface=eth0
+    bind-interfaces
+    
+    # DHCP Range - adjust according to your network
+    dhcp-range=192.168.1.100,192.168.1.200,24h
+    
+    # Gateway and DNS servers
+    dhcp-option=3,192.168.1.1  # Gateway
+    dhcp-option=6,192.168.1.1  # DNS Server (Pi-hole)
+    
+    # Domain name
+    domain=homelab.local
+    
+    # Enable DHCP logging
+    log-dhcp
+    
+    # Static DHCP assignments (examples)
+    # dhcp-host=aa:bb:cc:dd:ee:ff,192.168.1.10,server1
+    # dhcp-host=11:22:33:44:55:66,192.168.1.11,server2
+    
+    # PXE Boot options (optional)
+    # dhcp-boot=pxelinux.0
+    
+    # Authoritative DHCP server
+    dhcp-authoritative
+    
+    # Lease file
+    dhcp-leasefile=/var/lib/dhcp/dhcp.leases
+    
+    # Enable IPv6 Router Advertisements
+    enable-ra
+---
+# DHCP Server - dnsmasq
+#
+# SECURITY NOTES:
+# - Requires hostNetwork: true for DHCP broadcast traffic
+# - Requires NET_ADMIN and NET_RAW capabilities for network operations
+# - Should only run on dedicated infrastructure nodes
+#
+# MITIGATIONS:
+# 1. Runs with allowPrivilegeEscalation: false
+# 2. All capabilities dropped except NET_ADMIN and NET_RAW
+# 3. Runs as non-root user where possible
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dnsmasq-dhcp
+  namespace: dnsmasq-dhcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dnsmasq-dhcp
+  template:
+    metadata:
+      labels:
+        app: dnsmasq-dhcp
+    spec:
+      hostNetwork: true  # Required for DHCP to work properly
+      containers:
+      - name: dnsmasq-dhcp
+        # Note: Switched from strm/dnsmasq (unmaintained 5+ years) to 4km3/dnsmasq
+        image: 4km3/dnsmasq:2.90
+        args:
+          - --conf-file=/etc/dnsmasq/dnsmasq.conf
+          - --keep-in-foreground
+        ports:
+        - containerPort: 67
+          protocol: UDP
+          name: dhcp
+        volumeMounts:
+        - name: dnsmasq-config
+          mountPath: /etc/dnsmasq
+        - name: dhcp-leases
+          mountPath: /var/lib/dhcp
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+              - NET_RAW
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        # DHCP health check - verify dnsmasq process is running
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep dnsmasq"
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep dnsmasq"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+      volumes:
+      - name: dnsmasq-config
+        configMap:
+          name: dnsmasq-dhcp-config
+      - name: dhcp-leases
+        persistentVolumeClaim:
+          claimName: dhcp-leases-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dhcp-leases-pvc
+  namespace: dnsmasq-dhcp
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: local-path
+---
+# Note: DHCP service typically doesn't need a Kubernetes service
+# as it uses broadcast traffic on the host network
+apiVersion: v1
+kind: Service
+metadata:
+  name: dnsmasq-dhcp
+  namespace: dnsmasq-dhcp
+spec:
+  selector:
+    app: dnsmasq-dhcp
+  ports:
+  - port: 67
+    targetPort: 67
+    protocol: UDP
+    name: dhcp
+  type: ClusterIP

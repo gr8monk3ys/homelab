@@ -1,0 +1,150 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: romm-mariadb
+  namespace: romm
+  labels:
+    app: romm-mariadb
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: romm-mariadb
+  template:
+    metadata:
+      labels:
+        app: romm-mariadb
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+      - name: mariadb
+        image: mariadb:11.6.2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        args:
+        - --character-set-server=utf8mb4
+        - --collation-server=utf8mb4_unicode_ci
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: romm-db-root-password
+              key: password
+        - name: MYSQL_DATABASE
+          value: "romm"
+        - name: MYSQL_USER
+          value: "romm"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: romm-db-password
+              key: password
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mariadb-data
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: mariadb-data
+        persistentVolumeClaim:
+          claimName: romm-mariadb-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-mariadb-pvc
+  namespace: romm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: romm-mariadb
+  namespace: romm
+spec:
+  selector:
+    app: romm-mariadb
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: 3306
+  type: ClusterIP
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: romm-db-password
+  namespace: romm
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: romm-db-password
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: romm-db-password
+      property: password
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: romm-db-root-password
+  namespace: romm
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: romm-db-root-password
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: romm-db-root-password
+      property: password

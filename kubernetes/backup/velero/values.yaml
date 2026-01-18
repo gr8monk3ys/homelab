@@ -1,0 +1,77 @@
+# Velero Helm Chart Values
+# Install with: helm install velero vmware-tanzu/velero -n velero -f values.yaml
+
+# Configuration for using MinIO as S3-compatible backend
+configuration:
+  # Default backup storage location
+  backupStorageLocation:
+  - name: default
+    provider: aws
+    bucket: velero-backups
+    config:
+      region: minio
+      s3ForcePathStyle: "true"
+      s3Url: http://minio.minio.svc.cluster.local:9000
+      publicUrl: http://minio.homelab.local:9000
+
+  # Volume snapshot location (optional, for CSI snapshots)
+  volumeSnapshotLocation:
+  - name: default
+    provider: aws
+    config:
+      region: minio
+
+  # Default settings
+  defaultBackupStorageLocation: default
+  defaultVolumeSnapshotLocations: aws:default
+
+  # Backup settings
+  defaultBackupTTL: 720h  # 30 days
+
+  # Enable restic/kopia for file-level backup of PVs
+  uploaderType: restic
+
+# Credentials for MinIO - managed via ExternalSecret
+# The secret is created by external-secrets.yaml in this directory
+credentials:
+  useSecret: true
+  existingSecret: velero-credentials
+
+# Restic/Kopia integration for PV backups
+deployNodeAgent: true
+nodeAgent:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Main Velero server
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Init containers for plugins
+initContainers:
+- name: velero-plugin-for-aws
+  image: velero/velero-plugin-for-aws:v1.9.0
+  imagePullPolicy: IfNotPresent
+  volumeMounts:
+  - mountPath: /target
+    name: plugins
+
+# Metrics for Prometheus
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+
+# Schedules are defined separately in schedules.yaml
+schedules: {}

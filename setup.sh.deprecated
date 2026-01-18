@@ -1,0 +1,286 @@
+#!/bin/bash
+set -euo pipefail
+
+HOMELAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGFILE="$HOMELAB_DIR/setup.log"
+CONFIG_FILE="$HOMELAB_DIR/config/homelab.yaml"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
+}
+
+error() {
+    log "ERROR: $*"
+    exit 1
+}
+
+check_requirements() {
+    log "Checking system requirements..."
+    
+    if ! command -v docker &> /dev/null; then
+        error "Docker is not installed. Please install Docker first."
+    fi
+    
+    if ! command -v kubectl &> /dev/null; then
+        log "kubectl not found, will install..."
+    fi
+    
+    if ! command -v helm &> /dev/null; then
+        log "helm not found, will install..."
+    fi
+    
+    if ! command -v ansible &> /dev/null; then
+        log "ansible not found, will install..."
+    fi
+    
+    log "Requirements check completed"
+}
+
+install_tools() {
+    log "Installing required tools..."
+    
+    # Install kubectl
+    if ! command -v kubectl &> /dev/null; then
+        log "Installing kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+    fi
+    
+    # Install helm
+    if ! command -v helm &> /dev/null; then
+        log "Installing Helm..."
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    fi
+    
+    # Install ansible
+    if ! command -v ansible &> /dev/null; then
+        log "Installing Ansible..."
+        pip3 install ansible
+    fi
+    
+    log "Tool installation completed"
+}
+
+setup_k3s() {
+    log "Setting up K3s cluster..."
+    
+    if ! command -v k3s &> /dev/null; then
+        log "Installing K3s..."
+        curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
+        
+        # Wait for K3s to be ready
+        sleep 30
+        
+        # Copy kubeconfig
+        mkdir -p ~/.kube
+        sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+        sudo chown $(id -u):$(id -g) ~/.kube/config
+    fi
+    
+    # Wait for cluster to be ready
+    kubectl wait --for=condition=Ready nodes --all --timeout=300s
+    
+    log "K3s cluster setup completed"
+}
+
+setup_storage() {
+    log "Setting up persistent storage..."
+    
+    # Apply local path provisioner
+    kubectl apply -f kubernetes/storage/local-path-provisioner.yaml
+    
+    # Apply MinIO for object storage
+    kubectl apply -f kubernetes/storage/minio/
+    
+    log "Storage setup completed"
+}
+
+setup_ingress() {
+    log "Setting up ingress controller..."
+    
+    # Install Traefik
+    kubectl apply -f kubernetes/ingress/traefik/
+    
+    # Install cert-manager
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+    
+    # Wait for cert-manager to be ready
+    kubectl wait --for=condition=Ready pods --all -n cert-manager --timeout=300s
+    
+    # Apply cluster issuer
+    kubectl apply -f kubernetes/ingress/cert-manager/
+    
+    log "Ingress setup completed"
+}
+
+setup_monitoring() {
+    log "Setting up monitoring stack..."
+    
+    # Create monitoring namespace
+    kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Install Prometheus stack
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+    
+    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+        --namespace monitoring \
+        --values kubernetes/monitoring/prometheus/values.yaml
+    
+    # Apply additional monitoring components
+    kubectl apply -f kubernetes/monitoring/uptime-kuma/
+    
+    log "Monitoring setup completed"
+}
+
+setup_services() {
+    log "Setting up core services..."
+    
+    # File management
+    kubectl apply -f kubernetes/services/nextcloud/
+    kubectl apply -f kubernetes/services/vaultwarden/
+    
+    # Media services
+    kubectl apply -f kubernetes/services/jellyfin/
+    kubectl apply -f kubernetes/services/arr-stack/
+    
+    # Dashboard
+    kubectl apply -f kubernetes/services/heimdall/
+    
+    # Authentication
+    kubectl apply -f kubernetes/services/authelia/
+    
+    log "Core services setup completed"
+}
+
+setup_network_services() {
+    log "Setting up network services..."
+    
+    # DNS and DHCP
+    kubectl apply -f kubernetes/services/pihole/
+    kubectl apply -f kubernetes/services/dnsmasq-dhcp/
+    
+    # VPN
+    kubectl apply -f kubernetes/services/wireguard/
+    
+    log "Network services setup completed"
+}
+
+setup_development_services() {
+    log "Setting up development services..."
+    
+    # Git server
+    kubectl apply -f kubernetes/services/gitea/
+    
+    # Container registry
+    kubectl apply -f kubernetes/services/harbor/
+    
+    # CI/CD
+    kubectl apply -f kubernetes/services/drone/
+    
+    log "Development services setup completed"
+}
+
+setup_content_services() {
+    log "Setting up content and productivity services..."
+    
+    # Private search engine
+    kubectl apply -f kubernetes/services/searxng/
+    
+    # Digital library
+    kubectl apply -f kubernetes/services/calibre-web/
+    
+    # RSS feed reader
+    kubectl apply -f kubernetes/services/yarr/
+    
+    log "Content services setup completed"
+}
+
+setup_gitops() {
+    log "Setting up GitOps with ArgoCD..."
+    
+    # Install ArgoCD
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    
+    # Wait for ArgoCD to be ready
+    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+    
+    # Apply ArgoCD applications
+    kubectl apply -f kubernetes/gitops/argocd/
+    
+    log "GitOps setup completed"
+}
+
+run_ansible_playbooks() {
+    log "Running Ansible playbooks for system configuration..."
+    
+    # Run base system configuration
+    ansible-playbook -i ansible/inventory ansible/playbooks/base-system.yaml
+    
+    # Run security hardening
+    ansible-playbook -i ansible/inventory ansible/playbooks/security.yaml
+    
+    # Run backup configuration
+    ansible-playbook -i ansible/inventory ansible/playbooks/backup.yaml
+    
+    log "Ansible playbooks completed"
+}
+
+show_access_info() {
+    log "Homelab setup completed!"
+    echo ""
+    echo "🎉 Your homelab is now ready!"
+    echo ""
+    echo "Core Services:"
+    echo "📊 Grafana: https://grafana.homelab.local"
+    echo "📁 Nextcloud: https://nextcloud.homelab.local"
+    echo "🎬 Jellyfin: https://jellyfin.homelab.local"
+    echo "🏠 Dashboard: https://dashboard.homelab.local"
+    echo "🔐 Vaultwarden: https://vault.homelab.local"
+    echo "⚙️  ArgoCD: https://argocd.homelab.local"
+    echo ""
+    echo "Network Services:"
+    echo "🌐 Pi-hole: https://pihole.homelab.local"
+    echo "🔒 VPN Management: https://vpn.homelab.local"
+    echo ""
+    echo "Development Services:"
+    echo "📂 Git Server: https://git.homelab.local"
+    echo "📦 Container Registry: https://registry.homelab.local"
+    echo "🚀 CI/CD: https://drone.homelab.local"
+    echo ""
+    echo "Content & Productivity:"
+    echo "🔍 Private Search: https://search.homelab.local"
+    echo "📚 Digital Library: https://books.homelab.local"
+    echo "📰 RSS Reader: https://rss.homelab.local"
+    echo ""
+    echo "Default credentials are in: $HOMELAB_DIR/docs/credentials.md"
+    echo "Configuration files are in: $HOMELAB_DIR/config/"
+    echo ""
+    echo "For more information, see: $HOMELAB_DIR/README.md"
+}
+
+main() {
+    log "Starting homelab setup..."
+    
+    check_requirements
+    install_tools
+    setup_k3s
+    setup_storage
+    setup_ingress
+    setup_monitoring
+    setup_services
+    setup_network_services
+    setup_development_services
+    setup_content_services
+    setup_gitops
+    run_ansible_playbooks
+    show_access_info
+    
+    log "Homelab setup completed successfully!"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

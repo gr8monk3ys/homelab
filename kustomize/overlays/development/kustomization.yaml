@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-development
+
+namespace: homelab-dev
+
+resources:
+  - ../../base
+
+patchesStrategicMerge:
+  - resource-patches.yaml
+
+namePrefix: dev-
+
+commonLabels:
+  environment: development
+  tier: dev
+
+replicas:
+  # Reduce replicas for development
+  - name: traefik-deployment
+    count: 1
+
+images:
+  # Use latest images for development
+  - name: nextcloud
+    newTag: latest
+  - name: gitea/gitea
+    newTag: dev
+
+configMapGenerator:
+  - name: homelab-config
+    literals:
+      - domain=homelab-dev.local
+      - timezone=UTC
+      - environment=development
+      - log_level=debug
+
+secretGenerator:
+  - name: dev-secrets
+    literals:
+      - debug_mode=true

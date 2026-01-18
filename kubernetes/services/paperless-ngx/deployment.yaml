@@ -1,0 +1,262 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paperless-ngx
+  namespace: paperless-ngx
+  labels:
+    app: paperless-ngx
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: paperless-ngx
+  template:
+    metadata:
+      labels:
+        app: paperless-ngx
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: wait-for-deps
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z paperless-postgres 5432 && nc -z paperless-redis 6379; do
+            echo "Waiting for database and redis..."
+            sleep 5
+          done
+          echo "Dependencies ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: paperless-ngx
+        image: ghcr.io/paperless-ngx/paperless-ngx:2.13.5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: PAPERLESS_REDIS
+          value: "redis://paperless-redis:6379"
+        - name: PAPERLESS_DBHOST
+          value: "paperless-postgres"
+        - name: PAPERLESS_DBNAME
+          value: "paperless"
+        - name: PAPERLESS_DBUSER
+          value: "paperless"
+        - name: PAPERLESS_DBPASS
+          valueFrom:
+            secretKeyRef:
+              name: paperless-db-password
+              key: password
+        - name: PAPERLESS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: paperless-admin
+              key: secret-key
+        - name: PAPERLESS_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: paperless-admin
+              key: username
+        - name: PAPERLESS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: paperless-admin
+              key: password
+        - name: PAPERLESS_URL
+          value: "https://docs.homelab.local"
+        - name: PAPERLESS_TIME_ZONE
+          value: "UTC"
+        - name: PAPERLESS_OCR_LANGUAGE
+          value: "eng"
+        - name: PAPERLESS_CONSUMER_POLLING
+          value: "60"
+        - name: PAPERLESS_CONSUMER_RECURSIVE
+          value: "true"
+        - name: PAPERLESS_FILENAME_FORMAT
+          value: "{created_year}/{correspondent}/{title}"
+        ports:
+        - containerPort: 8000
+          name: http
+        volumeMounts:
+        - name: data
+          mountPath: /usr/src/paperless/data
+        - name: media
+          mountPath: /usr/src/paperless/media
+        - name: consume
+          mountPath: /usr/src/paperless/consume
+        - name: export
+          mountPath: /usr/src/paperless/export
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: paperless-data-pvc
+      - name: media
+        persistentVolumeClaim:
+          claimName: paperless-media-pvc
+      - name: consume
+        persistentVolumeClaim:
+          claimName: paperless-consume-pvc
+      - name: export
+        persistentVolumeClaim:
+          claimName: paperless-export-pvc
+---
+# Storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-data-pvc
+  namespace: paperless-ngx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-media-pvc
+  namespace: paperless-ngx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-consume-pvc
+  namespace: paperless-ngx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperless-export-pvc
+  namespace: paperless-ngx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paperless-ngx
+  namespace: paperless-ngx
+spec:
+  selector:
+    app: paperless-ngx
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: paperless-ingress
+  namespace: paperless-ngx
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Allow large file uploads
+    traefik.ingress.kubernetes.io/buffering: |
+      maxRequestBodyBytes: 104857600
+spec:
+  tls:
+  - hosts:
+    - docs.homelab.local
+    secretName: paperless-tls
+  rules:
+  - host: docs.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: paperless-ngx
+            port:
+              number: 8000
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: paperless-admin
+  namespace: paperless-ngx
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: paperless-admin
+    creationPolicy: Owner
+  data:
+  - secretKey: username
+    remoteRef:
+      key: paperless-admin
+      property: username
+  - secretKey: password
+    remoteRef:
+      key: paperless-admin
+      property: password
+  - secretKey: secret-key
+    remoteRef:
+      key: paperless-admin
+      property: secret-key

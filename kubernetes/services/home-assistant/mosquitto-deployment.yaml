@@ -1,0 +1,148 @@
+---
+# Mosquitto MQTT Broker for IoT device communication
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: home-assistant
+  labels:
+    app: mosquitto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1883
+        fsGroup: 1883
+      containers:
+      - name: mosquitto
+        image: eclipse-mosquitto:2.0.20
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 1883
+          name: mqtt
+        - containerPort: 9001
+          name: websocket
+        volumeMounts:
+        - name: config
+          mountPath: /mosquitto/config
+        - name: data
+          mountPath: /mosquitto/data
+        - name: log
+          mountPath: /mosquitto/log
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          tcpSocket:
+            port: 1883
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          tcpSocket:
+            port: 1883
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        projected:
+          sources:
+          - configMap:
+              name: mosquitto-config
+          - secret:
+              name: mosquitto-passwd
+      - name: data
+        persistentVolumeClaim:
+          claimName: mosquitto-data-pvc
+      - name: log
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: home-assistant
+data:
+  mosquitto.conf: |
+    listener 1883
+    listener 9001
+    protocol websockets
+
+    persistence true
+    persistence_location /mosquitto/data/
+
+    log_dest stdout
+    log_type all
+
+    # Require authentication for all connections
+    allow_anonymous false
+    password_file /mosquitto/config/passwd
+
+    # Connection limits for security
+    max_connections 100
+    max_inflight_messages 20
+    max_queued_messages 1000
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mosquitto-data-pvc
+  namespace: home-assistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  namespace: home-assistant
+spec:
+  selector:
+    app: mosquitto
+  ports:
+  - name: mqtt
+    port: 1883
+    targetPort: 1883
+  - name: websocket
+    port: 9001
+    targetPort: 9001
+  type: ClusterIP
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: mosquitto-passwd
+  namespace: home-assistant
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: mosquitto-passwd
+    creationPolicy: Owner
+  data:
+  - secretKey: passwd
+    remoteRef:
+      key: mosquitto-password
+      property: password

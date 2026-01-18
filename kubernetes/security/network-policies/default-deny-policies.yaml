@@ -1,0 +1,88 @@
+---
+# Default deny ingress for vaultwarden namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: vaultwarden
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for authelia namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: authelia
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for nextcloud namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: nextcloud
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for paperless-ngx namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: paperless-ngx
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for immich namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: immich
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for gitea namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: gitea
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for linkwarden namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: linkwarden
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for n8n namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: n8n
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

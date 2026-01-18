@@ -1,0 +1,230 @@
+---
+# Trivy - Container security scanner
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-server
+  namespace: trivy
+  labels:
+    app: trivy-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-server
+  template:
+    metadata:
+      labels:
+        app: trivy-server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: trivy
+        image: aquasec/trivy:0.58.2
+        args:
+        - server
+        - --listen=0.0.0.0:4954
+        - --cache-dir=/home/scanner/.cache/trivy
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 4954
+          name: http
+        env:
+        - name: TRIVY_CACHE_DIR
+          value: "/home/scanner/.cache/trivy"
+        - name: TRIVY_DEBUG
+          value: "false"
+        volumeMounts:
+        - name: cache
+          mountPath: /home/scanner/.cache
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 4954
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 4954
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: trivy-cache-pvc
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trivy-cache-pvc
+  namespace: trivy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trivy-server
+  namespace: trivy
+spec:
+  selector:
+    app: trivy-server
+  ports:
+  - name: http
+    port: 4954
+    targetPort: 4954
+  type: ClusterIP
+---
+# Trivy Operator for Kubernetes-native security scanning
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-operator
+  namespace: trivy
+  labels:
+    app: trivy-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-operator
+  template:
+    metadata:
+      labels:
+        app: trivy-operator
+    spec:
+      serviceAccountName: trivy-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+      - name: operator
+        image: aquasec/trivy-operator:0.24.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 8080
+          name: metrics
+        - containerPort: 9090
+          name: probes
+        env:
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: OPERATOR_TARGET_NAMESPACES
+          value: ""
+        - name: OPERATOR_LOG_DEV_MODE
+          value: "false"
+        - name: OPERATOR_SCAN_JOB_TTL
+          value: ""
+        - name: OPERATOR_SCAN_JOB_TIMEOUT
+          value: "5m"
+        - name: OPERATOR_CONCURRENT_SCAN_JOBS_LIMIT
+          value: "10"
+        - name: OPERATOR_VULNERABILITY_SCANNER_ENABLED
+          value: "true"
+        - name: OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED
+          value: "true"
+        - name: OPERATOR_SBOM_GENERATION_ENABLED
+          value: "true"
+        - name: TRIVY_SERVER_URL
+          value: "http://trivy-server:4954"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-operator
+  namespace: trivy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trivy-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "replicationcontrollers", "services", "resourcequotas", "limitranges", "configmaps", "secrets", "serviceaccounts"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: ["aquasecurity.github.io"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies", "ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["policy"]
+  resources: ["podsecuritypolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trivy-operator
+subjects:
+- kind: ServiceAccount
+  name: trivy-operator
+  namespace: trivy
+roleRef:
+  kind: ClusterRole
+  name: trivy-operator
+  apiGroup: rbac.authorization.k8s.io

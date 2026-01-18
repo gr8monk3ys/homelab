@@ -1,0 +1,163 @@
+---
+# Code-Server - VS Code in the browser
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: code-server
+  namespace: code-server
+  labels:
+    app: code-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: code-server
+  template:
+    metadata:
+      labels:
+        app: code-server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: code-server
+        image: codercom/code-server:4.96.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        args:
+        - --auth=password
+        - --bind-addr=0.0.0.0:8080
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: code-server-password
+              key: password
+        - name: TZ
+          value: "UTC"
+        volumeMounts:
+        - name: config
+          mountPath: /home/coder/.config
+        - name: workspace
+          mountPath: /home/coder/workspace
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: code-server-config-pvc
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: code-server-workspace-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: code-server-config-pvc
+  namespace: code-server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: code-server-workspace-pvc
+  namespace: code-server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: code-server
+  namespace: code-server
+spec:
+  selector:
+    app: code-server
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: code-server-ingress
+  namespace: code-server
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - code.homelab.local
+    secretName: code-server-tls
+  rules:
+  - host: code.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: code-server
+            port:
+              number: 8080
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: code-server-password
+  namespace: code-server
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: code-server-password
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: code-server-password
+      property: password

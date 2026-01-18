@@ -1,0 +1,154 @@
+---
+# Umami - Privacy-focused web analytics
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: umami
+  namespace: umami
+  labels:
+    app: umami
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: umami
+  template:
+    metadata:
+      labels:
+        app: umami
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z umami-postgres 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: umami
+        image: ghcr.io/umami-software/umami:postgresql-v2.15.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: umami-secret
+              key: database-url
+        - name: APP_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: umami-secret
+              key: app-secret
+        - name: DISABLE_TELEMETRY
+          value: "1"
+        - name: TRACKER_SCRIPT_NAME
+          value: "analytics"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/heartbeat
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/heartbeat
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: umami
+  namespace: umami
+spec:
+  selector:
+    app: umami
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: umami-ingress
+  namespace: umami
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - analytics.homelab.local
+    secretName: umami-tls
+  rules:
+  - host: analytics.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: umami
+            port:
+              number: 3000
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: umami-secret
+  namespace: umami
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: umami-secret
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        database-url: "postgresql://umami:{{ .dbPassword }}@umami-postgres:5432/umami"
+        app-secret: "{{ .appSecret }}"
+  data:
+  - secretKey: dbPassword
+    remoteRef:
+      key: umami-db-password
+      property: password
+  - secretKey: appSecret
+    remoteRef:
+      key: umami-app-secret
+      property: secret

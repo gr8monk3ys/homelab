@@ -1,0 +1,118 @@
+---
+- name: Security Hardening
+  hosts: homelab
+  become: yes
+  vars:
+    ssh_port: 22
+    allowed_users: ["{{ ansible_user }}"]
+    
+  tasks:
+    - name: Update all packages
+      package:
+        name: '*'
+        state: latest
+      tags: updates
+
+    - name: Install security packages
+      package:
+        name:
+          - fail2ban
+          - ufw
+          - unattended-upgrades
+          - logwatch
+        state: present
+      tags: security
+
+    - name: Configure automatic updates
+      template:
+        src: templates/50unattended-upgrades.j2
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        backup: yes
+      when: ansible_os_family == "Debian"
+      tags: security
+
+    - name: Enable automatic updates
+      template:
+        src: templates/20auto-upgrades.j2
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+      when: ansible_os_family == "Debian"
+      tags: security
+
+    - name: Configure SSH security
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: yes
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+        - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 3' }
+        - { regexp: '^#?ClientAliveInterval', line: 'ClientAliveInterval 300' }
+        - { regexp: '^#?ClientAliveCountMax', line: 'ClientAliveCountMax 2' }
+      notify: restart ssh
+      tags: ssh
+
+    - name: Configure UFW defaults
+      ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: 'incoming', policy: 'deny' }
+        - { direction: 'outgoing', policy: 'allow' }
+      tags: firewall
+
+    - name: Allow SSH through firewall
+      ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+      tags: firewall
+
+    - name: Allow HTTP/HTTPS through firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '80'
+        - '443'
+        - '6443'  # K3s API
+        - '10250'  # Kubelet
+      tags: firewall
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+      tags: firewall
+
+    - name: Configure fail2ban for SSH
+      template:
+        src: templates/jail.local.j2
+        dest: /etc/fail2ban/jail.local
+        backup: yes
+      notify: restart fail2ban
+      tags: fail2ban
+
+    - name: Start and enable security services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - fail2ban
+        - ufw
+      tags: security
+
+  handlers:
+    - name: restart ssh
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted

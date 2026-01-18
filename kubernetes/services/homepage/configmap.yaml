@@ -1,0 +1,230 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage-config
+  namespace: homepage
+  labels:
+    app: homepage
+data:
+  settings.yaml: |
+    ---
+    title: Homelab Dashboard
+    theme: dark
+    color: slate
+    headerStyle: clean
+    layout:
+      Infrastructure:
+        style: row
+        columns: 4
+      Media:
+        style: row
+        columns: 4
+      Productivity:
+        style: row
+        columns: 4
+      Security:
+        style: row
+        columns: 3
+      Development:
+        style: row
+        columns: 3
+
+  bookmarks.yaml: |
+    ---
+    - Documentation:
+        - Kubernetes:
+            - href: https://kubernetes.io/docs/
+              icon: kubernetes.svg
+        - ArgoCD:
+            - href: https://argo-cd.readthedocs.io/
+              icon: argocd.svg
+        - Traefik:
+            - href: https://doc.traefik.io/traefik/
+              icon: traefik.svg
+    - Tools:
+        - GitHub:
+            - href: https://github.com
+              icon: github.svg
+        - Docker Hub:
+            - href: https://hub.docker.com
+              icon: docker.svg
+
+  services.yaml: |
+    ---
+    - Infrastructure:
+        - ArgoCD:
+            href: https://argocd.homelab.local
+            icon: argocd.svg
+            description: GitOps continuous delivery
+            namespace: argocd
+            app: argocd
+        - Grafana:
+            href: https://grafana.homelab.local
+            icon: grafana.svg
+            description: Monitoring dashboards
+            namespace: monitoring
+            app: grafana
+        - Prometheus:
+            href: https://prometheus.homelab.local
+            icon: prometheus.svg
+            description: Metrics collection
+            namespace: monitoring
+            app: prometheus
+        - Traefik:
+            href: https://traefik.homelab.local
+            icon: traefik.svg
+            description: Ingress controller
+            namespace: kube-system
+            app: traefik
+
+    - Media:
+        - Jellyfin:
+            href: https://jellyfin.homelab.local
+            icon: jellyfin.svg
+            description: Media streaming
+            namespace: jellyfin
+            app: jellyfin
+        - Immich:
+            href: https://photos.homelab.local
+            icon: immich.svg
+            description: Photo management
+            namespace: immich
+            app: immich-server
+        - Sonarr:
+            href: https://sonarr.homelab.local
+            icon: sonarr.svg
+            description: TV shows
+            namespace: arr-stack
+            app: sonarr
+        - Radarr:
+            href: https://radarr.homelab.local
+            icon: radarr.svg
+            description: Movies
+            namespace: arr-stack
+            app: radarr
+        - Prowlarr:
+            href: https://prowlarr.homelab.local
+            icon: prowlarr.svg
+            description: Indexer manager
+            namespace: arr-stack
+            app: prowlarr
+        - Bazarr:
+            href: https://bazarr.homelab.local
+            icon: bazarr.svg
+            description: Subtitles
+            namespace: arr-stack
+            app: bazarr
+        - Audiobookshelf:
+            href: https://audiobooks.homelab.local
+            icon: audiobookshelf.svg
+            description: Audiobooks & podcasts
+            namespace: audiobookshelf
+            app: audiobookshelf
+
+    - Productivity:
+        - Nextcloud:
+            href: https://nextcloud.homelab.local
+            icon: nextcloud.svg
+            description: File storage
+            namespace: nextcloud
+            app: nextcloud
+        - Paperless-ngx:
+            href: https://docs.homelab.local
+            icon: paperless-ngx.svg
+            description: Document management
+            namespace: paperless-ngx
+            app: paperless-ngx
+        - n8n:
+            href: https://automation.homelab.local
+            icon: n8n.svg
+            description: Workflow automation
+            namespace: n8n
+            app: n8n
+        - Mealie:
+            href: https://recipes.homelab.local
+            icon: mealie.svg
+            description: Recipe management
+            namespace: mealie
+            app: mealie
+        - Linkwarden:
+            href: https://bookmarks.homelab.local
+            icon: linkwarden.svg
+            description: Bookmark manager
+            namespace: linkwarden
+            app: linkwarden
+
+    - Security:
+        - Vaultwarden:
+            href: https://vault.homelab.local
+            icon: vaultwarden.svg
+            description: Password manager
+            namespace: vaultwarden
+            app: vaultwarden
+        - Authelia:
+            href: https://auth.homelab.local
+            icon: authelia.svg
+            description: SSO & 2FA
+            namespace: authelia
+            app: authelia
+        - CrowdSec:
+            href: https://crowdsec.homelab.local
+            icon: crowdsec.svg
+            description: Security engine
+            namespace: crowdsec
+            app: crowdsec
+
+    - Development:
+        - Gitea:
+            href: https://git.homelab.local
+            icon: gitea.svg
+            description: Git hosting
+            namespace: gitea
+            app: gitea
+
+    - AI:
+        - Ollama:
+            href: https://ai.homelab.local
+            icon: ollama.svg
+            description: Local LLM API
+            namespace: ollama
+            app: ollama
+        - Open WebUI:
+            href: https://chat.homelab.local
+            icon: open-webui.svg
+            description: AI Chat interface
+            namespace: ollama
+            app: open-webui
+
+  widgets.yaml: |
+    ---
+    - resources:
+        backend: kubernetes
+        expanded: true
+        cpu: true
+        memory: true
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: "Homelab Cluster"
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+    - datetime:
+        text_size: xl
+        format:
+          dateStyle: long
+          timeStyle: short
+
+  kubernetes.yaml: |
+    ---
+    mode: cluster
+
+  docker.yaml: |
+    ---
+    # Not using Docker directly

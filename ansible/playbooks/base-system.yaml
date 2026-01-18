@@ -1,0 +1,116 @@
+---
+- name: Base System Configuration
+  hosts: homelab
+  become: yes
+  vars:
+    required_packages:
+      - curl
+      - wget
+      - git
+      - htop
+      - vim
+      - unzip
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    docker_compose_version: "2.21.0"
+    
+  tasks:
+    - name: Update package cache
+      package:
+        update_cache: yes
+      tags: packages
+
+    - name: Install required packages
+      package:
+        name: "{{ required_packages }}"
+        state: present
+      tags: packages
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+      tags: docker
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+      tags: docker
+
+    - name: Install Docker
+      package:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+      tags: docker
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      tags: docker
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+      tags: docker
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+      tags: docker
+
+    - name: Create homelab directory
+      file:
+        path: /opt/homelab
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      tags: setup
+
+    - name: Create docker data directory
+      file:
+        path: /opt/homelab/data
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      tags: setup
+
+    - name: Create backup directory
+      file:
+        path: /opt/homelab/backups
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+      tags: setup
+
+    - name: Set timezone
+      timezone:
+        name: "{{ homelab_timezone | default('UTC') }}"
+      tags: system
+
+    - name: Configure sysctl for better performance
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: 'vm.max_map_count', value: '262144' }
+        - { name: 'fs.file-max', value: '65535' }
+        - { name: 'net.core.somaxconn', value: '1024' }
+      tags: system

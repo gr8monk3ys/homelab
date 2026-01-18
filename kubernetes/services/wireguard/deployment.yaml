@@ -1,0 +1,266 @@
+---
+# WireGuard VPN Server
+#
+# SECURITY DOCUMENTATION:
+# This deployment requires elevated privileges for VPN functionality.
+#
+# Required Capabilities:
+# - NET_ADMIN: Required to create/manage WireGuard network interfaces
+# - SYS_MODULE: Required to load the WireGuard kernel module
+# - privileged: true: Required for full network namespace control
+#
+# Host Access Required:
+# - /lib/modules: Kernel modules for WireGuard (read-only)
+#
+# MITIGATIONS:
+# 1. Runs in dedicated namespace
+# 2. UI component runs unprivileged with full security hardening
+# 3. Access via LoadBalancer requires explicit port exposure
+# 4. UI protected with authentication via ExternalSecret
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wireguard
+  namespace: wireguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wireguard
+  template:
+    metadata:
+      labels:
+        app: wireguard
+    spec:
+      containers:
+      - name: wireguard
+        image: linuxserver/wireguard:1.0.20210914-legacy
+        ports:
+        - containerPort: 51820
+          protocol: UDP
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        - name: SERVERURL
+          value: "wireguard.homelab.local"
+        - name: SERVERPORT
+          value: "51820"
+        - name: PEERS
+          value: "10"
+        - name: PEERDNS
+          value: "auto"
+        - name: INTERNAL_SUBNET
+          value: "10.13.13.0"
+        - name: ALLOWEDIPS
+          value: "0.0.0.0/0"
+        volumeMounts:
+        - name: wireguard-config
+          mountPath: /config
+        - name: lib-modules
+          mountPath: /lib/modules
+          readOnly: true
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - SYS_MODULE
+          privileged: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        # WireGuard health check via UDP port availability
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "wg show | grep -q interface"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "wg show | grep -q interface"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: wireguard-config
+        persistentVolumeClaim:
+          claimName: wireguard-config-pvc
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wireguard-config-pvc
+  namespace: wireguard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wireguard
+  namespace: wireguard
+spec:
+  selector:
+    app: wireguard
+  ports:
+  - port: 51820
+    targetPort: 51820
+    protocol: UDP
+    name: wireguard
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wireguard-web
+  namespace: wireguard
+spec:
+  selector:
+    app: wireguard-ui
+  ports:
+  - port: 5000
+    targetPort: 5000
+    name: web
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wireguard-ui
+  namespace: wireguard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wireguard-ui
+  template:
+    metadata:
+      labels:
+        app: wireguard-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: wireguard-ui
+        image: ngoduykhanh/wireguard-ui:v0.6.2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 5000
+        env:
+        - name: WGUI_USERNAME
+          value: "admin"
+        - name: WGUI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wireguard-ui-secret
+              key: password
+        - name: WG_CONF_TEMPLATE
+          value: "/app/templates/wg_confs/server.conf"
+        - name: WGUI_MANAGE_START
+          value: "true"
+        - name: WGUI_MANAGE_RESTART
+          value: "true"
+        volumeMounts:
+        - name: wireguard-config
+          mountPath: /etc/wireguard
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: wireguard-config
+        persistentVolumeClaim:
+          claimName: wireguard-config-pvc
+---
+# ExternalSecret for WireGuard UI credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: wireguard-ui-secret
+  namespace: wireguard
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: wireguard-ui-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: wireguard-config
+      property: ui-password
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wireguard-ui-ingress
+  namespace: wireguard
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - vpn.homelab.local
+    secretName: wireguard-ui-tls
+  rules:
+  - host: vpn.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wireguard-web
+            port:
+              number: 5000

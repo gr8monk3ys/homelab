@@ -1,0 +1,354 @@
+---
+# Jellyfin - Allow Traefik ingress only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jellyfin-policy
+  namespace: jellyfin
+spec:
+  podSelector:
+    matchLabels:
+      app: jellyfin
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8096
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow metadata fetching
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Sonarr - Allow Traefik and internal arr-stack communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sonarr-policy
+  namespace: arr-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: sonarr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8989
+    # Allow from other arr services
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prowlarr
+        - podSelector:
+            matchLabels:
+              app: bazarr
+      ports:
+        - protocol: TCP
+          port: 8989
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow indexers and download clients
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Radarr - Allow Traefik and internal arr-stack communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: radarr-policy
+  namespace: arr-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: radarr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 7878
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prowlarr
+        - podSelector:
+            matchLabels:
+              app: bazarr
+      ports:
+        - protocol: TCP
+          port: 7878
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Prowlarr - Indexer manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prowlarr-policy
+  namespace: arr-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: prowlarr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 9696
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow Sonarr/Radarr sync
+    - to:
+        - podSelector:
+            matchLabels:
+              app: sonarr
+      ports:
+        - protocol: TCP
+          port: 8989
+    - to:
+        - podSelector:
+            matchLabels:
+              app: radarr
+      ports:
+        - protocol: TCP
+          port: 7878
+    # Allow indexer access
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Bazarr - Subtitles
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bazarr-policy
+  namespace: arr-stack
+spec:
+  podSelector:
+    matchLabels:
+      app: bazarr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 6767
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow Sonarr/Radarr API
+    - to:
+        - podSelector:
+            matchLabels:
+              app: sonarr
+      ports:
+        - protocol: TCP
+          port: 8989
+    - to:
+        - podSelector:
+            matchLabels:
+              app: radarr
+      ports:
+        - protocol: TCP
+          port: 7878
+    # Allow subtitle providers
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Audiobookshelf
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audiobookshelf-policy
+  namespace: audiobookshelf
+spec:
+  podSelector:
+    matchLabels:
+      app: audiobookshelf
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow metadata fetching
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Immich server
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-server-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3001
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-machine-learning
+      ports:
+        - protocol: TCP
+          port: 3003

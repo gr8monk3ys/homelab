@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-base
+
+resources:
+  - ../../kubernetes/secrets/external-secrets-operator.yaml
+  - ../../kubernetes/secrets/secret-store.yaml
+  - ../../kubernetes/storage/local-path-provisioner.yaml
+  - ../../kubernetes/ingress/traefik/
+
+commonLabels:
+  app.kubernetes.io/part-of: homelab
+  app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: traefik
+    newTag: v2.10
+  - name: ghcr.io/external-secrets/external-secrets
+    newTag: v0.9.9
+
+replicas:
+  - name: traefik-deployment
+    count: 1
+  - name: external-secrets-operator
+    count: 1

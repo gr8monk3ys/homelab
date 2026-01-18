@@ -1,0 +1,284 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng-redis
+  namespace: searxng
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: searxng-redis
+  template:
+    metadata:
+      labels:
+        app: searxng-redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+      - name: redis
+        image: redis:7.4.2-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: searxng-redis-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+  namespace: searxng
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: searxng
+  template:
+    metadata:
+      labels:
+        app: searxng
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: searxng
+        image: searxng/searxng:2024.12.16-92484e39c
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SEARXNG_BASE_URL
+          value: "https://search.homelab.local"
+        - name: SEARXNG_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: searxng-secret
+              key: secret-key
+        - name: SEARXNG_REDIS_URL
+          value: "redis://searxng-redis:6379"
+        volumeMounts:
+        - name: searxng-config
+          mountPath: /etc/searxng
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: searxng-config
+        configMap:
+          name: searxng-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: searxng-redis-pvc
+  namespace: searxng
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+# ExternalSecret for SearXNG secret key
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: searxng-secret
+  namespace: searxng
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: searxng-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: secret-key
+    remoteRef:
+      key: searxng-config
+      property: secret-key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng-config
+  namespace: searxng
+data:
+  settings.yml: |
+    use_default_settings: true
+    server:
+      port: 8080
+      bind_address: "0.0.0.0"
+      base_url: "https://search.homelab.local"
+      public_instance: false
+      
+    redis:
+      url: "redis://searxng-redis:6379"
+      
+    ui:
+      static_use_hash: true
+      default_locale: "en"
+      theme_args:
+        simple_style: "dark"
+        
+    search:
+      safe_search: 1
+      autocomplete: "google"
+      default_lang: "en"
+      max_ban_time_on_fail: 5
+      
+    general:
+      debug: false
+      instance_name: "Homelab Search"
+      privacypolicy_url: false
+      donation_url: false
+      contact_url: false
+      enable_metrics: false
+      
+    categories_as_tabs:
+      general:
+      images:
+      videos:
+      news:
+      map:
+      music:
+      it:
+      science:
+      files:
+      social media:
+      
+    engines:
+      - name: google
+        engine: google
+        shortcut: g
+        use_mobile_ui: false
+      - name: duckduckgo
+        engine: duckduckgo
+        shortcut: ddg
+      - name: startpage
+        engine: startpage
+        shortcut: sp
+      - name: bing
+        engine: bing
+        shortcut: bi
+      - name: wikipedia
+        engine: wikipedia
+        shortcut: wp
+        base_url: 'https://{language}.wikipedia.org/'
+      - name: github
+        engine: github
+        shortcut: gh
+      - name: stackoverflow
+        engine: stackoverflow
+        shortcut: so
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng-redis
+  namespace: searxng
+spec:
+  selector:
+    app: searxng-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng
+  namespace: searxng
+spec:
+  selector:
+    app: searxng
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: searxng-ingress
+  namespace: searxng
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - search.homelab.local
+    secretName: searxng-tls
+  rules:
+  - host: search.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: searxng
+            port:
+              number: 8080

@@ -1,0 +1,152 @@
+---
+# Loki - Log aggregation system
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: loki
+  labels:
+    app: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+      - name: loki
+        image: grafana/loki:3.3.2
+        args:
+        - -config.file=/etc/loki/loki-config.yaml
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 3100
+          name: http
+        - containerPort: 9095
+          name: grpc
+        volumeMounts:
+        - name: config
+          mountPath: /etc/loki
+        - name: data
+          mountPath: /loki
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 3100
+          initialDelaySeconds: 45
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3100
+          initialDelaySeconds: 15
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: loki-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: loki-data-pvc
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: loki
+data:
+  loki-config.yaml: |
+    auth_enabled: false
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9095
+
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache:
+            enabled: true
+            max_size_mb: 100
+
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+    ruler:
+      alertmanager_url: http://alertmanager.monitoring.svc.cluster.local:9093
+
+    limits_config:
+      retention_period: 744h
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data-pvc
+  namespace: loki
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: loki
+spec:
+  selector:
+    app: loki
+  ports:
+  - name: http
+    port: 3100
+    targetPort: 3100
+  - name: grpc
+    port: 9095
+    targetPort: 9095
+  type: ClusterIP

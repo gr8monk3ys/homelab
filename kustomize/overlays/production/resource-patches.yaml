@@ -1,0 +1,40 @@
+# Production resource patches
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: not-used
+spec:
+  template:
+    spec:
+      containers:
+      - name: traefik
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        env:
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: METRICS_ENABLED
+          value: "true"
+---
+# Security patches for production
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-config
+data:
+  fail2ban.conf: |
+    [DEFAULT]
+    bantime = 3600
+    findtime = 600
+    maxretry = 3
+    
+    [sshd]
+    enabled = true
+    port = 22
+    filter = sshd
+    logpath = /var/log/auth.log

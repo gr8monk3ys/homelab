@@ -1,0 +1,49 @@
+---
+# Traefik ForwardAuth Middleware for Authelia
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authelia
+  namespace: authelia
+spec:
+  forwardAuth:
+    address: http://authelia.authelia.svc.cluster.local:9091/api/verify?rd=https://auth.homelab.local
+    trustForwardHeader: true
+    authResponseHeaders:
+    - Remote-User
+    - Remote-Groups
+    - Remote-Name
+    - Remote-Email
+---
+# Middleware chain for protected services
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authelia-chain
+  namespace: authelia
+spec:
+  chain:
+    middlewares:
+    - name: authelia
+      namespace: authelia
+---
+# Example: Apply to a service using IngressRoute
+# apiVersion: traefik.io/v1alpha1
+# kind: IngressRoute
+# metadata:
+#   name: example-protected
+#   namespace: example
+# spec:
+#   entryPoints:
+#   - websecure
+#   routes:
+#   - match: Host(`example.homelab.local`)
+#     kind: Rule
+#     services:
+#     - name: example-service
+#       port: 80
+#     middlewares:
+#     - name: authelia
+#       namespace: authelia
+#   tls:
+#     certResolver: letsencrypt

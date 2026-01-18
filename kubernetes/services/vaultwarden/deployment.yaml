@@ -1,0 +1,146 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vaultwarden
+  template:
+    metadata:
+      labels:
+        app: vaultwarden
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: vaultwarden
+        image: vaultwarden/server:1.32.5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: vaultwarden-admin
+              key: admin-token
+        - name: WEBSOCKET_ENABLED
+          value: "true"
+        - name: SIGNUPS_ALLOWED
+          value: "false"  # Disable open signups after initial setup
+        - name: DOMAIN
+          value: "https://vault.homelab.local"
+        ports:
+        - containerPort: 80
+        - containerPort: 3012
+        volumeMounts:
+        - name: vaultwarden-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /alive
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /alive
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: vaultwarden-data
+        persistentVolumeClaim:
+          claimName: vaultwarden-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-pvc
+  namespace: vaultwarden
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden-service
+  namespace: vaultwarden
+spec:
+  selector:
+    app: vaultwarden
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+  - name: websocket
+    port: 3012
+    targetPort: 3012
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vaultwarden-ingress
+  namespace: vaultwarden
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+spec:
+  rules:
+  - host: vault.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vaultwarden-service
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - vault.homelab.local
+    secretName: vaultwarden-tls
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: vaultwarden-admin
+  namespace: vaultwarden
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: vaultwarden-admin
+    creationPolicy: Owner
+  data:
+  - secretKey: admin-token
+    remoteRef:
+      key: vaultwarden-admin
+      property: admin-token

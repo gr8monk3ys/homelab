@@ -1,0 +1,103 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crowdsec-acquis
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+data:
+  acquis.yaml: |
+    # Traefik access logs
+    filenames:
+      - /var/log/traefik/*.log
+    labels:
+      type: traefik
+    ---
+    # Kubernetes audit logs
+    filenames:
+      - /var/log/audit/*.log
+    labels:
+      type: syslog
+    ---
+    # SSH logs (if available)
+    filenames:
+      - /var/log/auth.log
+      - /var/log/secure
+    labels:
+      type: syslog
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crowdsec-config
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+data:
+  config.yaml: |
+    common:
+      daemonize: false
+      log_media: stdout
+      log_level: info
+      log_dir: /var/log/
+      working_dir: .
+    config_paths:
+      config_dir: /etc/crowdsec/
+      data_dir: /var/lib/crowdsec/data/
+      simulation_path: /etc/crowdsec/simulation.yaml
+      hub_dir: /etc/crowdsec/hub/
+      index_path: /etc/crowdsec/hub/.index.json
+      notification_dir: /etc/crowdsec/notifications/
+      plugin_dir: /etc/crowdsec/plugins/
+    crowdsec_service:
+      acquisition_path: /etc/crowdsec/acquis.yaml
+      acquisition_dir: /etc/crowdsec/acquis.d/
+      parser_routines: 1
+    db_config:
+      log_level: info
+      type: sqlite
+      db_path: /var/lib/crowdsec/data/crowdsec.db
+      flush:
+        max_items: 5000
+        max_age: 7d
+    api:
+      client:
+        insecure_skip_verify: false
+        credentials_path: /etc/crowdsec/local_api_credentials.yaml
+      server:
+        log_level: info
+        listen_uri: 0.0.0.0:8080
+        profiles_path: /etc/crowdsec/profiles.yaml
+        trusted_ips:
+          - 127.0.0.1
+          - ::1
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+        online_client:
+          credentials_path: /etc/crowdsec/online_api_credentials.yaml
+    prometheus:
+      enabled: true
+      level: full
+      listen_addr: 0.0.0.0
+      listen_port: 6060
+  profiles.yaml: |
+    name: default_ip_remediation
+    filters:
+      - Alert.Remediation == true && Alert.GetScope() == "Ip"
+    decisions:
+      - type: ban
+        duration: 4h
+    on_success: break
+    ---
+    name: default_range_remediation
+    filters:
+      - Alert.Remediation == true && Alert.GetScope() == "Range"
+    decisions:
+      - type: ban
+        duration: 4h
+    on_success: break
+  simulation.yaml: |
+    simulation: false
+    exclusions: []

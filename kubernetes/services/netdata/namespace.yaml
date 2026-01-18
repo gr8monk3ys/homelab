@@ -1,0 +1,20 @@
+---
+# Netdata requires privileged access for system metrics collection.
+# See deployment.yaml for detailed security documentation and mitigations.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netdata
+  labels:
+    name: netdata
+    # Privileged mode required for:
+    # - SYS_PTRACE capability (process metrics)
+    # - SYS_ADMIN capability (cgroups/container metrics)
+    # - hostNetwork access
+    # - /proc and /sys hostPath mounts
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+  annotations:
+    description: "System monitoring namespace - requires elevated privileges"
+    security.homelab.local/privileged-reason: "Host metrics collection requires SYS_PTRACE and SYS_ADMIN capabilities"

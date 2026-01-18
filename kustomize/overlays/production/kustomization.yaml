@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-production
+
+namespace: homelab
+
+resources:
+  - ../../base
+
+patchesStrategicMerge:
+  - resource-patches.yaml
+
+commonLabels:
+  environment: production
+  tier: prod
+
+replicas:
+  # Production replicas
+  - name: traefik-deployment
+    count: 2
+  - name: external-secrets-operator
+    count: 2
+
+images:
+  # Use stable/pinned versions for production
+  - name: nextcloud
+    newTag: 28-apache
+  - name: gitea/gitea
+    newTag: 1.21.0
+  - name: traefik
+    newTag: v2.10.4
+
+configMapGenerator:
+  - name: homelab-config
+    literals:
+      - domain=homelab.local
+      - timezone=America/New_York
+      - environment=production
+      - log_level=info
+      - backup_enabled=true
+      - monitoring_enabled=true
+
+patchesJson6902:
+  # Add resource limits for production
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: traefik-deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"

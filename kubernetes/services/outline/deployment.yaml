@@ -1,0 +1,219 @@
+---
+# Outline - Team wiki and knowledge base
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: outline
+  labels:
+    app: outline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: outline
+  template:
+    metadata:
+      labels:
+        app: outline
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z outline-postgres 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      - name: wait-for-redis
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z outline-redis 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: outline
+        image: outlinewiki/outline:0.82.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: outline-secret
+              key: secret-key
+        - name: UTILS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: outline-secret
+              key: utils-secret
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: outline-secret
+              key: database-url
+        - name: REDIS_URL
+          value: "redis://outline-redis:6379"
+        - name: URL
+          value: "https://wiki.homelab.local"
+        - name: PORT
+          value: "3000"
+        - name: FILE_STORAGE
+          value: "local"
+        - name: FILE_STORAGE_LOCAL_ROOT_DIR
+          value: "/var/lib/outline/data"
+        - name: FILE_STORAGE_UPLOAD_MAX_SIZE
+          value: "26214400"
+        - name: FORCE_HTTPS
+          value: "false"
+        - name: ENABLE_UPDATES
+          value: "false"
+        - name: SLACK_CLIENT_ID
+          value: ""
+        - name: SLACK_CLIENT_SECRET
+          value: ""
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/outline/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /_health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /_health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: outline-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: outline-data-pvc
+  namespace: outline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: outline
+  namespace: outline
+spec:
+  selector:
+    app: outline
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: outline-ingress
+  namespace: outline
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - wiki.homelab.local
+    secretName: outline-tls
+  rules:
+  - host: wiki.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: outline
+            port:
+              number: 3000
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: outline-secret
+  namespace: outline
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: outline-secret
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        secret-key: "{{ .secretKey }}"
+        utils-secret: "{{ .utilsSecret }}"
+        database-url: "postgres://outline:{{ .dbPassword }}@outline-postgres:5432/outline"
+  data:
+  - secretKey: secretKey
+    remoteRef:
+      key: outline-secret-key
+      property: key
+  - secretKey: utilsSecret
+    remoteRef:
+      key: outline-utils-secret
+      property: key
+  - secretKey: dbPassword
+    remoteRef:
+      key: outline-db-password
+      property: password

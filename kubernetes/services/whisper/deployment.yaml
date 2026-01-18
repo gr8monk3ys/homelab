@@ -1,0 +1,116 @@
+---
+# Whisper - OpenAI Speech-to-Text (faster-whisper implementation)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper
+  namespace: whisper
+  labels:
+    app: whisper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whisper
+  template:
+    metadata:
+      labels:
+        app: whisper
+    spec:
+      containers:
+      - name: whisper
+        image: fedirz/faster-whisper-server:0.3.1
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: WHISPER__MODEL
+          value: "Systran/faster-whisper-base"
+        - name: WHISPER__INFERENCE_DEVICE
+          value: "cpu"  # or "cuda" for GPU
+        - name: WHISPER__COMPUTE_TYPE
+          value: "int8"  # or "float16" for GPU
+        volumeMounts:
+        - name: models
+          mountPath: /root/.cache/huggingface
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 60
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: whisper-models-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: whisper-models-pvc
+  namespace: whisper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper
+  namespace: whisper
+spec:
+  selector:
+    app: whisper
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whisper-ingress
+  namespace: whisper
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - whisper.homelab.local
+    secretName: whisper-tls
+  rules:
+  - host: whisper.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: whisper
+            port:
+              number: 8000

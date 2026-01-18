@@ -1,0 +1,174 @@
+---
+# NocoDB - Airtable alternative / database platform
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nocodb
+  namespace: nocodb
+  labels:
+    app: nocodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nocodb
+  template:
+    metadata:
+      labels:
+        app: nocodb
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z nocodb-postgres 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: nocodb
+        image: nocodb/nocodb:0.261.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: NC_DB
+          valueFrom:
+            secretKeyRef:
+              name: nocodb-secret
+              key: database-url
+        - name: NC_AUTH_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: nocodb-secret
+              key: jwt-secret
+        - name: NC_PUBLIC_URL
+          value: "https://nocodb.homelab.local"
+        - name: NC_DISABLE_TELE
+          value: "true"
+        volumeMounts:
+        - name: data
+          mountPath: /usr/app/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: nocodb-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nocodb-data-pvc
+  namespace: nocodb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nocodb
+  namespace: nocodb
+spec:
+  selector:
+    app: nocodb
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nocodb-ingress
+  namespace: nocodb
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - nocodb.homelab.local
+    secretName: nocodb-tls
+  rules:
+  - host: nocodb.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nocodb
+            port:
+              number: 8080
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: nocodb-secret
+  namespace: nocodb
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: nocodb-secret
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        database-url: "pg://nocodb:{{ .dbPassword }}@nocodb-postgres:5432/nocodb"
+        jwt-secret: "{{ .jwtSecret }}"
+  data:
+  - secretKey: dbPassword
+    remoteRef:
+      key: nocodb-db-password
+      property: password
+  - secretKey: jwtSecret
+    remoteRef:
+      key: nocodb-jwt-secret
+      property: secret

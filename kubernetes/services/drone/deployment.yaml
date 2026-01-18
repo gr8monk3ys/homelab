@@ -1,0 +1,360 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drone-server
+  namespace: drone
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drone-server
+  template:
+    metadata:
+      labels:
+        app: drone-server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: drone-server
+        image: drone/drone:2.24.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 443
+          name: https
+        env:
+        - name: DRONE_GITEA_SERVER
+          value: "https://git.homelab.local"
+        - name: DRONE_GITEA_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: gitea-client-id
+        - name: DRONE_GITEA_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: gitea-client-secret
+        - name: DRONE_RPC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: rpc-secret
+        - name: DRONE_SERVER_HOST
+          value: "drone.homelab.local"
+        - name: DRONE_SERVER_PROTO
+          value: "https"
+        - name: DRONE_DATABASE_DRIVER
+          value: "postgres"
+        - name: DRONE_DATABASE_DATASOURCE
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: database-url
+        - name: DRONE_USER_CREATE
+          value: "username:admin,admin:true"
+        - name: DRONE_REGISTRATION_CLOSED
+          value: "true"
+        volumeMounts:
+        - name: drone-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: drone-data
+        persistentVolumeClaim:
+          claimName: drone-data-pvc
+---
+# Drone Runner Deployment
+# SECURITY NOTE: This deployment mounts the Docker socket for container builds.
+# This is a security-sensitive operation that grants container control.
+# Consider using Drone Kubernetes Runner for improved isolation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drone-runner
+  namespace: drone
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: drone-runner
+  template:
+    metadata:
+      labels:
+        app: drone-runner
+    spec:
+      # Note: Cannot use runAsNonRoot due to Docker socket access requirements
+      containers:
+      - name: drone-runner
+        image: drone/drone-runner-docker:1.8.3
+        securityContext:
+          # Docker socket access requires specific permissions
+          # Minimize other privileges where possible
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - SETUID
+              - SETGID
+        env:
+        - name: DRONE_RPC_PROTO
+          value: "https"
+        - name: DRONE_RPC_HOST
+          value: "drone.homelab.local"
+        - name: DRONE_RPC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: rpc-secret
+        - name: DRONE_RUNNER_CAPACITY
+          value: "2"
+        - name: DRONE_RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: DRONE_REGISTRY_ENDPOINT
+          value: "https://registry.homelab.local"
+        volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep drone-runner"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "pgrep drone-runner"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drone-db
+  namespace: drone
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drone-db
+  template:
+    metadata:
+      labels:
+        app: drone-db
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+      - name: postgres
+        image: postgres:15.10
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: POSTGRES_USER
+          value: "drone"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: drone-secret
+              key: db-password
+        - name: POSTGRES_DB
+          value: "drone"
+        volumeMounts:
+        - name: drone-db-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - drone
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - drone
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: drone-db-data
+        persistentVolumeClaim:
+          claimName: drone-db-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drone-data-pvc
+  namespace: drone
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drone-db-pvc
+  namespace: drone
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+# ExternalSecret for Drone CI credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: drone-secret
+  namespace: drone
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: drone-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: gitea-client-id
+    remoteRef:
+      key: drone-config
+      property: gitea-client-id
+  - secretKey: gitea-client-secret
+    remoteRef:
+      key: drone-config
+      property: gitea-client-secret
+  - secretKey: rpc-secret
+    remoteRef:
+      key: drone-config
+      property: rpc-secret
+  - secretKey: db-password
+    remoteRef:
+      key: drone-config
+      property: db-password
+  - secretKey: database-url
+    remoteRef:
+      key: drone-config
+      property: database-url
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone-server
+  namespace: drone
+spec:
+  selector:
+    app: drone-server
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone-db
+  namespace: drone
+spec:
+  selector:
+    app: drone-db
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: drone-ingress
+  namespace: drone
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - drone.homelab.local
+    secretName: drone-tls
+  rules:
+  - host: drone.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: drone-server
+            port:
+              number: 80

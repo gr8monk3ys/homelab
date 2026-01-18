@@ -1,0 +1,208 @@
+---
+# Hoppscotch - Open source API development ecosystem
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoppscotch
+  namespace: hoppscotch
+  labels:
+    app: hoppscotch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hoppscotch
+  template:
+    metadata:
+      labels:
+        app: hoppscotch
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z hoppscotch-postgres 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: hoppscotch
+        image: hoppscotch/hoppscotch:2024.12.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 3100
+          name: admin
+        - containerPort: 3170
+          name: backend
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: hoppscotch-secret
+              key: database-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: hoppscotch-secret
+              key: jwt-secret
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: hoppscotch-secret
+              key: session-secret
+        - name: REFRESH_TOKEN_VALIDITY
+          value: "604800000"
+        - name: ACCESS_TOKEN_VALIDITY
+          value: "86400000"
+        - name: VITE_ALLOWED_AUTH_PROVIDERS
+          value: "EMAIL"
+        - name: MAILER_SMTP_ENABLE
+          value: "false"
+        - name: RATE_LIMIT_TTL
+          value: "60"
+        - name: RATE_LIMIT_MAX
+          value: "100"
+        - name: VITE_BASE_URL
+          value: "https://hoppscotch.homelab.local"
+        - name: VITE_SHORTCODE_BASE_URL
+          value: "https://hoppscotch.homelab.local"
+        - name: VITE_ADMIN_URL
+          value: "https://hoppscotch.homelab.local/admin"
+        - name: VITE_BACKEND_GQL_URL
+          value: "https://hoppscotch.homelab.local/backend/graphql"
+        - name: VITE_BACKEND_WS_URL
+          value: "wss://hoppscotch.homelab.local/backend/graphql"
+        - name: VITE_BACKEND_API_URL
+          value: "https://hoppscotch.homelab.local/backend/v1"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoppscotch
+  namespace: hoppscotch
+spec:
+  selector:
+    app: hoppscotch
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  - name: admin
+    port: 3100
+    targetPort: 3100
+  - name: backend
+    port: 3170
+    targetPort: 3170
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hoppscotch-ingress
+  namespace: hoppscotch
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - hoppscotch.homelab.local
+    secretName: hoppscotch-tls
+  rules:
+  - host: hoppscotch.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hoppscotch
+            port:
+              number: 3000
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service:
+            name: hoppscotch
+            port:
+              number: 3100
+      - path: /backend
+        pathType: Prefix
+        backend:
+          service:
+            name: hoppscotch
+            port:
+              number: 3170
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: hoppscotch-secret
+  namespace: hoppscotch
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: hoppscotch-secret
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        database-url: "postgres://hoppscotch:{{ .dbPassword }}@hoppscotch-postgres:5432/hoppscotch"
+        jwt-secret: "{{ .jwtSecret }}"
+        session-secret: "{{ .sessionSecret }}"
+  data:
+  - secretKey: dbPassword
+    remoteRef:
+      key: hoppscotch-db-password
+      property: password
+  - secretKey: jwtSecret
+    remoteRef:
+      key: hoppscotch-jwt-secret
+      property: secret
+  - secretKey: sessionSecret
+    remoteRef:
+      key: hoppscotch-session-secret
+      property: secret

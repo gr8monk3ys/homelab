@@ -1,0 +1,188 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nextcloud
+  labels:
+    name: nextcloud
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nextcloud-mysql
+  namespace: nextcloud
+  labels:
+    app: nextcloud-mysql
+spec:
+  serviceName: nextcloud-mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nextcloud-mysql
+  template:
+    metadata:
+      labels:
+        app: nextcloud-mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0.40
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-root-password
+              key: password
+        - name: MYSQL_DATABASE
+          value: "nextcloud"
+        - name: MYSQL_USER
+          value: "nextcloud"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: nextcloud-db-password
+              key: password
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: mysql-config
+          mountPath: /etc/mysql/conf.d
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+            - -u
+            - root
+            - -p$(MYSQL_ROOT_PASSWORD)
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - mysql
+            - -h
+            - localhost
+            - -u
+            - root
+            - -p$(MYSQL_ROOT_PASSWORD)
+            - -e
+            - "SELECT 1"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+      volumes:
+      - name: mysql-config
+        configMap:
+          name: mysql-config
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: local-path
+      resources:
+        requests:
+          storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: nextcloud
+data:
+  custom.cnf: |
+    [mysqld]
+    # Performance optimizations
+    innodb_buffer_pool_size = 512M
+    max_connections = 100
+    query_cache_size = 32M
+    query_cache_limit = 2M
+    
+    # Security
+    local_infile = 0
+    skip_show_database
+    
+    # Character set
+    character_set_server = utf8mb4
+    collation_server = utf8mb4_unicode_ci
+    
+    # Logging
+    slow_query_log = 1
+    slow_query_log_file = /var/lib/mysql/slow.log
+    long_query_time = 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextcloud-mysql-service
+  namespace: nextcloud
+  labels:
+    app: nextcloud-mysql
+spec:
+  ports:
+  - port: 3306
+    targetPort: 3306
+    name: mysql
+  selector:
+    app: nextcloud-mysql
+  type: ClusterIP
+---
+# External Secret to pull from secrets namespace
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: mysql-root-password
+  namespace: nextcloud
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: mysql-root-password
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: mysql-root-password
+      property: password
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: nextcloud-db-password
+  namespace: nextcloud
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: nextcloud-db-password
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: nextcloud-db-password
+      property: password

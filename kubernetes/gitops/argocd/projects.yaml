@@ -1,0 +1,105 @@
+---
+# Main homelab project for all infrastructure
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab-infrastructure
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  description: Homelab infrastructure components
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: '*'
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true
+---
+# Project for media services
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab-media
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  description: Media and entertainment services
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: jellyfin
+    server: https://kubernetes.default.svc
+  - namespace: arr-stack
+    server: https://kubernetes.default.svc
+  - namespace: audiobookshelf
+    server: https://kubernetes.default.svc
+  - namespace: immich
+    server: https://kubernetes.default.svc
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true
+---
+# Project for productivity services
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab-productivity
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  description: Productivity and automation services
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: nextcloud
+    server: https://kubernetes.default.svc
+  - namespace: paperless-ngx
+    server: https://kubernetes.default.svc
+  - namespace: n8n
+    server: https://kubernetes.default.svc
+  - namespace: mealie
+    server: https://kubernetes.default.svc
+  - namespace: linkwarden
+    server: https://kubernetes.default.svc
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true
+---
+# Project for security services
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab-security
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  description: Security and authentication services
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: vaultwarden
+    server: https://kubernetes.default.svc
+  - namespace: authelia
+    server: https://kubernetes.default.svc
+  - namespace: crowdsec
+    server: https://kubernetes.default.svc
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true

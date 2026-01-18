@@ -1,0 +1,181 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authelia-config
+  namespace: authelia
+  labels:
+    app: authelia
+data:
+  configuration.yml: |
+    ---
+    # Authelia Configuration
+    # https://www.authelia.com/configuration/
+
+    theme: auto
+
+    server:
+      address: 'tcp://:9091'
+      buffers:
+        read: 4096
+        write: 4096
+      endpoints:
+        enable_pprof: false
+        enable_expvars: false
+      disable_healthcheck: false
+      tls:
+        key: ""
+        certificate: ""
+
+    log:
+      level: info
+      format: json
+      file_path: ""
+      keep_stdout: true
+
+    totp:
+      disable: false
+      issuer: homelab.local
+      algorithm: sha1
+      digits: 6
+      period: 30
+      skew: 1
+
+    webauthn:
+      disable: false
+      timeout: 60s
+      display_name: Homelab
+      attestation_conveyance_preference: indirect
+      user_verification: preferred
+
+    duo_api:
+      disable: true
+
+    ntp:
+      address: "time.cloudflare.com:123"
+      version: 4
+      max_desync: 3s
+      disable_startup_check: false
+      disable_failure: false
+
+    authentication_backend:
+      password_reset:
+        disable: false
+      file:
+        path: /config/users_database.yml
+        password:
+          algorithm: argon2id
+          iterations: 3
+          memory: 65536
+          parallelism: 4
+          key_length: 32
+          salt_length: 16
+
+    access_control:
+      default_policy: deny
+      rules:
+        # Public endpoints
+        - domain: "auth.homelab.local"
+          policy: bypass
+
+        # Admin-only services
+        - domain: "argocd.homelab.local"
+          policy: two_factor
+          subject:
+            - "group:admins"
+
+        - domain: "grafana.homelab.local"
+          policy: two_factor
+          subject:
+            - "group:admins"
+
+        # Media services - one factor for convenience
+        - domain: "jellyfin.homelab.local"
+          policy: one_factor
+
+        - domain: "sonarr.homelab.local"
+          policy: one_factor
+
+        - domain: "radarr.homelab.local"
+          policy: one_factor
+
+        - domain: "prowlarr.homelab.local"
+          policy: one_factor
+
+        - domain: "bazarr.homelab.local"
+          policy: one_factor
+
+        - domain: "audiobooks.homelab.local"
+          policy: one_factor
+
+        # Productivity services
+        - domain: "nextcloud.homelab.local"
+          policy: one_factor
+
+        - domain: "docs.homelab.local"
+          policy: one_factor
+
+        - domain: "photos.homelab.local"
+          policy: one_factor
+
+        - domain: "recipes.homelab.local"
+          policy: one_factor
+
+        - domain: "bookmarks.homelab.local"
+          policy: one_factor
+
+        - domain: "automation.homelab.local"
+          policy: two_factor
+          subject:
+            - "group:admins"
+
+        # AI services
+        - domain: "ai.homelab.local"
+          policy: one_factor
+
+        - domain: "chat.homelab.local"
+          policy: one_factor
+
+        # Dashboard
+        - domain: "home.homelab.local"
+          policy: one_factor
+
+        # Sensitive services - require 2FA
+        - domain: "vault.homelab.local"
+          policy: two_factor
+
+        - domain: "git.homelab.local"
+          policy: two_factor
+
+    session:
+      name: authelia_session
+      domain: homelab.local
+      same_site: lax
+      expiration: 12h
+      inactivity: 45m
+      remember_me_duration: 1M
+      redis:
+        host: authelia-redis
+        port: 6379
+
+    regulation:
+      max_retries: 3
+      find_time: 2m
+      ban_time: 5m
+
+    storage:
+      local:
+        path: /config/db.sqlite3
+
+    notifier:
+      disable_startup_check: false
+      filesystem:
+        filename: /config/notification.txt
+      # For production, configure SMTP:
+      # smtp:
+      #   address: 'smtp://mail.homelab.local:587'
+      #   username: 'authelia@homelab.local'
+      #   sender: 'Authelia <authelia@homelab.local>'
+
+  # Note: users_database.yml is managed via ExternalSecret for security
+  # See authelia-users-secret for user credentials

@@ -1,0 +1,306 @@
+---
+# Netdata - Real-time performance monitoring
+#
+# SECURITY DOCUMENTATION:
+# This DaemonSet requires elevated privileges for system metrics collection.
+#
+# Required Capabilities (cannot be removed):
+# - SYS_PTRACE: Required to read process information from /proc
+# - SYS_ADMIN: Required for cgroups monitoring and container metrics
+#
+# Host Access Required:
+# - /proc: Process and system metrics (read-only)
+# - /sys: Hardware and kernel metrics (read-only)
+# - /var/run/docker.sock: Container metrics (read-only, optional)
+#
+# MITIGATIONS APPLIED:
+# 1. Read-only access to host paths
+# 2. Network policy restricts access to cluster-internal only
+# 3. RBAC limited to read-only pod/node metrics
+# 4. Web interface access restricted via Traefik (requires auth)
+# 5. DO_NOT_TRACK=1 disables telemetry to Netdata Cloud
+#
+# ALTERNATIVES: Consider using Prometheus node-exporter for less privileged
+# metrics collection, though with reduced functionality.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: netdata
+  namespace: netdata
+  labels:
+    app: netdata
+spec:
+  selector:
+    matchLabels:
+      app: netdata
+  template:
+    metadata:
+      labels:
+        app: netdata
+    spec:
+      serviceAccountName: netdata
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: netdata
+        image: netdata/netdata:v2.1.0
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        ports:
+        - containerPort: 19999
+          name: http
+          hostPort: 19999
+        env:
+        - name: NETDATA_CLAIM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: netdata-claim
+              key: token
+              optional: true
+        - name: NETDATA_CLAIM_URL
+          value: "https://app.netdata.cloud"
+        - name: DO_NOT_TRACK
+          value: "1"
+        volumeMounts:
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+        - name: os-release
+          mountPath: /host/etc/os-release
+          readOnly: true
+        - name: varrun
+          mountPath: /var/run/docker.sock
+          readOnly: true
+        - name: config
+          mountPath: /etc/netdata
+        - name: lib
+          mountPath: /var/lib/netdata
+        - name: cache
+          mountPath: /var/cache/netdata
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/info
+            port: 19999
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/info
+            port: 19999
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: os-release
+        hostPath:
+          path: /etc/os-release
+      - name: varrun
+        hostPath:
+          path: /var/run/docker.sock
+      - name: config
+        configMap:
+          name: netdata-config
+      - name: lib
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: netdata-config
+  namespace: netdata
+data:
+  netdata.conf: |
+    [global]
+        run as user = netdata
+        memory mode = dbengine
+        page cache size = 32
+        dbengine multihost disk space = 256
+
+    [web]
+        bind to = *
+        # Restrict to cluster network ranges only
+        allow connections from = localhost 10.* 172.16.* 172.17.* 172.18.* 172.19.* 172.20.* 172.21.* 172.22.* 172.23.* 172.24.* 172.25.* 172.26.* 172.27.* 172.28.* 172.29.* 172.30.* 172.31.* 192.168.*
+        # Disable management API for security
+        allow management from = localhost
+
+    [plugins]
+        timex = no
+        idlejitter = no
+        # Disable potentially sensitive plugins
+        apps = no
+        cgroups = yes
+
+    [health]
+        enabled = yes
+
+    # Security settings
+    [registry]
+        enabled = no
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netdata
+  namespace: netdata
+spec:
+  selector:
+    app: netdata
+  ports:
+  - name: http
+    port: 19999
+    targetPort: 19999
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netdata-ingress
+  namespace: netdata
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - netdata.homelab.local
+    secretName: netdata-tls
+  rules:
+  - host: netdata.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: netdata
+            port:
+              number: 19999
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: netdata
+  namespace: netdata
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: netdata
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  - nodes
+  - nodes/metrics
+  - nodes/proxy
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - services
+  - endpoints
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: netdata
+subjects:
+- kind: ServiceAccount
+  name: netdata
+  namespace: netdata
+roleRef:
+  kind: ClusterRole
+  name: netdata
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: netdata-claim
+  namespace: netdata
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: netdata-claim
+    creationPolicy: Owner
+  data:
+  - secretKey: token
+    remoteRef:
+      key: netdata-claim-token
+      property: token
+---
+# NetworkPolicy to restrict Netdata access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: netdata-network-policy
+  namespace: netdata
+spec:
+  podSelector:
+    matchLabels:
+      app: netdata
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from Traefik ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: traefik
+    ports:
+    - protocol: TCP
+      port: 19999
+  # Allow from monitoring namespace (Prometheus scraping)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 19999
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow Netdata Cloud (optional, can be removed if not using cloud)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443

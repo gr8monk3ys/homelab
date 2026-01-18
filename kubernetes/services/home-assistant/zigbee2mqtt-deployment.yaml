@@ -1,0 +1,172 @@
+---
+# Zigbee2MQTT - Bridge Zigbee devices to MQTT
+# Note: Requires a Zigbee coordinator (USB dongle) attached to the node
+#
+# SECURITY NOTES:
+# - This deployment uses device-specific permissions instead of full privileged mode
+# - The container runs as dialout group (20) for serial device access
+# - Pin to a dedicated node using nodeSelector for better isolation
+# - Consider using smarter-device-manager for dynamic device allocation
+#
+# SETUP REQUIREMENTS:
+# 1. Label your node: kubectl label node <node-name> zigbee-dongle=true
+# 2. Ensure /dev/ttyUSB0 exists on the target node
+# 3. Uncomment the device volume mounts below
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zigbee2mqtt
+  namespace: home-assistant
+  labels:
+    app: zigbee2mqtt
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: zigbee2mqtt
+  template:
+    metadata:
+      labels:
+        app: zigbee2mqtt
+    spec:
+      # IMPORTANT: Uncomment to pin to node with Zigbee dongle
+      # nodeSelector:
+      #   zigbee-dongle: "true"
+      securityContext:
+        # Run as user with dialout group access for serial devices
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        supplementalGroups:
+          - 20   # dialout group for serial device access
+          - 997  # gpio group (if needed)
+      containers:
+      - name: zigbee2mqtt
+        image: koenkk/zigbee2mqtt:1.42.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          # Note: readOnlyRootFilesystem not used as zigbee2mqtt writes to /app
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: TZ
+          value: "UTC"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: config
+          mountPath: /app/data/configuration.yaml
+          subPath: configuration.yaml
+        # IMPORTANT: Uncomment to passthrough USB Zigbee dongle
+        # - name: zigbee-device
+        #   mountPath: /dev/ttyUSB0
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: zigbee2mqtt-data-pvc
+      - name: config
+        configMap:
+          name: zigbee2mqtt-config
+      # IMPORTANT: Uncomment for USB device passthrough
+      # - name: zigbee-device
+      #   hostPath:
+      #     path: /dev/ttyUSB0
+      #     type: CharDevice
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zigbee2mqtt-data-pvc
+  namespace: home-assistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zigbee2mqtt-config
+  namespace: home-assistant
+data:
+  configuration.yaml: |
+    homeassistant: true
+    permit_join: false
+    mqtt:
+      base_topic: zigbee2mqtt
+      server: mqtt://mosquitto:1883
+    serial:
+      port: /dev/ttyUSB0
+    frontend:
+      port: 8080
+    advanced:
+      log_level: info
+      network_key: GENERATE
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zigbee2mqtt
+  namespace: home-assistant
+spec:
+  selector:
+    app: zigbee2mqtt
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zigbee2mqtt-ingress
+  namespace: home-assistant
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - zigbee.homelab.local
+    secretName: zigbee2mqtt-tls
+  rules:
+  - host: zigbee.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: zigbee2mqtt
+            port:
+              number: 8080

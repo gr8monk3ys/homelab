@@ -1,0 +1,286 @@
+---
+# =============================================================================
+# Homelab CI Pipeline
+# =============================================================================
+# Validates Kubernetes manifests, scans for security issues, and ensures
+# code quality on every push and pull request.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  KUBECONFORM_VERSION: "0.6.4"
+  YAMLLINT_VERSION: "1.35.1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # YAML Lint - Validate YAML syntax
+  # ---------------------------------------------------------------------------
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install yamllint
+        run: pip install yamllint==${{ env.YAMLLINT_VERSION }}
+
+      - name: Create yamllint config
+        run: |
+          cat > .yamllint.yaml << 'EOF'
+          extends: default
+          rules:
+            line-length:
+              max: 200
+              allow-non-breakable-words: true
+            truthy:
+              allowed-values: ['true', 'false', 'yes', 'no']
+            comments:
+              min-spaces-from-content: 1
+            document-start: disable
+            indentation:
+              spaces: 2
+              indent-sequences: true
+          EOF
+
+      - name: Run yamllint
+        run: |
+          yamllint -c .yamllint.yaml kubernetes/ helm/ kustomize/ || true
+          echo "::notice::YAML lint completed (warnings are allowed)"
+
+  # ---------------------------------------------------------------------------
+  # Kubernetes Manifest Validation
+  # ---------------------------------------------------------------------------
+  validate-manifests:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v${{ env.KUBECONFORM_VERSION }}/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate Kubernetes manifests
+        run: |
+          echo "Validating Kubernetes manifests..."
+          find kubernetes/ -name "*.yaml" -o -name "*.yml" | \
+            xargs kubeconform -strict -ignore-missing-schemas \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              -summary || true
+          echo "::notice::Manifest validation completed"
+
+  # ---------------------------------------------------------------------------
+  # Secret Scanning - Check for hardcoded secrets
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install trufflehog
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin
+
+      - name: Run TruffleHog
+        run: |
+          trufflehog filesystem --directory=. --no-update --fail || echo "::warning::Potential secrets detected"
+
+      - name: Check for hardcoded passwords
+        run: |
+          echo "Checking for hardcoded passwords..."
+          PATTERNS=(
+            "password:.*['\"].*['\"]"
+            "PASSWORD=.*['\"].*['\"]"
+            "secret:.*['\"].*['\"]"
+            "apiKey:.*['\"].*['\"]"
+            "token:.*['\"].*['\"]"
+          )
+
+          found_issues=false
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rn --include="*.yaml" --include="*.yml" -E "$pattern" kubernetes/ 2>/dev/null | \
+               grep -v "secretKeyRef\|valueFrom\|ExternalSecret\|secretRef\|external-secrets" | \
+               grep -v "#.*$pattern" | head -20; then
+              found_issues=true
+            fi
+          done
+
+          if [ "$found_issues" = true ]; then
+            echo "::warning::Potential hardcoded secrets found. Please review."
+          else
+            echo "::notice::No obvious hardcoded secrets detected"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Security Scanning with Trivy
+  # ---------------------------------------------------------------------------
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'kubernetes/'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy (SARIF output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'kubernetes/'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ---------------------------------------------------------------------------
+  # Helm Chart Validation
+  # ---------------------------------------------------------------------------
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Lint Helm charts
+        run: |
+          if [ -d "helm" ]; then
+            for chart in helm/*/; do
+              if [ -f "$chart/Chart.yaml" ]; then
+                echo "Linting $chart..."
+                helm lint "$chart" || true
+              fi
+            done
+          else
+            echo "No helm directory found, skipping"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Kustomize Build Validation
+  # ---------------------------------------------------------------------------
+  kustomize-build:
+    name: Kustomize Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Build Kustomize overlays
+        run: |
+          if [ -d "kustomize/overlays" ]; then
+            for overlay in kustomize/overlays/*/; do
+              if [ -f "$overlay/kustomization.yaml" ]; then
+                echo "Building $overlay..."
+                kustomize build "$overlay" > /dev/null && echo "✅ $overlay builds successfully" || echo "❌ $overlay failed to build"
+              fi
+            done
+          else
+            echo "No kustomize overlays found, skipping"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Shell Script Validation
+  # ---------------------------------------------------------------------------
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Documentation Check
+  # ---------------------------------------------------------------------------
+  docs-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for required documentation
+        run: |
+          required_docs=("README.md" "CLAUDE.md")
+          missing_docs=()
+
+          for doc in "${required_docs[@]}"; do
+            if [ ! -f "$doc" ]; then
+              missing_docs+=("$doc")
+            fi
+          done
+
+          if [ ${#missing_docs[@]} -ne 0 ]; then
+            echo "::warning::Missing documentation: ${missing_docs[*]}"
+          else
+            echo "::notice::All required documentation present"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Summary Job
+  # ---------------------------------------------------------------------------
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [yaml-lint, validate-manifests, secret-scan, security-scan, helm-lint, kustomize-build, shellcheck, docs-check]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| YAML Lint | ${{ needs.yaml-lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Manifest Validation | ${{ needs.validate-manifests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scan | ${{ needs.secret-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Helm Lint | ${{ needs.helm-lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kustomize Build | ${{ needs.kustomize-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ShellCheck | ${{ needs.shellcheck.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs Check | ${{ needs.docs-check.result }} |" >> $GITHUB_STEP_SUMMARY

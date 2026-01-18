@@ -1,0 +1,141 @@
+---
+# Node-RED - Flow-based automation programming
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-red
+  namespace: home-assistant
+  labels:
+    app: node-red
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-red
+  template:
+    metadata:
+      labels:
+        app: node-red
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: node-red
+        image: nodered/node-red:4.0.5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 1880
+          name: http
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: NODE_RED_CREDENTIAL_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: node-red-secret
+              key: credential-secret
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 1880
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 1880
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: node-red-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: node-red-data-pvc
+  namespace: home-assistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-red
+  namespace: home-assistant
+spec:
+  selector:
+    app: node-red
+  ports:
+  - name: http
+    port: 1880
+    targetPort: 1880
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: node-red-ingress
+  namespace: home-assistant
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - nodered.homelab.local
+    secretName: node-red-tls
+  rules:
+  - host: nodered.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: node-red
+            port:
+              number: 1880
+---
+# ExternalSecret for Node-RED credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: node-red-secret
+  namespace: home-assistant
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: node-red-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: credential-secret
+    remoteRef:
+      key: node-red-config
+      property: credential-secret

@@ -1,0 +1,176 @@
+---
+# Element Web - Matrix web client
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: element-web
+  namespace: matrix
+  labels:
+    app: element-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: element-web
+  template:
+    metadata:
+      labels:
+        app: element-web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+      containers:
+      - name: element-web
+        image: vectorim/element-web:v1.11.86
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /app/config.json
+          subPath: config.json
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+        - name: tmp
+          mountPath: /tmp
+        - name: var-cache
+          mountPath: /var/cache/nginx
+        - name: var-run
+          mountPath: /var/run
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: element-config
+      - name: nginx-config
+        configMap:
+          name: element-nginx-config
+      - name: tmp
+        emptyDir: {}
+      - name: var-cache
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: element-config
+  namespace: matrix
+data:
+  config.json: |
+    {
+      "default_server_config": {
+        "m.homeserver": {
+          "base_url": "https://matrix.homelab.local",
+          "server_name": "matrix.homelab.local"
+        }
+      },
+      "brand": "Element",
+      "integrations_ui_url": "",
+      "integrations_rest_url": "",
+      "integrations_widgets_urls": [],
+      "default_theme": "dark",
+      "room_directory": {
+        "servers": ["matrix.homelab.local"]
+      },
+      "enable_presence_by_hs_url": {
+        "https://matrix.homelab.local": true
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: element-nginx-config
+  namespace: matrix
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+
+        root /app;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+        # Gzip compression
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: element-web
+  namespace: matrix
+spec:
+  selector:
+    app: element-web
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: element-ingress
+  namespace: matrix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - element.homelab.local
+    secretName: element-tls
+  rules:
+  - host: element.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: element-web
+            port:
+              number: 8080

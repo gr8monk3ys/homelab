@@ -1,0 +1,66 @@
+use_default_settings: true
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  base_url: "http://search.homelab.local"
+  public_instance: false
+  
+redis:
+  url: "redis://searxng-redis:6379"
+  
+ui:
+  static_use_hash: true
+  default_locale: "en"
+  theme_args:
+    simple_style: "dark"
+    
+search:
+  safe_search: 1
+  autocomplete: "google"
+  default_lang: "en"
+  max_ban_time_on_fail: 5
+  
+general:
+  debug: false
+  instance_name: "Homelab Search"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+  
+categories_as_tabs:
+  general:
+  images:
+  videos:
+  news:
+  map:
+  music:
+  it:
+  science:
+  files:
+  social media:
+  
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    use_mobile_ui: false
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: startpage
+    engine: startpage
+    shortcut: sp
+  - name: bing
+    engine: bing
+    shortcut: bi
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    base_url: 'https://{language}.wikipedia.org/'
+  - name: github
+    engine: github
+    shortcut: gh
+  - name: stackoverflow
+    engine: stackoverflow
+    shortcut: so

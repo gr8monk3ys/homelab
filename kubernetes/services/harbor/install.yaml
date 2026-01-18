@@ -1,0 +1,142 @@
+# Harbor installation script - to be run via helm
+# helm repo add harbor https://helm.goharbor.io
+# helm upgrade --install harbor harbor/harbor --namespace harbor --values values.yaml
+---
+# ExternalSecret for Harbor admin credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: harbor-admin
+  namespace: harbor
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: harbor-admin
+    creationPolicy: Owner
+  data:
+  - secretKey: password
+    remoteRef:
+      key: harbor-admin
+      property: password
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-install-script
+  namespace: harbor
+data:
+  install.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Adding Harbor Helm repository..."
+    helm repo add harbor https://helm.goharbor.io
+    helm repo update
+    
+    echo "Installing Harbor..."
+    helm upgrade --install harbor harbor/harbor \
+      --namespace harbor \
+      --values /config/values.yaml \
+      --wait
+    
+    echo "Harbor installation completed!"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harbor-installer
+  namespace: harbor
+spec:
+  template:
+    spec:
+      containers:
+      - name: installer
+        image: alpine/helm:3.16.3
+        command: ["/bin/sh", "/scripts/install.sh"]
+        volumeMounts:
+        - name: install-script
+          mountPath: /scripts
+        - name: values-config
+          mountPath: /config
+      volumes:
+      - name: install-script
+        configMap:
+          name: harbor-install-script
+          defaultMode: 0755
+      - name: values-config
+        configMap:
+          name: harbor-values
+      restartPolicy: Never
+  backoffLimit: 3
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-values
+  namespace: harbor
+data:
+  values.yaml: |
+    expose:
+      type: ingress
+      tls:
+        enabled: true
+        certSource: secret
+        secret:
+          secretName: harbor-tls
+      ingress:
+        hosts:
+          core: registry.homelab.local
+        annotations:
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.tls: "true"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+    externalURL: https://registry.homelab.local
+    
+    persistence:
+      enabled: true
+      resourcePolicy: "keep"
+      persistentVolumeClaim:
+        registry:
+          storageClass: "local-path"
+          size: 100Gi
+        chartmuseum:
+          storageClass: "local-path"
+          size: 5Gi
+        jobservice:
+          storageClass: "local-path"
+          size: 1Gi
+        database:
+          storageClass: "local-path"
+          size: 10Gi
+        redis:
+          storageClass: "local-path"
+          size: 1Gi
+        trivy:
+          storageClass: "local-path"
+          size: 5Gi
+    
+    # Admin password is set via existingSecretAdminPassword
+    # harborAdminPassword is intentionally omitted - use secret instead
+    existingSecretAdminPassword: harbor-admin
+    existingSecretAdminPasswordKey: password
+    
+    database:
+      type: internal
+    
+    redis:
+      type: internal
+    
+    trivy:
+      enabled: true
+    
+    chartmuseum:
+      enabled: true
+    
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true

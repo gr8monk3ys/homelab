@@ -1,0 +1,119 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall
+  namespace: heimdall
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heimdall
+  template:
+    metadata:
+      labels:
+        app: heimdall
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: heimdall
+        image: lscr.io/linuxserver/heimdall:2.6.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        volumeMounts:
+        - name: heimdall-config
+          mountPath: /config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: heimdall-config
+        persistentVolumeClaim:
+          claimName: heimdall-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: heimdall-pvc
+  namespace: heimdall
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heimdall-service
+  namespace: heimdall
+spec:
+  selector:
+    app: heimdall
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+  - name: https
+    port: 443
+    targetPort: 443
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: heimdall-ingress
+  namespace: heimdall
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+spec:
+  rules:
+  - host: dashboard.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: heimdall-service
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - dashboard.homelab.local
+    secretName: heimdall-tls

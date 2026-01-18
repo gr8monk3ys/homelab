@@ -1,0 +1,100 @@
+---
+homelab:
+  domain: "homelab.local"
+  timezone: "UTC"
+  email: "admin@homelab.local"
+  
+cluster:
+  name: "homelab"
+  node_count: 1
+  
+storage:
+  default_storage_class: "local-path"
+  minio:
+    access_key: "minioadmin"
+    secret_key: "minioadmin123"
+    storage_size: "100Gi"
+
+ingress:
+  traefik:
+    dashboard_enabled: true
+    lets_encrypt_enabled: true
+  
+monitoring:
+  prometheus:
+    retention: "30d"
+    storage_size: "50Gi"
+  grafana:
+    admin_password: "admin123"
+
+services:
+  nextcloud:
+    admin_user: "admin"
+    admin_password: "nextcloud123"
+    storage_size: "100Gi"
+    
+  vaultwarden:
+    admin_token: "change-me-please"
+    
+  jellyfin:
+    media_path: "/mnt/media"
+    config_path: "/mnt/jellyfin-config"
+    
+  heimdall:
+    storage_size: "1Gi"
+
+  # Network Services
+  pihole:
+    web_password: "admin123"
+    dns_servers: "1.1.1.1;8.8.8.8"
+    storage_size: "5Gi"
+    
+  wireguard:
+    server_url: "wireguard.homelab.local"
+    peers: 10
+    internal_subnet: "10.13.13.0"
+    ui_password: "admin123"
+    
+  dnsmasq_dhcp:
+    dhcp_range: "192.168.1.100,192.168.1.200"
+    lease_time: "24h"
+    gateway: "192.168.1.1"
+    
+  # Development Services  
+  gitea:
+    admin_user: "admin"
+    admin_password: "gitea123"
+    db_password: "gitea-db-pass"
+    storage_size: "50Gi"
+    
+  harbor:
+    admin_password: "Harbor12345"
+    storage_size: "100Gi"
+    
+  drone:
+    gitea_client_id: "gitea-client-id"
+    gitea_client_secret: "gitea-client-secret" 
+    rpc_secret: "drone-rpc-secret-123"
+    db_password: "drone-db-pass"
+    storage_size: "10Gi"
+
+  # Content & Productivity Services
+  searxng:
+    secret_key: "searxng-secret-key-123"
+    instance_name: "Homelab Search"
+    redis_storage: "1Gi"
+    
+  calibre_web:
+    config_storage: "5Gi"
+    books_storage: "100Gi"
+    enable_calibre_server: true
+    
+  yarr:
+    auth_user: "admin"
+    auth_password: "yarrPass123"
+    storage_size: "5Gi"
+    
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention_days: 30

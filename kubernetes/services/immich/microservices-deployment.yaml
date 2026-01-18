@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-microservices
+  namespace: immich
+  labels:
+    app: immich-microservices
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: immich-microservices
+  template:
+    metadata:
+      labels:
+        app: immich-microservices
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+      - name: wait-for-server
+        image: busybox:1.35
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z immich-server 3001; do
+            echo "Waiting for immich-server..."
+            sleep 5
+          done
+          echo "Server ready!"
+      containers:
+      - name: immich-microservices
+        image: ghcr.io/immich-app/immich-server:v1.111.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        command:
+        - /bin/sh
+        - ./start-microservices.sh
+        env:
+        - name: DB_HOSTNAME
+          value: "immich-postgres"
+        - name: DB_USERNAME
+          value: "immich"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: immich-db-password
+              key: password
+        - name: DB_DATABASE_NAME
+          value: "immich"
+        - name: REDIS_HOSTNAME
+          value: "immich-redis"
+        - name: IMMICH_MACHINE_LEARNING_URL
+          value: "http://immich-machine-learning:3003"
+        - name: UPLOAD_LOCATION
+          value: "/usr/src/app/upload"
+        volumeMounts:
+        - name: uploads
+          mountPath: /usr/src/app/upload
+        - name: library
+          mountPath: /usr/src/app/upload/library
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          tcpSocket:
+            port: 3002
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: 3002
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: immich-uploads-pvc
+      - name: library
+        persistentVolumeClaim:
+          claimName: immich-library-pvc

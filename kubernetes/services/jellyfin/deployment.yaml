@@ -1,0 +1,200 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+  labels:
+    app: jellyfin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+    spec:
+      # Required for NVIDIA GPU access
+      runtimeClassName: nvidia
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: jellyfin
+        image: jellyfin/jellyfin:10.9.11
+        env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: "UTC"
+        # NVIDIA GPU environment variables
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "all"
+        ports:
+        - containerPort: 8096
+          name: http
+        - containerPort: 8920
+          name: https
+        - containerPort: 7359
+          name: discovery
+          protocol: UDP
+        - containerPort: 1900
+          name: dlna
+          protocol: UDP
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: cache
+          mountPath: /cache
+        - name: media
+          mountPath: /media
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "4000m"
+            # NVIDIA GPU resource limit for hardware transcoding
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8096
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8096
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        securityContext:
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: jellyfin-config-pvc
+      - name: cache
+        persistentVolumeClaim:
+          claimName: jellyfin-cache-pvc
+      - name: media
+        persistentVolumeClaim:
+          claimName: jellyfin-media-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config-pvc
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-cache-pvc
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-media-pvc
+  namespace: jellyfin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin-service
+  namespace: jellyfin
+spec:
+  selector:
+    app: jellyfin
+  ports:
+  - name: http
+    port: 8096
+    targetPort: 8096
+  - name: https
+    port: 8920
+    targetPort: 8920
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin-discovery
+  namespace: jellyfin
+spec:
+  selector:
+    app: jellyfin
+  ports:
+  - name: discovery
+    port: 7359
+    targetPort: 7359
+    protocol: UDP
+  - name: dlna
+    port: 1900
+    targetPort: 1900
+    protocol: UDP
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyfin-ingress
+  namespace: jellyfin
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - jellyfin.homelab.local
+    secretName: jellyfin-tls
+  rules:
+  - host: jellyfin.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jellyfin-service
+            port:
+              number: 8096

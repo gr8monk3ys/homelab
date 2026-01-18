@@ -1,0 +1,365 @@
+---
+# App of Apps pattern - manages all other applications
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homelab-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/gitops/argocd/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# MetalLB Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/loadbalancing/metallb
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Velero Backup Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: 6.0.0
+    helm:
+      valueFiles:
+      - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# CrowdSec Security Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crowdsec
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-security
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/security/crowdsec
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crowdsec
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Jellyfin Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jellyfin
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-media
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/jellyfin
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jellyfin
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Arr Stack Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arr-stack
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-media
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/arr-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arr-stack
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Authelia Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authelia
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-security
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/authelia
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authelia
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Immich Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: immich
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-media
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/immich
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: immich
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Ollama Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/ollama
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ollama
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Paperless-ngx Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: paperless-ngx
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/paperless-ngx
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: paperless-ngx
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Homepage Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/homepage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homepage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# n8n Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: n8n
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/n8n
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: n8n
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Mealie Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mealie
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/mealie
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mealie
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Linkwarden Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkwarden
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/linkwarden
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: linkwarden
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Audiobookshelf Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: audiobookshelf
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-media
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/audiobookshelf
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: audiobookshelf
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

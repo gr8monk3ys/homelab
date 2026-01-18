@@ -1,0 +1,191 @@
+---
+# Matrix Synapse - Federated chat server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synapse
+  namespace: matrix
+  labels:
+    app: synapse
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: synapse
+  template:
+    metadata:
+      labels:
+        app: synapse
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 991
+        fsGroup: 991
+      initContainers:
+      - name: generate-config
+        image: matrixdotorg/synapse:v1.120.2
+        command:
+        - sh
+        - -c
+        - |
+          if [ ! -f /data/homeserver.yaml ]; then
+            python -m synapse.app.homeserver \
+              --server-name matrix.homelab.local \
+              --config-path /data/homeserver.yaml \
+              --generate-config \
+              --report-stats=no
+          fi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        securityContext:
+          allowPrivilegeEscalation: false
+      containers:
+      - name: synapse
+        image: matrixdotorg/synapse:v1.120.2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8008
+          name: http
+        - containerPort: 8448
+          name: federation
+        env:
+        - name: SYNAPSE_CONFIG_PATH
+          value: "/data/homeserver.yaml"
+        - name: SYNAPSE_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: synapse-db-password
+              key: password
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: synapse-data-pvc
+      - name: config
+        configMap:
+          name: synapse-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synapse-config
+  namespace: matrix
+data:
+  homeserver.yaml: |
+    # This is a minimal config - the full config is generated in /data
+    # See https://matrix-org.github.io/synapse/latest/usage/configuration/config_documentation.html
+    server_name: "matrix.homelab.local"
+    public_baseurl: "https://matrix.homelab.local/"
+
+    listeners:
+      - port: 8008
+        type: http
+        tls: false
+        x_forwarded: true
+        resources:
+          - names: [client, federation]
+            compress: false
+
+    # Database configuration - password loaded from environment
+    # The actual connection is configured via SYNAPSE_CONFIG_DIR environment
+    # which merges this config with secrets
+    database:
+      name: psycopg2
+      args:
+        host: synapse-postgres
+        database: synapse
+        user: synapse
+        # Password injected via environment variable SYNAPSE_POSTGRES_PASSWORD
+        cp_min: 5
+        cp_max: 10
+
+    enable_registration: false
+    enable_registration_without_verification: false
+
+    report_stats: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: synapse-data-pvc
+  namespace: matrix
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: synapse
+  namespace: matrix
+spec:
+  selector:
+    app: synapse
+  ports:
+  - name: http
+    port: 8008
+    targetPort: 8008
+  - name: federation
+    port: 8448
+    targetPort: 8448
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: synapse-ingress
+  namespace: matrix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - matrix.homelab.local
+    secretName: synapse-tls
+  rules:
+  - host: matrix.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: synapse
+            port:
+              number: 8008

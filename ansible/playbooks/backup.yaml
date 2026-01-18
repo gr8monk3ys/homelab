@@ -1,0 +1,58 @@
+---
+- name: Backup Configuration
+  hosts: homelab
+  become: yes
+  vars:
+    backup_user: backup
+    backup_dir: /opt/homelab/backups
+    
+  tasks:
+    - name: Create backup user
+      user:
+        name: "{{ backup_user }}"
+        system: yes
+        shell: /bin/bash
+        home: "{{ backup_dir }}"
+        create_home: yes
+      tags: backup
+
+    - name: Install backup tools
+      package:
+        name:
+          - rsync
+          - rclone
+          - restic
+        state: present
+      tags: backup
+
+    - name: Create backup script
+      template:
+        src: templates/backup-homelab.sh.j2
+        dest: /usr/local/bin/backup-homelab.sh
+        mode: '0755'
+      tags: backup
+
+    - name: Create backup configuration
+      template:
+        src: templates/backup-config.yaml.j2
+        dest: "{{ backup_dir }}/config.yaml"
+        owner: "{{ backup_user }}"
+        group: "{{ backup_user }}"
+        mode: '0644'
+      tags: backup
+
+    - name: Setup backup cron job
+      cron:
+        name: "Homelab backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/backup-homelab.sh"
+        user: "{{ backup_user }}"
+      tags: backup
+
+    - name: Create restore script
+      template:
+        src: templates/restore-homelab.sh.j2
+        dest: /usr/local/bin/restore-homelab.sh
+        mode: '0755'
+      tags: backup

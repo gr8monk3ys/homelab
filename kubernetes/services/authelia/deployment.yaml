@@ -1,0 +1,219 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authelia
+  namespace: authelia
+  labels:
+    app: authelia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authelia
+  template:
+    metadata:
+      labels:
+        app: authelia
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: authelia
+        image: authelia/authelia:4.38.18
+        args:
+        - --config
+        - /config/configuration.yml
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: AUTHELIA_JWT_SECRET_FILE
+          value: /secrets/jwt-secret
+        - name: AUTHELIA_SESSION_SECRET_FILE
+          value: /secrets/session-secret
+        - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+          value: /secrets/storage-encryption-key
+        - name: AUTHELIA_SESSION_REDIS_PASSWORD_FILE
+          value: /secrets/redis-password
+        ports:
+        - containerPort: 9091
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /config/configuration.yml
+          subPath: configuration.yml
+        - name: users-db
+          mountPath: /config/users_database.yml
+          subPath: users_database.yml
+          readOnly: true
+        - name: secrets
+          mountPath: /secrets
+          readOnly: true
+        - name: data
+          mountPath: /config/db.sqlite3
+          subPath: db.sqlite3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 9091
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 9091
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+              - ALL
+      initContainers:
+      - name: wait-for-redis
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z authelia-redis 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: authelia-config
+      - name: users-db
+        secret:
+          secretName: authelia-users-secret
+      - name: secrets
+        secret:
+          secretName: authelia-secrets
+      - name: data
+        persistentVolumeClaim:
+          claimName: authelia-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: authelia-data-pvc
+  namespace: authelia
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authelia
+  namespace: authelia
+spec:
+  selector:
+    app: authelia
+  ports:
+  - name: http
+    port: 9091
+    targetPort: 9091
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authelia-ingress
+  namespace: authelia
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - auth.homelab.local
+    secretName: authelia-tls
+  rules:
+  - host: auth.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: authelia
+            port:
+              number: 9091
+---
+# ExternalSecret for Authelia secrets
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: authelia-secrets
+  namespace: authelia
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: authelia-secrets
+    creationPolicy: Owner
+  data:
+  - secretKey: jwt-secret
+    remoteRef:
+      key: authelia-secrets
+      property: jwt-secret
+  - secretKey: session-secret
+    remoteRef:
+      key: authelia-secrets
+      property: session-secret
+  - secretKey: storage-encryption-key
+    remoteRef:
+      key: authelia-secrets
+      property: storage-encryption-key
+  - secretKey: redis-password
+    remoteRef:
+      key: authelia-secrets
+      property: redis-password
+---
+# ExternalSecret for Authelia users database
+# This stores user credentials securely instead of in a ConfigMap
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: authelia-users-secret
+  namespace: authelia
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: authelia-users-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: users_database.yml
+    remoteRef:
+      key: authelia-users
+      property: users_database.yml

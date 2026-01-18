@@ -1,0 +1,133 @@
+---
+# LocalAI - OpenAI-compatible API for local LLMs
+# Supports text, image, and audio generation
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localai
+  namespace: localai
+  labels:
+    app: localai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: localai
+  template:
+    metadata:
+      labels:
+        app: localai
+    spec:
+      containers:
+      - name: localai
+        # Use GPU image if NVIDIA GPU available, otherwise use CPU image
+        image: quay.io/go-skynet/local-ai:v2.24.1-cublas-cuda12-ffmpeg
+        # For CPU-only: image: quay.io/go-skynet/local-ai:v2.24.1-ffmpeg
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: DEBUG
+          value: "false"
+        - name: THREADS
+          value: "4"
+        - name: CONTEXT_SIZE
+          value: "4096"
+        - name: GALLERIES
+          value: '[{"name":"model-gallery", "url":"github:mudler/LocalAI/gallery/index.yaml@master"}]'
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        - name: images
+          mountPath: /tmp/generated/images
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            # nvidia.com/gpu: 1  # Uncomment for GPU
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            # nvidia.com/gpu: 1  # Uncomment for GPU
+        livenessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 15
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+      # Uncomment for GPU support
+      # runtimeClassName: nvidia
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: localai-models-pvc
+      - name: images
+        emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: localai-models-pvc
+  namespace: localai
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: localai
+  namespace: localai
+spec:
+  selector:
+    app: localai
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: localai-ingress
+  namespace: localai
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - localai.homelab.local
+    secretName: localai-tls
+  rules:
+  - host: localai.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: localai
+            port:
+              number: 8080

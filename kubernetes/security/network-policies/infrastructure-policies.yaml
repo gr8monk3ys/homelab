@@ -1,0 +1,308 @@
+---
+# CrowdSec Agent - Security monitoring
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: crowdsec-agent-policy
+  namespace: crowdsec
+spec:
+  podSelector:
+    matchLabels:
+      app: crowdsec
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow metrics scraping from monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 6060
+    # Allow LAPI access from bouncer
+    - from:
+        - podSelector:
+            matchLabels:
+              component: bouncer
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow CrowdSec Central API
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# CrowdSec Bouncer - Connects to Traefik
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: crowdsec-bouncer-policy
+  namespace: crowdsec
+spec:
+  podSelector:
+    matchLabels:
+      component: bouncer
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ForwardAuth from Traefik
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow connection to CrowdSec LAPI
+    - to:
+        - podSelector:
+            matchLabels:
+              app: crowdsec
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# MetalLB Controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metallb-controller-policy
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app: metallb
+      component: controller
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow webhook from API server
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9443
+    # Allow metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 7472
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow API server communication
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+# MetalLB Speaker - Needs ARP/NDP for L2 mode
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metallb-speaker-policy
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app: metallb
+      component: speaker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow memberlist protocol between speakers
+    - from:
+        - podSelector:
+            matchLabels:
+              app: metallb
+              component: speaker
+      ports:
+        - protocol: TCP
+          port: 7946
+        - protocol: UDP
+          port: 7946
+    # Allow metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 7472
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow memberlist between speakers
+    - to:
+        - podSelector:
+            matchLabels:
+              app: metallb
+              component: speaker
+      ports:
+        - protocol: TCP
+          port: 7946
+        - protocol: UDP
+          port: 7946
+    # Allow ARP responses (L2 mode requires host networking, policy may not apply)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+---
+# Monitoring namespace - Prometheus/Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-policy
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow Grafana to query
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Allow Traefik for web UI
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow scraping all namespaces
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9100
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 6060
+        - protocol: TCP
+          port: 7472
+---
+# Velero backup system
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: velero-policy
+  namespace: velero
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow metrics scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8085
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow API server for backup operations
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6443
+    # Allow MinIO/S3 for backup storage
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Allow external S3 if configured
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

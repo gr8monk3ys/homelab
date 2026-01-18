@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jellyfin
+  labels:
+    app: jellyfin
+    type: media

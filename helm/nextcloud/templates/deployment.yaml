@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nextcloud.fullname" . }}
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "nextcloud.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nextcloud.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: {{ .Values.nextcloud.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.nextcloud.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.nextcloud.securityContext.fsGroup }}
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "nextcloud.fullname" . }}-mysql 3306; do
+                echo "Waiting for MySQL to be ready..."
+                sleep 5
+              done
+              echo "MySQL is ready!"
+      containers:
+        - name: nextcloud
+          image: "{{ .Values.nextcloud.image.repository }}:{{ .Values.nextcloud.image.tag }}"
+          imagePullPolicy: {{ .Values.nextcloud.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          env:
+            - name: NEXTCLOUD_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.fullname" . }}-admin
+                  key: username
+            - name: NEXTCLOUD_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.fullname" . }}-admin
+                  key: password
+            - name: MYSQL_HOST
+              value: {{ include "nextcloud.fullname" . }}-mysql
+            - name: MYSQL_DATABASE
+              value: {{ .Values.mysql.auth.database }}
+            - name: MYSQL_USER
+              value: {{ .Values.mysql.auth.username }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.fullname" . }}-db-password
+                  key: password
+            - name: NEXTCLOUD_TRUSTED_DOMAINS
+              value: "{{ join " " .Values.nextcloud.trustedDomains }}"
+            - name: APACHE_DISABLE_REWRITE_IP
+              value: "1"
+            - name: TRUSTED_PROXIES
+              value: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+          {{- if .Values.nextcloud.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /status.php
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.nextcloud.domain }}
+            initialDelaySeconds: {{ .Values.nextcloud.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.nextcloud.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.nextcloud.livenessProbe.timeoutSeconds }}
+          {{- end }}
+          {{- if .Values.nextcloud.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /status.php
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.nextcloud.domain }}
+            initialDelaySeconds: {{ .Values.nextcloud.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.nextcloud.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.nextcloud.readinessProbe.timeoutSeconds }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.nextcloud.resources | nindent 12 }}
+          volumeMounts:
+            - name: nextcloud-data
+              mountPath: /var/www/html
+            - name: nextcloud-config
+              mountPath: /var/www/html/config
+      volumes:
+        - name: nextcloud-data
+          persistentVolumeClaim:
+            claimName: {{ include "nextcloud.fullname" . }}-data
+        - name: nextcloud-config
+          persistentVolumeClaim:
+            claimName: {{ include "nextcloud.fullname" . }}-config

@@ -1,0 +1,205 @@
+---
+# Vaultwarden - Password manager, highly sensitive
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vaultwarden-policy
+  namespace: vaultwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: vaultwarden
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow traffic from Traefik ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS for push notifications and updates
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Authelia - SSO/Authentication service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: authelia-policy
+  namespace: authelia
+spec:
+  podSelector:
+    matchLabels:
+      app: authelia
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Traefik for ForwardAuth
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 9091
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow Redis connection
+    - to:
+        - podSelector:
+            matchLabels:
+              app: authelia-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow LDAP/external auth if needed
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 636
+---
+# Nextcloud - Contains sensitive documents
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nextcloud-policy
+  namespace: nextcloud
+spec:
+  podSelector:
+    matchLabels:
+      app: nextcloud
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Traefik
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow MySQL connection
+    - to:
+        - podSelector:
+            matchLabels:
+              app: nextcloud-mysql
+      ports:
+        - protocol: TCP
+          port: 3306
+    # Allow external connectivity for apps/updates
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+---
+# Paperless-ngx - Document management
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: paperless-policy
+  namespace: paperless-ngx
+spec:
+  podSelector:
+    matchLabels:
+      app: paperless-ngx
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Traefik
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow PostgreSQL connection
+    - to:
+        - podSelector:
+            matchLabels:
+              app: paperless-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow Redis connection
+    - to:
+        - podSelector:
+            matchLabels:
+              app: paperless-redis
+      ports:
+        - protocol: TCP
+          port: 6379

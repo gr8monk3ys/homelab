@@ -1,0 +1,73 @@
+# Harbor Helm Values
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+  ingress:
+    hosts:
+      core: registry.homelab.local
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+externalURL: https://registry.homelab.local
+
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      storageClass: "local-path"
+      size: 100Gi
+    chartmuseum:
+      storageClass: "local-path"
+      size: 5Gi
+    jobservice:
+      storageClass: "local-path"
+      size: 1Gi
+    database:
+      storageClass: "local-path"
+      size: 10Gi
+    redis:
+      storageClass: "local-path"
+      size: 1Gi
+    trivy:
+      storageClass: "local-path"
+      size: 5Gi
+
+# Admin password managed via Kubernetes secret (see install.yaml ExternalSecret)
+existingSecretAdminPassword: harbor-admin
+existingSecretAdminPasswordKey: password
+
+database:
+  type: internal
+
+redis:
+  type: internal
+
+trivy:
+  enabled: true
+
+chartmuseum:
+  enabled: true
+
+portal:
+  replicas: 1
+
+core:
+  replicas: 1
+
+jobservice:
+  replicas: 1
+
+registry:
+  replicas: 1
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true

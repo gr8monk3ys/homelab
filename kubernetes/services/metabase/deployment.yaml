@@ -1,0 +1,153 @@
+---
+# Metabase - Business intelligence and analytics
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metabase
+  namespace: metabase
+  labels:
+    app: metabase
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metabase
+  template:
+    metadata:
+      labels:
+        app: metabase
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 2000
+        fsGroup: 2000
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z metabase-postgres 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      containers:
+      - name: metabase
+        image: metabase/metabase:v0.52.6
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: MB_DB_TYPE
+          value: "postgres"
+        - name: MB_DB_DBNAME
+          value: "metabase"
+        - name: MB_DB_PORT
+          value: "5432"
+        - name: MB_DB_HOST
+          value: "metabase-postgres"
+        - name: MB_DB_USER
+          value: "metabase"
+        - name: MB_DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: metabase-db-password
+              key: password
+        - name: MB_ENCRYPTION_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: metabase-secret
+              key: encryption-key
+        - name: JAVA_OPTS
+          value: "-Xmx1g"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metabase
+  namespace: metabase
+spec:
+  selector:
+    app: metabase
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: metabase-ingress
+  namespace: metabase
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - metabase.homelab.local
+    secretName: metabase-tls
+  rules:
+  - host: metabase.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: metabase
+            port:
+              number: 3000
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: metabase-secret
+  namespace: metabase
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: metabase-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: encryption-key
+    remoteRef:
+      key: metabase-encryption-key
+      property: key

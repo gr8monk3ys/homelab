@@ -1,0 +1,203 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextcloud
+  namespace: nextcloud
+  labels:
+    app: nextcloud
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: nextcloud
+  template:
+    metadata:
+      labels:
+        app: nextcloud
+    spec:
+      containers:
+      - name: nextcloud
+        image: nextcloud:28.0.12-apache
+        env:
+        - name: NEXTCLOUD_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: nextcloud-admin
+              key: username
+        - name: NEXTCLOUD_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: nextcloud-admin
+              key: password
+        - name: MYSQL_HOST
+          value: "nextcloud-mysql-service"
+        - name: MYSQL_DATABASE
+          value: "nextcloud"
+        - name: MYSQL_USER
+          value: "nextcloud"
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: nextcloud-db-password
+              key: password
+        - name: NEXTCLOUD_TRUSTED_DOMAINS
+          value: "nextcloud.homelab.local localhost"
+        - name: APACHE_DISABLE_REWRITE_IP
+          value: "1"
+        - name: TRUSTED_PROXIES
+          value: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+        ports:
+        - containerPort: 80
+          name: http
+        volumeMounts:
+        - name: nextcloud-data
+          mountPath: /var/www/html
+        - name: nextcloud-config
+          mountPath: /var/www/html/config
+        livenessProbe:
+          httpGet:
+            path: /status.php
+            port: 80
+            httpHeaders:
+            - name: Host
+              value: nextcloud.homelab.local
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /status.php
+            port: 80
+            httpHeaders:
+            - name: Host
+              value: nextcloud.homelab.local
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        securityContext:
+          runAsUser: 33
+          runAsGroup: 33
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z nextcloud-mysql-service 3306; do
+            echo "Waiting for MySQL to be ready..."
+            sleep 5
+          done
+          echo "MySQL is ready!"
+      volumes:
+      - name: nextcloud-data
+        persistentVolumeClaim:
+          claimName: nextcloud-pvc
+      - name: nextcloud-config
+        persistentVolumeClaim:
+          claimName: nextcloud-config-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nextcloud-pvc
+  namespace: nextcloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nextcloud-config-pvc
+  namespace: nextcloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextcloud-service
+  namespace: nextcloud
+spec:
+  selector:
+    app: nextcloud
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nextcloud-ingress
+  namespace: nextcloud
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+spec:
+  rules:
+  - host: nextcloud.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nextcloud-service
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - nextcloud.homelab.local
+    secretName: nextcloud-tls
+---
+# External Secret for NextCloud admin credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: nextcloud-admin
+  namespace: nextcloud
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: nextcloud-admin
+    creationPolicy: Owner
+  data:
+  - secretKey: username
+    remoteRef:
+      key: nextcloud-admin
+      property: username
+  - secretKey: password
+    remoteRef:
+      key: nextcloud-admin
+      property: password

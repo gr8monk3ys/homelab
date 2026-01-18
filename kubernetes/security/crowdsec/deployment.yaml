@@ -1,0 +1,308 @@
+---
+# CrowdSec Agent Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crowdsec-agent
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+    component: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crowdsec
+      component: agent
+  template:
+    metadata:
+      labels:
+        app: crowdsec
+        component: agent
+    spec:
+      serviceAccountName: crowdsec
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: crowdsec
+        image: crowdsecurity/crowdsec:v1.6.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: COLLECTIONS
+          value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/whitelist-good-actors"
+        - name: SCENARIOS
+          value: "crowdsecurity/ssh-bf crowdsecurity/http-bf-wordpress_bf crowdsecurity/http-crawl-non_statics"
+        - name: PARSERS
+          value: "crowdsecurity/traefik-logs crowdsecurity/sshd-logs"
+        - name: DISABLE_LOCAL_API
+          value: "false"
+        - name: ENROLL_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-config
+              key: enroll-key
+              optional: true
+        ports:
+        - containerPort: 8080
+          name: api
+        - containerPort: 6060
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /etc/crowdsec/config.yaml
+          subPath: config.yaml
+        - name: config
+          mountPath: /etc/crowdsec/profiles.yaml
+          subPath: profiles.yaml
+        - name: config
+          mountPath: /etc/crowdsec/simulation.yaml
+          subPath: simulation.yaml
+        - name: acquis
+          mountPath: /etc/crowdsec/acquis.yaml
+          subPath: acquis.yaml
+        - name: data
+          mountPath: /var/lib/crowdsec/data
+        - name: traefik-logs
+          mountPath: /var/log/traefik
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: crowdsec-config
+      - name: acquis
+        configMap:
+          name: crowdsec-acquis
+      - name: data
+        persistentVolumeClaim:
+          claimName: crowdsec-data-pvc
+      - name: traefik-logs
+        hostPath:
+          path: /var/log/traefik
+          type: DirectoryOrCreate
+---
+# CrowdSec Traefik Bouncer
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crowdsec-traefik-bouncer
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+    component: bouncer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crowdsec
+      component: bouncer
+  template:
+    metadata:
+      labels:
+        app: crowdsec
+        component: bouncer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: bouncer
+        image: fbonalair/traefik-crowdsec-bouncer:0.5.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: CROWDSEC_BOUNCER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-config
+              key: bouncer-api-key
+        - name: CROWDSEC_AGENT_HOST
+          value: "crowdsec-agent:8080"
+        - name: CROWDSEC_BOUNCER_LOG_LEVEL
+          value: "1"
+        - name: GIN_MODE
+          value: "release"
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /api/v1/ping
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/ping
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crowdsec-data-pvc
+  namespace: crowdsec
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crowdsec-agent
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+spec:
+  selector:
+    app: crowdsec
+    component: agent
+  ports:
+  - name: api
+    port: 8080
+    targetPort: 8080
+  - name: metrics
+    port: 6060
+    targetPort: 6060
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crowdsec-bouncer
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+spec:
+  selector:
+    app: crowdsec
+    component: bouncer
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crowdsec
+  namespace: crowdsec
+---
+# RBAC for reading pods/logs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crowdsec-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crowdsec-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crowdsec-reader
+subjects:
+- kind: ServiceAccount
+  name: crowdsec
+  namespace: crowdsec
+---
+# Traefik ForwardAuth Middleware for CrowdSec
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: crowdsec-bouncer
+  namespace: crowdsec
+spec:
+  forwardAuth:
+    address: http://crowdsec-bouncer.crowdsec.svc.cluster.local:8080/api/v1/forwardAuth
+    trustForwardHeader: true
+---
+# ExternalSecret for CrowdSec configuration
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: crowdsec-config
+  namespace: crowdsec
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: crowdsec-config
+    creationPolicy: Owner
+  data:
+  - secretKey: bouncer-api-key
+    remoteRef:
+      key: crowdsec-config
+      property: bouncer-api-key
+  - secretKey: enroll-key
+    remoteRef:
+      key: crowdsec-config
+      property: enroll-key
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crowdsec
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+spec:
+  selector:
+    matchLabels:
+      app: crowdsec
+  endpoints:
+  - port: metrics
+    interval: 30s

@@ -1,0 +1,112 @@
+---
+# PodDisruptionBudgets for critical services
+# These ensure at least one pod is available during maintenance
+
+# Traefik - Ingress controller (critical for all traffic)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: traefik-pdb
+  namespace: kube-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+---
+# Pi-hole - DNS (critical for name resolution)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pihole-pdb
+  namespace: pihole
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: pihole
+---
+# CrowdSec Agent - Security monitoring
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crowdsec-agent-pdb
+  namespace: crowdsec
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: crowdsec
+---
+# CrowdSec Bouncer - Traffic filtering
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crowdsec-bouncer-pdb
+  namespace: crowdsec
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: bouncer
+---
+# MetalLB Controller - Load balancer IPs
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: metallb-controller-pdb
+  namespace: metallb-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: metallb
+      component: controller
+---
+# Prometheus - Monitoring
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: prometheus-pdb
+  namespace: monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+---
+# External Secrets Operator - Secret management
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: external-secrets-pdb
+  namespace: external-secrets
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets
+---
+# Authelia - Authentication (critical for protected services)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authelia-pdb
+  namespace: authelia
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: authelia
+---
+# Vaultwarden - Password manager (critical for users)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vaultwarden-pdb
+  namespace: vaultwarden
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: vaultwarden

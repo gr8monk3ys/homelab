@@ -1,0 +1,32 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: homelab-l2-advertisement
+  namespace: metallb-system
+  labels:
+    app: metallb
+spec:
+  # Advertise IPs from all pools
+  ipAddressPools:
+  - homelab-pool
+  - critical-services-pool
+  # Optionally limit to specific nodes
+  # nodeSelectors:
+  # - matchLabels:
+  #     kubernetes.io/os: linux
+---
+# Separate advertisement for critical services (optional)
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: critical-l2-advertisement
+  namespace: metallb-system
+  labels:
+    app: metallb
+spec:
+  ipAddressPools:
+  - critical-services-pool
+  # You can specify node selectors for more control
+  # interfaces:
+  # - eth0

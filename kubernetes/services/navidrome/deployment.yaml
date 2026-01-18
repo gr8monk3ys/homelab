@@ -1,0 +1,153 @@
+---
+# Navidrome - Music streaming server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navidrome
+  namespace: navidrome
+  labels:
+    app: navidrome
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: navidrome
+  template:
+    metadata:
+      labels:
+        app: navidrome
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: navidrome
+        image: deluan/navidrome:0.54.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 4533
+          name: http
+        env:
+        - name: ND_SCANSCHEDULE
+          value: "1h"
+        - name: ND_LOGLEVEL
+          value: "info"
+        - name: ND_SESSIONTIMEOUT
+          value: "24h"
+        - name: ND_BASEURL
+          value: ""
+        - name: ND_ENABLETRANSCODINGCONFIG
+          value: "true"
+        - name: ND_ENABLESHARING
+          value: "true"
+        - name: ND_ENABLEDOWNLOADS
+          value: "true"
+        - name: ND_ENABLEFAVOURITES
+          value: "true"
+        - name: ND_ENABLESTARRATING
+          value: "true"
+        - name: ND_AUTOIMPORTPLAYLISTS
+          value: "true"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: music
+          mountPath: /music
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 4533
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 4533
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: navidrome-data-pvc
+      - name: music
+        persistentVolumeClaim:
+          claimName: navidrome-music-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-data-pvc
+  namespace: navidrome
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-music-pvc
+  namespace: navidrome
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: navidrome
+  namespace: navidrome
+spec:
+  selector:
+    app: navidrome
+  ports:
+  - name: http
+    port: 4533
+    targetPort: 4533
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: navidrome-ingress
+  namespace: navidrome
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - music.homelab.local
+    secretName: navidrome-tls
+  rules:
+  - host: music.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: navidrome
+            port:
+              number: 4533

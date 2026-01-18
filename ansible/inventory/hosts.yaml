@@ -1,0 +1,12 @@
+---
+all:
+  children:
+    homelab:
+      hosts:
+        nas:
+          ansible_host: "{{ nas_ip | default('192.168.1.100') }}"
+          ansible_user: "{{ nas_user | default('admin') }}"
+          ansible_ssh_private_key_file: "{{ nas_ssh_key | default('~/.ssh/id_rsa') }}"
+          ansible_python_interpreter: "{{ python_path | default('/usr/bin/python3') }}"
+      vars:
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

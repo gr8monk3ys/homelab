@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yarr
+  namespace: yarr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yarr
+  template:
+    metadata:
+      labels:
+        app: yarr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: yarr
+        image: nkanaev/yarr:v2.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 7070
+        env:
+        - name: YARR_ADDR
+          value: "0.0.0.0:7070"
+        - name: YARR_DB
+          value: "/data/yarr.db"
+        - name: YARR_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: yarr-secret
+              key: auth-credentials
+        volumeMounts:
+        - name: yarr-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7070
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7070
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: yarr-data
+        persistentVolumeClaim:
+          claimName: yarr-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: yarr-data-pvc
+  namespace: yarr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+# ExternalSecret for Yarr authentication
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: yarr-secret
+  namespace: yarr
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: yarr-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: auth-credentials
+    remoteRef:
+      key: yarr-config
+      property: auth-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yarr
+  namespace: yarr
+spec:
+  selector:
+    app: yarr
+  ports:
+  - port: 7070
+    targetPort: 7070
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yarr-ingress
+  namespace: yarr
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - rss.homelab.local
+    secretName: yarr-tls
+  rules:
+  - host: rss.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: yarr
+            port:
+              number: 7070
+---
+# ConfigMap with sample feeds (optional)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yarr-feeds
+  namespace: yarr
+data:
+  sample-feeds.txt: |
+    # Sample RSS feeds to get started
+    # Tech News
+    https://feeds.feedburner.com/oreilly/radar
+    https://rss.cnn.com/rss/edition.rss
+    https://feeds.bbci.co.uk/news/rss.xml
+    
+    # Development
+    https://github.blog/feed/
+    https://stackoverflow.blog/feed/
+    https://dev.to/feed
+    
+    # Kubernetes & Cloud Native
+    https://kubernetes.io/feed.xml
+    https://blog.docker.com/feed/
+    
+    # Security
+    https://feeds.feedburner.com/TheHackersNews
+    https://krebsonsecurity.com/feed/
+    
+    # Self-hosting
+    https://linuxserver.io/feed.xml
+    
+    # Add your favorite feeds here!

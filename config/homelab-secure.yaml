@@ -1,0 +1,141 @@
+---
+# Secure Homelab Configuration v2.0
+# No hardcoded passwords - all secrets managed via Kubernetes secrets
+homelab:
+  domain: "homelab.local"
+  timezone: "UTC"
+  email: "admin@homelab.local"
+  version: "2.0"
+  
+cluster:
+  name: "homelab"
+  node_count: 1
+  k8s_version: "v1.28"
+  
+storage:
+  default_storage_class: "local-path"
+  # MinIO credentials now managed via secrets
+  minio:
+    storage_size: "100Gi"
+    console_enabled: true
+
+ingress:
+  traefik:
+    dashboard_enabled: true
+    lets_encrypt_enabled: true
+    replicas: 1
+  cert_manager:
+    email: "admin@homelab.local"
+    staging: false
+  
+monitoring:
+  prometheus:
+    retention: "30d"
+    storage_size: "50Gi"
+    scrape_interval: "30s"
+  grafana:
+    # Password managed via secrets
+    plugins:
+      - grafana-piechart-panel
+      - grafana-worldmap-panel
+
+services:
+  nextcloud:
+    # Credentials managed via secrets
+    storage_size: "100Gi"
+    version: "28-apache"
+    trusted_domains:
+      - "nextcloud.homelab.local"
+      - "localhost"
+    
+  vaultwarden:
+    # Admin token managed via secrets
+    signups_allowed: false
+    
+  jellyfin:
+    media_path: "/mnt/media"
+    config_path: "/mnt/jellyfin-config"
+    version: "latest"
+    
+  heimdall:
+    storage_size: "1Gi"
+
+  # Network Services
+  pihole:
+    # Password managed via secrets
+    dns_servers: 
+      - "1.1.1.1"
+      - "8.8.8.8"
+    storage_size: "5Gi"
+    
+  wireguard:
+    server_url: "wireguard.homelab.local"
+    peers: 10
+    internal_subnet: "10.13.13.0"
+    # UI password managed via secrets
+    
+  dnsmasq_dhcp:
+    dhcp_range: "192.168.1.100,192.168.1.200"
+    lease_time: "24h"
+    gateway: "192.168.1.1"
+    
+  # Development Services  
+  gitea:
+    # Credentials managed via secrets
+    storage_size: "50Gi"
+    actions_enabled: true
+    
+  harbor:
+    # Password managed via secrets
+    storage_size: "100Gi"
+    
+  drone:
+    # All secrets managed via secrets
+    storage_size: "10Gi"
+
+  # Content & Productivity Services
+  searxng:
+    # Secret key managed via secrets
+    instance_name: "Homelab Search"
+    redis_storage: "1Gi"
+    
+  calibre_web:
+    config_storage: "5Gi"
+    books_storage: "100Gi"
+    enable_calibre_server: true
+    
+  yarr:
+    # Auth credentials managed via secrets
+    storage_size: "5Gi"
+    
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention_days: 30
+  encryption: true  # Encryption key managed via secrets
+  destinations:
+    - local
+    # - s3  # Configure if needed
+    
+security:
+  pod_security_standards: "restricted"
+  network_policies_enabled: true
+  rbac_enabled: true
+  secret_rotation_days: 90
+  
+# External integrations
+external_secrets:
+  enabled: true
+  backend: "kubernetes"  # Can be changed to vault, aws, etc.
+  
+helm:
+  charts:
+    cert_manager: "v1.13.0"
+    prometheus_stack: "51.2.0"
+    external_secrets: "v0.9.9"
+    
+kustomize:
+  environments:
+    - development
+    - staging  
+    - production

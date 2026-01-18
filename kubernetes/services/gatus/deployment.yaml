@@ -1,0 +1,223 @@
+---
+# Gatus - Health dashboard and status page
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gatus
+  namespace: gatus
+  labels:
+    app: gatus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gatus
+  template:
+    metadata:
+      labels:
+        app: gatus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: gatus
+        image: twinproduction/gatus:v5.13.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: gatus-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: gatus-data-pvc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus-config
+  namespace: gatus
+data:
+  config.yaml: |
+    storage:
+      type: sqlite
+      path: /data/data.db
+
+    ui:
+      title: Homelab Status
+      description: Service health monitoring
+      header: Homelab Status Page
+      logo: ""
+      link: ""
+
+    alerting:
+      slack:
+        webhook-url: "${SLACK_WEBHOOK_URL}"
+        default-alert:
+          enabled: false
+          failure-threshold: 3
+          success-threshold: 2
+          send-on-resolved: true
+
+    endpoints:
+      # Core Infrastructure
+      - name: Traefik
+        group: Infrastructure
+        url: "https://traefik.homelab.local/ping"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Prometheus
+        group: Monitoring
+        url: "http://prometheus-operated.monitoring.svc.cluster.local:9090/-/ready"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Grafana
+        group: Monitoring
+        url: "http://prometheus-grafana.monitoring.svc.cluster.local/api/health"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Loki
+        group: Monitoring
+        url: "http://loki.loki.svc.cluster.local:3100/ready"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+
+      # Services
+      - name: Nextcloud
+        group: Applications
+        url: "https://nextcloud.homelab.local/status.php"
+        interval: 120s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Vaultwarden
+        group: Applications
+        url: "https://vaultwarden.homelab.local/alive"
+        interval: 120s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Gitea
+        group: Development
+        url: "https://gitea.homelab.local/api/healthz"
+        interval: 120s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: ArgoCD
+        group: Development
+        url: "https://argocd.homelab.local/healthz"
+        interval: 120s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: Jellyfin
+        group: Media
+        url: "https://jellyfin.homelab.local/health"
+        interval: 120s
+        conditions:
+          - "[STATUS] == 200"
+
+      # DNS Check
+      - name: DNS Resolution
+        group: Infrastructure
+        url: "8.8.8.8"
+        interval: 120s
+        dns:
+          query-name: "google.com"
+          query-type: "A"
+        conditions:
+          - "[DNS_RCODE] == NOERROR"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gatus-data-pvc
+  namespace: gatus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  selector:
+    app: gatus
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gatus-ingress
+  namespace: gatus
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - status.homelab.local
+    secretName: gatus-tls
+  rules:
+  - host: status.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gatus
+            port:
+              number: 8080
