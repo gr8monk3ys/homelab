@@ -19,6 +19,15 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: vaultwarden
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: vaultwarden
         image: vaultwarden/server:1.32.5

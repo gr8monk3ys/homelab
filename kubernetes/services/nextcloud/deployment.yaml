@@ -21,6 +21,15 @@ spec:
       labels:
         app: nextcloud
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: nextcloud
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: nextcloud
         image: nextcloud:28.0.12-apache

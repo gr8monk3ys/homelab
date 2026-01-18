@@ -15,6 +15,15 @@ spec:
     spec:
       securityContext:
         fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: pihole
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: pihole
         image: pihole/pihole:2024.07.0

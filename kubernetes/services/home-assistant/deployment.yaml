@@ -22,6 +22,15 @@ spec:
       # Remove hostNetwork if not using local device discovery
       hostNetwork: false
       dnsPolicy: ClusterFirst
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: home-assistant
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: home-assistant
         image: ghcr.io/home-assistant/home-assistant:2024.12.5
