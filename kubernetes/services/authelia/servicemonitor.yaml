@@ -1,0 +1,18 @@
+---
+# ServiceMonitor for Authelia
+# Authelia exposes Prometheus metrics at /metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: authelia
+  namespace: authelia
+  labels:
+    app: authelia
+spec:
+  selector:
+    matchLabels:
+      app: authelia
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s

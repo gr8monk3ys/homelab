@@ -1,0 +1,18 @@
+---
+# ServiceMonitor for Jellyfin
+# Jellyfin can expose metrics via plugin or API
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jellyfin
+  namespace: jellyfin
+  labels:
+    app: jellyfin
+spec:
+  selector:
+    matchLabels:
+      app: jellyfin
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 60s

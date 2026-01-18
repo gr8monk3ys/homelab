@@ -1,0 +1,18 @@
+---
+# ServiceMonitor for Immich
+# Immich exposes metrics at /api/server-info/metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: immich-server
+  namespace: immich
+  labels:
+    app: immich-server
+spec:
+  selector:
+    matchLabels:
+      app: immich-server
+  endpoints:
+  - port: http
+    path: /api/server-info/metrics
+    interval: 30s

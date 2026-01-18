@@ -1,0 +1,18 @@
+---
+# ServiceMonitor for Gitea
+# Gitea exposes Prometheus metrics at /metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gitea
+  namespace: gitea
+  labels:
+    app: gitea
+spec:
+  selector:
+    matchLabels:
+      app: gitea
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s

@@ -1,0 +1,19 @@
+---
+# ServiceMonitor for Pi-hole
+# Requires pihole-exporter sidecar or standalone exporter
+# This assumes the exporter is running on port 9617
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pihole
+  namespace: pihole
+  labels:
+    app: pihole
+spec:
+  selector:
+    matchLabels:
+      app: pihole
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s

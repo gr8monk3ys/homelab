@@ -1,0 +1,22 @@
+---
+# ServiceMonitor for Home Assistant
+# Requires the Prometheus integration to be enabled in HA
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+  labels:
+    app: home-assistant
+spec:
+  selector:
+    matchLabels:
+      app: home-assistant
+  endpoints:
+  - port: http
+    path: /api/prometheus
+    interval: 60s
+    bearerTokenSecret:
+      name: home-assistant-token
+      key: token
+      optional: true

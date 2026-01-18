@@ -1,0 +1,18 @@
+---
+# ServiceMonitor for Uptime Kuma
+# Uptime Kuma exposes Prometheus metrics at /metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+  labels:
+    app: uptime-kuma
+spec:
+  selector:
+    matchLabels:
+      app: uptime-kuma
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
