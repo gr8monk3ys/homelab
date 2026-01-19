@@ -13,6 +13,10 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+  security-events: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -161,7 +165,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -206,8 +210,13 @@ jobs:
 
       - name: Set up Kustomize
         run: |
+          # Install to temp directory to avoid conflict with kustomize/ directory in repo
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
           curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
           sudo mv kustomize /usr/local/bin/
+          cd -
+          rm -rf "$TEMP_DIR"
 
       - name: Build Kustomize overlays
         run: |
