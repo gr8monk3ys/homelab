@@ -4,23 +4,25 @@ kind: Kustomization
 metadata:
   name: homelab-development
 
-namespace: homelab-dev
+# Note: namespace override removed to preserve per-service namespaces
 
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - resource-patches.yaml
+patches:
+  - path: resource-patches.yaml
 
-namePrefix: dev-
+# Note: namePrefix removed to preserve resource naming consistency
 
-commonLabels:
-  environment: development
-  tier: dev
+labels:
+  - pairs:
+      environment: development
+      tier: dev
+    includeSelectors: false
 
 replicas:
   # Reduce replicas for development
-  - name: traefik-deployment
+  - name: traefik
     count: 1
 
 images:

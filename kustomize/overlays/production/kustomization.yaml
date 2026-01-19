@@ -4,21 +4,23 @@ kind: Kustomization
 metadata:
   name: homelab-production
 
-namespace: homelab
+# Note: namespace override removed to preserve per-service namespaces
 
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - resource-patches.yaml
+patches:
+  - path: resource-patches.yaml
 
-commonLabels:
-  environment: production
-  tier: prod
+labels:
+  - pairs:
+      environment: production
+      tier: prod
+    includeSelectors: false
 
 replicas:
   # Production replicas
-  - name: traefik-deployment
+  - name: traefik
     count: 2
   - name: external-secrets-operator
     count: 2
@@ -41,21 +43,3 @@ configMapGenerator:
       - log_level=info
       - backup_enabled=true
       - monitoring_enabled=true
-
-patchesJson6902:
-  # Add resource limits for production
-  - target:
-      group: apps
-      version: v1
-      kind: Deployment
-      name: traefik-deployment
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/resources
-        value:
-          limits:
-            cpu: "1000m"
-            memory: "512Mi"
-          requests:
-            cpu: "100m"
-            memory: "128Mi"

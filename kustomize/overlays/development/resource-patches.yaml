@@ -1,8 +1,10 @@
 # Development resource patches
+# Patches for the traefik deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: not-used
+  name: traefik
+  namespace: traefik-system
 spec:
   template:
     spec:
@@ -15,23 +17,3 @@ spec:
           requests:
             cpu: "50m"
             memory: "64Mi"
-        env:
-        - name: LOG_LEVEL
-          value: "DEBUG"
-        - name: METRICS_ENABLED
-          value: "true"
-        - name: DEBUG_MODE
-          value: "true"
----
-# Development specific configurations
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: dev-config
-data:
-  debug.conf: |
-    # Development mode configurations
-    debug_mode = true
-    log_level = debug
-    enable_profiling = true
-    disable_rate_limiting = true
