@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-staging
+
+# Note: namespace override removed to preserve per-service namespaces
+
+resources:
+  - ../../base
+
+patches:
+  - path: resource-patches.yaml
+
+# Note: namePrefix removed to preserve resource naming consistency
+
+labels:
+  - pairs:
+      environment: staging
+      tier: staging
+    includeSelectors: false
+
+replicas:
+  # Staging replicas (similar to production but fewer)
+  - name: traefik
+    count: 1
+  - name: external-secrets-operator
+    count: 1
+
+images:
+  # Use release candidate versions for staging
+  - name: nextcloud
+    newTag: 28-apache
+  - name: gitea/gitea
+    newTag: 1.21.0
+  - name: traefik
+    newTag: v2.10.4
+
+configMapGenerator:
+  - name: homelab-config
+    literals:
+      - domain=homelab-staging.local
+      - timezone=America/New_York
+      - environment=staging
+      - log_level=debug
+      - backup_enabled=true
+      - monitoring_enabled=true
