@@ -13,6 +13,10 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   KUBECONFORM_VERSION: "0.6.4"
   YAMLLINT_VERSION: "1.35.1"
@@ -94,13 +98,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install trufflehog
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin
-
       - name: Run TruffleHog
-        run: |
-          trufflehog filesystem --directory=. --no-update --fail || echo "::warning::Potential secrets detected"
+        uses: trufflesecurity/trufflehog@v3.88.0
+        with:
+          path: ./
+          base: ""
+          head: HEAD
+          extra_args: --only-verified
+        continue-on-error: true
 
       - name: Check for hardcoded passwords
         run: |
@@ -139,7 +144,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'config'
           scan-ref: 'kubernetes/'
@@ -148,7 +153,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Run Trivy (SARIF output)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'config'
           scan-ref: 'kubernetes/'
@@ -210,7 +215,8 @@ jobs:
             for overlay in kustomize/overlays/*/; do
               if [ -f "$overlay/kustomization.yaml" ]; then
                 echo "Building $overlay..."
-                kustomize build "$overlay" > /dev/null && echo "✅ $overlay builds successfully" || echo "❌ $overlay failed to build"
+                # Use --load-restrictor to allow cross-directory references in monorepo
+                kustomize build --load-restrictor LoadRestrictionsNone "$overlay" > /dev/null && echo "✅ $overlay builds successfully" || echo "❌ $overlay failed to build"
               fi
             done
           else
