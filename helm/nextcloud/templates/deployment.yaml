@@ -25,7 +25,7 @@ spec:
         fsGroup: {{ .Values.nextcloud.securityContext.fsGroup }}
       initContainers:
         - name: wait-for-db
-          image: busybox:1.35
+          image: busybox:1.37
           command:
             - sh
             - -c
@@ -39,6 +39,12 @@ spec:
         - name: nextcloud
           image: "{{ .Values.nextcloud.image.repository }}:{{ .Values.nextcloud.image.tag }}"
           imagePullPolicy: {{ .Values.nextcloud.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
           ports:
             - name: http
               containerPort: 80
