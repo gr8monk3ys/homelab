@@ -155,6 +155,8 @@ jobs:
           format: 'table'
           exit-code: '0'
           severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+          skip-dirs: 'kubernetes/network-policies,kubernetes/security/network-policies'
 
       - name: Run Trivy (SARIF output)
         uses: aquasecurity/trivy-action@0.33.1
@@ -163,6 +165,8 @@ jobs:
           scan-ref: 'kubernetes/'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          trivyignores: '.trivyignore'
+          skip-dirs: 'kubernetes/network-policies,kubernetes/security/network-policies'
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4

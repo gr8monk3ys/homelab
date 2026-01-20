@@ -35,6 +35,13 @@ spec:
             sleep 2
           done
           echo "PostgreSQL is ready!"
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

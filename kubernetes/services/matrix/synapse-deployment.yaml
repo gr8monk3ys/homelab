@@ -42,6 +42,13 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

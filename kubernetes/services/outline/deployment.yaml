@@ -41,6 +41,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
       - name: wait-for-redis
         image: busybox:1.37.0
         command:
@@ -58,6 +65,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
       containers:
       - name: outline
         image: outlinewiki/outline:0.82.0

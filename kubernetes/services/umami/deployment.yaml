@@ -41,6 +41,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
       containers:
       - name: umami
         image: ghcr.io/umami-software/umami:postgresql-v2.15.1

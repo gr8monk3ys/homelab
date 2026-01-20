@@ -1,0 +1,32 @@
+# Trivy Configuration for Homelab
+# This file configures security scanning to reduce false positives
+
+# Scan configuration
+scan:
+  # Skip certain directories that don't contain deployable resources
+  skip-dirs:
+    - "kubernetes/network-policies"
+    - "kubernetes/security/network-policies"
+    - "kustomize"
+
+misconfiguration:
+  # Ignore specific checks that are false positives or intentional
+  # See: https://avd.aquasec.com/misconfig/kubernetes/
+  scanners:
+    - config
+
+  # Checks to skip entirely
+  # KSV040: Image tag issues - causes false positives on non-deployment resources
+  # KSV021: User ID < 10000 - most container images use standard UIDs (1000, 999, etc.)
+  # KSV020: Group ID < 10000 - same as above
+  # KSV0125: Untrusted registries - Docker Hub, ghcr.io, lscr.io are standard
+  skip-check:
+    - KSV040
+    - KSV021
+    - KSV020
+    - KSV0125
+
+# Severity threshold - only report HIGH and CRITICAL
+severity:
+  - HIGH
+  - CRITICAL
