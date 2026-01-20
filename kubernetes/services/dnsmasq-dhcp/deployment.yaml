@@ -66,6 +66,9 @@ spec:
         app: dnsmasq-dhcp
     spec:
       hostNetwork: true  # Required for DHCP to work properly
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: dnsmasq-dhcp
         # Note: Switched from strm/dnsmasq (unmaintained 5+ years) to 4km3/dnsmasq

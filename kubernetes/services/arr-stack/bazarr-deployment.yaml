@@ -20,6 +20,8 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: bazarr
         image: lscr.io/linuxserver/bazarr:1.4.5

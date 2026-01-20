@@ -24,6 +24,13 @@ spec:
       labels:
         app: nextcloud-mysql
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mysql
         image: mysql:8.0.40

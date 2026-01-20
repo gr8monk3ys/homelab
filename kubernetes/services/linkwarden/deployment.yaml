@@ -23,6 +23,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
       - name: wait-for-db
         image: busybox:1.35
@@ -41,6 +43,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
       containers:
       - name: linkwarden
         image: ghcr.io/linkwarden/linkwarden:v2.7.1

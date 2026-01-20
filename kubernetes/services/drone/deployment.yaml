@@ -17,6 +17,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: drone-server
         image: drone/drone:2.24.0
@@ -112,6 +114,9 @@ spec:
         app: drone-runner
     spec:
       # Note: Cannot use runAsNonRoot due to Docker socket access requirements
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: drone-runner
         image: drone/drone-runner-docker:1.8.3
@@ -195,6 +200,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: postgres:15.10

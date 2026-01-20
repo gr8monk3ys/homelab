@@ -23,6 +23,8 @@ spec:
       runtimeClassName: nvidia
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: ollama
         image: ollama/ollama:0.4.7
@@ -98,6 +100,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
       - name: wait-for-ollama
         image: busybox:1.35
@@ -113,6 +117,9 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
       containers:
       - name: open-webui
         image: ghcr.io/open-webui/open-webui:v0.4.8

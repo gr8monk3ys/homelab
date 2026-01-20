@@ -27,10 +27,11 @@ spec:
         app: tautulli
     spec:
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        # Note: LinuxServer.io images typically run as root internally
+        # They use PUID/PGID for file ownership but process runs as root
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: tautulli
         image: lscr.io/linuxserver/tautulli:2.14.5

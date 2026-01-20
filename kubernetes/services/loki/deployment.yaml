@@ -21,6 +21,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: loki
         image: grafana/loki:3.3.2

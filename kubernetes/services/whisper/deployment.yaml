@@ -17,6 +17,9 @@ spec:
       labels:
         app: whisper
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: whisper
         image: fedirz/faster-whisper-server:0.3.1

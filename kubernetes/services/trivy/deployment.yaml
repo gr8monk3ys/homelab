@@ -21,6 +21,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: trivy
         image: aquasec/trivy:0.58.2
@@ -123,6 +125,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: operator
         image: aquasec/trivy-operator:0.24.4

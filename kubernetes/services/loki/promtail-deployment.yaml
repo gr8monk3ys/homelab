@@ -17,6 +17,9 @@ spec:
         app: promtail
     spec:
       serviceAccountName: promtail
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: promtail
         image: grafana/promtail:3.3.2

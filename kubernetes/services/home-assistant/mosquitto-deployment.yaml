@@ -21,6 +21,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1883
         fsGroup: 1883
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mosquitto
         image: eclipse-mosquitto:2.0.20

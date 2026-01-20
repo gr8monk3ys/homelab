@@ -30,7 +30,8 @@ spec:
         app: flaresolverr
     spec:
       securityContext:
-        runAsNonRoot: false  # Chromium requires root in container
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: flaresolverr
         image: ghcr.io/flaresolverr/flaresolverr:v3.3.21

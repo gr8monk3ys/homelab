@@ -20,6 +20,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
       - name: wait-for-server
         image: busybox:1.35
@@ -28,6 +30,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
         command:
         - sh
         - -c

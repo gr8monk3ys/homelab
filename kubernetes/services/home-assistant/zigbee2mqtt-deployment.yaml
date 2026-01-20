@@ -42,6 +42,8 @@ spec:
         supplementalGroups:
           - 20   # dialout group for serial device access
           - 997  # gpio group (if needed)
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: zigbee2mqtt
         image: koenkk/zigbee2mqtt:1.42.0

@@ -15,6 +15,10 @@ spec:
     spec:
       securityContext:
         fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -93,6 +97,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

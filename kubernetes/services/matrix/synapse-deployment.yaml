@@ -23,6 +23,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 991
         fsGroup: 991
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
       - name: generate-config
         image: matrixdotorg/synapse:v1.120.2
@@ -42,6 +44,9 @@ spec:
           mountPath: /data
         securityContext:
           allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
       containers:
       - name: synapse
         image: matrixdotorg/synapse:v1.120.2

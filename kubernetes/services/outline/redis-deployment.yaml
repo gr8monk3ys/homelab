@@ -20,6 +20,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: redis
         image: redis:7.4.2-alpine

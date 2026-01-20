@@ -22,6 +22,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
         image: tensorchord/pgvecto-rs:pg16-v0.3.0

@@ -17,6 +17,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: redis
         image: redis:7.4.2-alpine
@@ -80,6 +82,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: searxng
         image: searxng/searxng:2024.12.16-92484e39c

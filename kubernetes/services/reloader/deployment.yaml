@@ -25,6 +25,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: reloader
         image: ghcr.io/stakater/reloader:v1.0.72

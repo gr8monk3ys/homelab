@@ -32,6 +32,9 @@ spec:
       labels:
         app: wireguard
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: wireguard
         image: linuxserver/wireguard:1.0.20210914-legacy
@@ -166,6 +169,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: wireguard-ui
         image: ngoduykhanh/wireguard-ui:v0.6.2

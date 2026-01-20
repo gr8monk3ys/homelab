@@ -84,6 +84,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
       - name: velero-plugin-for-aws
         image: velero/velero-plugin-for-aws:v1.10.0
@@ -96,6 +98,13 @@ spec:
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
       containers:
       - name: velero
         image: velero/velero:v1.14.1

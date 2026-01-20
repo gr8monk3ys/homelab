@@ -20,6 +20,9 @@ spec:
       labels:
         app: localai
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: localai
         # Use GPU image if NVIDIA GPU available, otherwise use CPU image

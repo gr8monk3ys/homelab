@@ -23,6 +23,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: mealie
         image: ghcr.io/mealie-recipes/mealie:v1.12.0

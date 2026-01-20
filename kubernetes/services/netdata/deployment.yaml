@@ -41,11 +41,17 @@ spec:
       serviceAccountName: netdata
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: netdata
         image: netdata/netdata:v2.1.0
         securityContext:
+          allowPrivilegeEscalation: false
           capabilities:
+            drop:
+              - ALL
             add:
               - SYS_PTRACE
               - SYS_ADMIN

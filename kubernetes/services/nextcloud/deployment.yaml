@@ -21,6 +21,9 @@ spec:
       labels:
         app: nextcloud
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -115,6 +118,19 @@ spec:
             sleep 5
           done
           echo "MySQL is ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
       volumes:
       - name: nextcloud-data
         persistentVolumeClaim:

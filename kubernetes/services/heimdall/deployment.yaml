@@ -16,6 +16,8 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: heimdall
         image: lscr.io/linuxserver/heimdall:2.6.1

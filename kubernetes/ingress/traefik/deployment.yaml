@@ -89,6 +89,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: traefik
           image: traefik:v3.0.4

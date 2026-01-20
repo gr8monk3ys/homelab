@@ -20,6 +20,8 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: prowlarr
         image: lscr.io/linuxserver/prowlarr:1.27.0

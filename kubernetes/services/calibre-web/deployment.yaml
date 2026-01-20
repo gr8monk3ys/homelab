@@ -14,7 +14,11 @@ spec:
         app: calibre-web
     spec:
       securityContext:
+        # Note: LinuxServer.io images typically run as root internally
+        # They use PUID/PGID for file ownership but process runs as root
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: calibre-web
         image: lscr.io/linuxserver/calibre-web:0.6.23
@@ -152,7 +156,11 @@ spec:
         app: calibre-server
     spec:
       securityContext:
+        # Note: LinuxServer.io images typically run as root internally
+        # They use PUID/PGID for file ownership but process runs as root
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: calibre-server
         image: lscr.io/linuxserver/calibre:7.23.0
@@ -185,8 +193,6 @@ spec:
           capabilities:
             drop:
               - ALL
-            add:
-              - IPC_LOCK
       volumes:
       - name: calibre-config
         persistentVolumeClaim:

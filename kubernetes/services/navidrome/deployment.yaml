@@ -21,6 +21,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: navidrome
         image: deluan/navidrome:0.54.4
