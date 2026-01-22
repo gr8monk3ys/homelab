@@ -1,0 +1,31 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: homelab-pool
+  namespace: metallb-system
+  labels:
+    app: metallb
+spec:
+  # IP range for LoadBalancer services in the homelab
+  # Adjust this range based on your home network configuration
+  # Ensure these IPs are not in your DHCP server's range
+  addresses:
+  - 192.168.1.200-192.168.1.250
+  autoAssign: true
+  # Prevent MetalLB from automatically assigning IPs from this pool
+  # unless explicitly requested via annotation
+  # avoidBuggyIPs: true
+---
+# Optional: Separate pool for critical services
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: critical-services-pool
+  namespace: metallb-system
+  labels:
+    app: metallb
+spec:
+  addresses:
+  - 192.168.1.200-192.168.1.210
+  autoAssign: false
