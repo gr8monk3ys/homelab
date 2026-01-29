@@ -1,0 +1,29 @@
+---
+# Optional root "app-of-apps" that includes both core and optional Applications.
+#
+# Apply this instead of (or in addition to) root-app.yaml if you want the full stack:
+#   kubectl apply -f kubernetes/gitops/argocd/root-app-full.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homelab-apps-full
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/gitops/argocd/apps/full
+    kustomize: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+

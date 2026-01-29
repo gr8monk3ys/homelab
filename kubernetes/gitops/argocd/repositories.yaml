@@ -1,0 +1,80 @@
+---
+# Local homelab repository (adjust URL to your actual Git repo)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: homelab-repo
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: https://github.com/your-username/homelab.git
+  # For private repos, add credentials:
+  # username: your-username
+  # password: your-token-or-password
+---
+# Helm repository for common charts
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bitnami-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: bitnami
+  url: https://charts.bitnami.com/bitnami
+---
+# Prometheus community Helm charts
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prometheus-community-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: prometheus-community
+  url: https://prometheus-community.github.io/helm-charts
+---
+# Jetstack Helm charts (cert-manager)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jetstack-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: jetstack
+  url: https://charts.jetstack.io
+---
+# VMware Tanzu Helm charts (Velero)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vmware-tanzu-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: vmware-tanzu
+  url: https://vmware-tanzu.github.io/helm-charts
+---
+# MetalLB Helm charts
+apiVersion: v1
+kind: Secret
+metadata:
+  name: metallb-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: metallb
+  url: https://metallb.github.io/metallb
