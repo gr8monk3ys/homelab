@@ -1,0 +1,15 @@
+---
+# PodDisruptionBudget for Home Assistant
+# Ensures home automation remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: home-assistant-pdb
+  namespace: home-assistant
+  labels:
+    app: home-assistant
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: home-assistant

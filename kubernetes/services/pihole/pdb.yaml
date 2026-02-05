@@ -1,0 +1,16 @@
+---
+# PodDisruptionBudget for Pi-hole
+# Ensures DNS service remains available during cluster maintenance
+# Critical: DNS outage affects entire network
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pihole-pdb
+  namespace: pihole
+  labels:
+    app: pihole
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: pihole

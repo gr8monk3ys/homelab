@@ -1,0 +1,29 @@
+---
+# PodDisruptionBudget for Authelia
+# Ensures authentication service remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authelia-pdb
+  namespace: authelia
+  labels:
+    app: authelia
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: authelia
+---
+# PDB for Authelia Redis
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: authelia-redis-pdb
+  namespace: authelia
+  labels:
+    app: authelia-redis
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: authelia-redis

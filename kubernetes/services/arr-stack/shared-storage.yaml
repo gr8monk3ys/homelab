@@ -1,0 +1,28 @@
+---
+# Shared downloads PVC for all Arr apps
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arr-downloads-pvc
+  namespace: arr-stack
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: local-path
+---
+# Shared media PVC for movies and TV shows
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arr-media-pvc
+  namespace: arr-stack
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: local-path
