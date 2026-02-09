@@ -1,0 +1,32 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: blackbox-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: blackbox
+    rules:
+    - alert: BlackboxProbeFailed
+      expr: probe_success == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Blackbox probe failed ({{ $labels.instance }})"
+        description: "Blackbox probe has been failing for more than 5 minutes (job={{ $labels.job }})."
+
+    - alert: BlackboxTLSDaysToExpiryLow
+      expr: |
+        probe_ssl_earliest_cert_expiry > 0
+        and (probe_ssl_earliest_cert_expiry - time()) < 7 * 24 * 60 * 60
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "TLS certificate expiring soon ({{ $labels.instance }})"
+        description: "The probed TLS certificate expires in less than 7 days (job={{ $labels.job }})."

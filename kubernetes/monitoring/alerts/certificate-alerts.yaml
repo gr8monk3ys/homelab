@@ -1,0 +1,45 @@
+---
+# PrometheusRule for Certificate expiry alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: certificate-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: certificates
+    rules:
+    # Certificate expiring in 30 days
+    - alert: CertificateExpiringSoon
+      expr: |
+        certmanager_certificate_expiration_timestamp_seconds - time() < 30 * 24 * 60 * 60
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} expires soon"
+        description: "Certificate {{ $labels.name }} will expire in less than 30 days"
+
+    # Certificate expiring in 7 days
+    - alert: CertificateExpiringCritical
+      expr: |
+        certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 24 * 60 * 60
+      for: 1h
+      labels:
+        severity: critical
+      annotations:
+        summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} expires very soon"
+        description: "Certificate {{ $labels.name }} will expire in less than 7 days"
+
+    # Certificate renewal failed
+    - alert: CertificateNotReady
+      expr: certmanager_certificate_ready_status{condition="False"} == 1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Certificate {{ $labels.name }} in {{ $labels.namespace }} is not ready"
+        description: "Certificate {{ $labels.name }} has been in a not-ready state for more than 15 minutes"

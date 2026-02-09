@@ -1,0 +1,94 @@
+---
+# PrometheusRule for Deployment-related alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: deployment-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: deployment-health
+    rules:
+    # Deployment has no available replicas
+    - alert: DeploymentNoAvailableReplicas
+      expr: |
+        kube_deployment_status_replicas_available == 0
+        and kube_deployment_spec_replicas > 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has no available replicas"
+        description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has 0 available replicas"
+
+    # Deployment replicas mismatch
+    - alert: DeploymentReplicasMismatch
+      expr: |
+        kube_deployment_spec_replicas != kube_deployment_status_replicas_available
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has replica mismatch"
+        description: "Deployment {{ $labels.deployment }} has {{ $value }} available replicas instead of expected"
+
+    # Deployment generation mismatch (stuck rollout)
+    - alert: DeploymentGenerationMismatch
+      expr: |
+        kube_deployment_status_observed_generation != kube_deployment_metadata_generation
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has a stuck rollout"
+        description: "Deployment {{ $labels.deployment }} generation mismatch indicates a stuck rollout"
+
+  - name: statefulset-health
+    rules:
+    # StatefulSet replicas mismatch
+    - alert: StatefulSetReplicasMismatch
+      expr: |
+        kube_statefulset_status_replicas_ready != kube_statefulset_status_replicas
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has replica mismatch"
+        description: "StatefulSet {{ $labels.statefulset }} has {{ $value }} ready replicas"
+
+    # StatefulSet update not rolled out
+    - alert: StatefulSetUpdateNotRolledOut
+      expr: |
+        max without (revision) (kube_statefulset_status_current_revision unless kube_statefulset_status_update_revision)
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} update not rolled out"
+        description: "StatefulSet {{ $labels.statefulset }} has a pending update that hasn't been rolled out"
+
+  - name: daemonset-health
+    rules:
+    # DaemonSet not scheduled
+    - alert: DaemonSetNotScheduled
+      expr: |
+        kube_daemonset_status_desired_number_scheduled - kube_daemonset_status_current_number_scheduled > 0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} not fully scheduled"
+        description: "DaemonSet {{ $labels.daemonset }} has {{ $value }} unscheduled pods"
+
+    # DaemonSet misscheduled
+    - alert: DaemonSetMisscheduled
+      expr: kube_daemonset_status_number_misscheduled > 0
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is misscheduled"
+        description: "DaemonSet {{ $labels.daemonset }} has {{ $value }} misscheduled pods"

@@ -1,0 +1,50 @@
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: homelab-alerting
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+spec:
+  route:
+    receiver: homelab-webhook
+    groupBy: ["alertname", "namespace", "severity"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      # Don't spam notifications with constant heartbeat alerts.
+      - receiver: "null"
+        matchers:
+          - name: alertname
+            value: Watchdog
+            matchType: "="
+      # Low-signal alerts can be reviewed in Grafana/Alertmanager UI instead.
+      - receiver: "null"
+        matchers:
+          - name: severity
+            value: info
+            matchType: "="
+
+  inhibitRules:
+    # If a critical alert is firing, suppress related warning-level alerts.
+    - sourceMatch:
+        - name: severity
+          value: critical
+          matchType: "="
+      targetMatch:
+        - name: severity
+          value: warning
+          matchType: "="
+      equal: ["alertname", "namespace"]
+
+  receivers:
+    - name: "null"
+    - name: homelab-webhook
+      webhookConfigs:
+        - urlSecret:
+            name: alertmanager-webhook
+            key: url
+          sendResolved: true
+
