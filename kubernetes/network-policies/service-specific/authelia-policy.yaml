@@ -1,0 +1,59 @@
+---
+# Authelia Network Policy
+# Authelia needs to be accessible from all services for authentication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authelia-access
+  namespace: authelia
+spec:
+  podSelector:
+    matchLabels:
+      app: authelia
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from any namespace (services need to verify auth)
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 9091
+---
+# Allow Authelia to reach Redis and LDAP if configured
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: authelia-egress
+  namespace: authelia
+spec:
+  podSelector:
+    matchLabels:
+      app: authelia
+  policyTypes:
+  - Egress
+  egress:
+  # DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Same namespace (Redis)
+  - to:
+    - podSelector: {}
+  # SMTP for notifications (external)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 587
+    - protocol: TCP
+      port: 465

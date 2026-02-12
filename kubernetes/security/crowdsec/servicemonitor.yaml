@@ -1,0 +1,17 @@
+---
+# ServiceMonitor for CrowdSec agent metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crowdsec
+  namespace: crowdsec
+  labels:
+    app: crowdsec
+spec:
+  jobLabel: app
+  selector:
+    matchLabels:
+      app: crowdsec
+  endpoints:
+  - port: metrics
+    interval: 30s

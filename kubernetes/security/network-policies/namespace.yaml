@@ -1,0 +1,17 @@
+---
+# Network policies are applied in each service namespace
+# This file documents the network policy strategy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: network-policy-documentation
+  namespace: kube-system
+data:
+  strategy: |
+    Network Policy Strategy for Homelab
+    ====================================
+
+    1. Database Isolation: Only allow connections from their respective services
+    2. Sensitive Services: Restrict to ingress controller only
+    3. Infrastructure: Allow necessary control plane communication
+    4. Default Deny: Applied per-namespace for defense in depth

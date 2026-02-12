@@ -1,0 +1,267 @@
+---
+# Linkwarden PostgreSQL - Only allow connections from linkwarden app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkwarden-postgres-policy
+  namespace: linkwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: linkwarden-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: linkwarden
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# n8n PostgreSQL - Only allow connections from n8n app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: n8n-postgres-policy
+  namespace: n8n
+spec:
+  podSelector:
+    matchLabels:
+      app: n8n-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: n8n
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Paperless PostgreSQL - Only allow connections from paperless app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: paperless-postgres-policy
+  namespace: paperless-ngx
+spec:
+  podSelector:
+    matchLabels:
+      app: paperless-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: paperless-ngx
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Paperless Redis - Only allow connections from paperless app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: paperless-redis-policy
+  namespace: paperless-ngx
+spec:
+  podSelector:
+    matchLabels:
+      app: paperless-redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: paperless-ngx
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Immich PostgreSQL - Only allow connections from immich services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-postgres-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: immich-server
+        - podSelector:
+            matchLabels:
+              app: immich-microservices
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Immich Redis - Only allow connections from immich services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-redis-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: immich-server
+        - podSelector:
+            matchLabels:
+              app: immich-microservices
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Authelia Redis - Only allow connections from authelia
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: authelia-redis-policy
+  namespace: authelia
+spec:
+  podSelector:
+    matchLabels:
+      app: authelia-redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: authelia
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Gitea PostgreSQL - Only allow connections from gitea
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-postgres-policy
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gitea
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Nextcloud MySQL - Only allow connections from nextcloud
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nextcloud-mysql-policy
+  namespace: nextcloud
+spec:
+  podSelector:
+    matchLabels:
+      app: nextcloud-mysql
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nextcloud
+      ports:
+        - protocol: TCP
+          port: 3306
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53

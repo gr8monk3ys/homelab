@@ -1,0 +1,19 @@
+---
+# Allow Same Namespace Communication
+# Allows pods within the same namespace to communicate freely
+# Use this for services that have multiple components (app + db + redis)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+  egress:
+  - to:
+    - podSelector: {}

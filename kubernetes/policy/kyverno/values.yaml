@@ -1,0 +1,16 @@
+---
+# Kyverno Helm values (homelab defaults).
+# See https://github.com/kyverno/kyverno for details.
+
+admissionController:
+  replicas: 1
+
+backgroundController:
+  replicas: 1
+
+cleanupController:
+  replicas: 1
+
+reportsController:
+  replicas: 1
+

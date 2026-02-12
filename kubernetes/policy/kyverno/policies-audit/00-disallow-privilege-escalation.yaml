@@ -1,0 +1,31 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: homelab-disallow-privilege-escalation
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchLabels:
+                  homelab-kyverno: enabled
+      validate:
+        message: "Containers should set allowPrivilegeEscalation=false."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+            =(initContainers):
+              - name: "*"
+                securityContext:
+                  allowPrivilegeEscalation: false
+
