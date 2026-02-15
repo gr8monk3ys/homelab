@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run TruffleHog (verified findings only)
-        uses: trufflesecurity/trufflehog@v3.92.5
+        uses: trufflesecurity/trufflehog@v3.93.3
         with:
           path: ./
           base: ""
