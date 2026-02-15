@@ -6,6 +6,8 @@ This directory contains testing configurations for the homelab setup.
 
 Test individual services without the complexity of Kubernetes.
 
+⚠️ **Security note**: this Compose stack is for local testing only. It uses simple, static credentials in `test/docker-compose.yml`. Do not expose it to the internet.
+
 ### Prerequisites
 
 - Docker and Docker Compose installed
@@ -39,17 +41,19 @@ Test individual services without the complexity of Kubernetes.
 
 3. **Access services:**
    - Traefik Dashboard: http://localhost:8080
-   - Pi-hole: http://pihole.homelab.local (password: admin123)
-   - Nextcloud: http://nextcloud.homelab.local (admin/nextcloud123)
+   - Pi-hole: http://pihole.homelab.local
+   - Nextcloud: http://nextcloud.homelab.local
    - Vaultwarden: http://vault.homelab.local
    - Jellyfin: http://jellyfin.homelab.local
-   - Grafana: http://grafana.homelab.local (admin/admin123)
+   - Grafana: http://grafana.homelab.local
    - Gitea: http://git.homelab.local
-   - MinIO: http://minio.homelab.local (minioadmin/minioadmin123)
+   - MinIO: http://minio.homelab.local
    - Dashboard: http://dashboard.homelab.local
    - SearXNG: http://search.homelab.local (private search)
    - Calibre-web: http://books.homelab.local (digital library)
-   - Yarr: http://rss.homelab.local (admin/yarrPass123)
+   - Yarr: http://rss.homelab.local
+
+   Credentials for the Compose stack are defined in `test/docker-compose.yml`.
 
 ### Service Status
 
@@ -120,4 +124,42 @@ Approximate resource consumption:
 Monitor resource usage:
 ```bash
 docker stats
+```
+
+## Kind (Kubernetes-In-Docker) Testing
+
+This exercises the Kubernetes manifests against a real Kubernetes cluster running in Docker.
+
+### Prerequisites
+
+- Docker
+
+If you have run `./scripts/install-dev-tools.sh`, the Kind scripts will prefer `.tools/bin` for `kind`, `kubectl`, and `helm` (no sudo required).
+
+### Quick Start
+
+```bash
+./test/setup-kind.sh setup
+./test/validate.sh k8s
+```
+
+Cleanup:
+
+```bash
+./test/setup-kind.sh cleanup
+```
+
+### Smoke Profile (Fast)
+
+Useful for a quick sanity check (and what the GitHub Actions smoke workflow runs):
+
+```bash
+KIND_CONFIG=./test/kind-config-smoke.yaml \
+  KIND_ENABLE_STORAGE=false \
+  KIND_ENABLE_MONITORING=false \
+  KIND_ENABLE_NEXTCLOUD=false \
+  KIND_SERVICES="homepage" \
+  ./test/setup-kind.sh setup
+
+./test/validate.sh k8s
 ```
