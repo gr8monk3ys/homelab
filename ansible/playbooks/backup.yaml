@@ -5,7 +5,7 @@
   vars:
     backup_user: backup
     backup_dir: /opt/homelab/backups
-    
+
   tasks:
     - name: Create backup user
       user:
