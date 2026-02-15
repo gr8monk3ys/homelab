@@ -1,135 +1,65 @@
-# 🔐 Default Credentials
+# 🔐 Accessing Credentials (No Defaults)
 
-## Service Access Credentials
+This repo does **not** ship default passwords for Kubernetes deployments.
 
-### Grafana
-- URL: https://grafana.homelab.local
-- Username: `admin`
-- Password: `admin123`
-- First login: Change password immediately
+This repo supports two patterns:
 
-### Nextcloud
-- URL: https://nextcloud.homelab.local
-- Username: `admin`
-- Password: `nextcloud123`
-- Database: MySQL (configured automatically)
+1. **Generated secrets (default)**: `setup-v2.sh` runs `scripts/generate-secrets.sh`, which generates random credentials and stores them as **Kubernetes Secrets** in a central `secrets` namespace. **External Secrets Operator (ESO)** then copies those values into the namespaces where each app runs.
+2. **GitOps secrets (SOPS/age)**: encrypted `Secret` manifests live in `kubernetes/secrets/sops/` and are decrypted at sync time by ArgoCD (KSOPS). See `docs/runbooks/gitops-secrets.md`.
 
-### Vaultwarden
-- URL: https://vault.homelab.local
-- Admin Token: `change-me-please`
-- Admin Panel: https://vault.homelab.local/admin
-- First user: Create during setup
+## Where Credentials Live
 
-### ArgoCD
-- URL: https://argocd.homelab.local
-- Username: `admin`
-- Password: Get with: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+- **Source of truth**:
+  - Generated secrets: `secrets` namespace (created by `scripts/generate-secrets.sh`)
+  - GitOps secrets: `kubernetes/secrets/sops/` (encrypted at rest in git)
+- **Runtime copies**: per-namespace Secrets created from `ExternalSecret` resources (for example `grafana-admin` in `monitoring`)
 
-### MinIO Console
-- URL: Internal service (kubectl port-forward)
-- Access Key: `minioadmin`
-- Secret Key: `minioadmin123`
-- Console Port: 9001
+If ESO is not installed (or not running), the runtime copies will not exist yet, but the source-of-truth secrets in `secrets` still will.
 
-### Traefik Dashboard
-- URL: http://your-server-ip:8080
-- No authentication by default (internal access only)
+## Common Commands
 
-## Database Credentials
+List generated secrets:
 
-### MySQL (Nextcloud)
-- Host: `mysql-service.nextcloud.svc.cluster.local`
-- Database: `nextcloud`
-- Username: `nextcloud`
-- Password: `nextcloud123`
-- Root Password: `root123`
-
-## System Access
-
-### SSH (After Hardening)
-- Port: 22
-- Authentication: Key-only (password disabled)
-- Root login: Disabled
-- Key location: `~/.ssh/id_rsa`
-
-### Backup User
-- Username: `backup`
-- Home: `/opt/homelab/backups`
-- Shell: `/bin/bash`
-- Purpose: Automated backups
-
-## Security Notes
-
-⚠️ **IMPORTANT: Change all default passwords immediately after setup!**
-
-### Immediate Actions Required:
-1. Change Grafana admin password
-2. Update Vaultwarden admin token
-3. Create strong passwords for Nextcloud
-4. Generate new MinIO access keys
-5. Secure ArgoCD with proper authentication
-
-### Password Requirements:
-- Minimum 12 characters
-- Mix of uppercase, lowercase, numbers, symbols
-- Unique for each service
-- Store in password manager (use your new Vaultwarden!)
-
-### API Keys & Tokens:
-- Rotate regularly (quarterly recommended)
-- Use environment-specific keys
-- Never commit to version control
-- Store securely in Kubernetes secrets
-
-## Advanced Security
-
-### Enable 2FA Where Supported:
-- Nextcloud: Enable TOTP app
-- Vaultwarden: Built-in 2FA support
-- ArgoCD: OIDC integration available
-
-### Network Security:
-- All services behind Traefik reverse proxy
-- SSL/TLS termination with Let's Encrypt
-- Internal service communication
-- Firewall rules restrict external access
-
-### Monitoring Access:
-- Review Grafana access logs regularly
-- Monitor failed login attempts
-- Set up alerts for security events
-- Regular security audit of permissions
-
-## Credential Rotation Schedule
-
-| Service | Frequency | Method |
-|---------|-----------|---------|
-| System passwords | Monthly | Manual via service UI |
-| Database passwords | Quarterly | Update secrets, restart services |
-| SSL certificates | Automatic | Let's Encrypt auto-renewal |
-| SSH keys | Yearly | Generate new, update authorized_keys |
-| Backup encryption | Quarterly | Update restic repository keys |
-| API tokens | Quarterly | Regenerate via service APIs |
-
-## Emergency Access
-
-### Lost Admin Access:
 ```bash
-# Reset Grafana password
-kubectl exec -n monitoring deployment/grafana -- grafana-cli admin reset-admin-password newpassword
-
-# Reset ArgoCD password
-kubectl -n argocd patch secret argocd-secret -p '{"stringData": {"admin.password": "'$(htpasswd -bnBC 10 "" newpassword | tr -d ':\n')'"}}'
-
-# Access Nextcloud via database
-kubectl exec -n nextcloud deployment/mysql -- mysql -u root -proot123 nextcloud
+kubectl get secrets -n secrets
 ```
 
-### Service Recovery:
-- All credentials stored in Kubernetes secrets
-- Backup includes encrypted credential store
-- Recovery procedures in `/usr/local/bin/restore-homelab.sh`
+Read a secret field (example: Grafana admin password):
 
----
+```bash
+kubectl get secret -n secrets grafana-admin -o jsonpath='{.data.password}' | base64 -d && echo
+```
 
-**Remember: Security is a process, not a destination. Review and update regularly!** 🔒
+Read the in-namespace copy (only after ESO has synced it):
+
+```bash
+kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' | base64 -d && echo
+```
+
+## Service Cheat Sheet (Source Secrets)
+
+These are the secrets created by `scripts/generate-secrets.sh` in the `secrets` namespace:
+
+- Grafana admin: `grafana-admin` (`username`, `password`)
+- Nextcloud admin: `nextcloud-admin` (`username`, `password`)
+- Nextcloud DB password: `nextcloud-db-password` (`password`)
+- MySQL root password: `mysql-root-password` (`password`)
+- Vaultwarden admin token: `vaultwarden-admin` (`admin-token`)
+- Pi-hole web password: `pihole-config` (`web-password`)
+- Gitea admin: `gitea-admin` (`username`, `password`)
+- MinIO root creds: `minio-config` (`root-user`, `root-password`)
+- Authelia admin (plaintext for recovery): `authelia-admin` (`username`, `password`)
+- Authelia users database: `authelia-users` (`users_database.yml`)
+- Open WebUI: `open-webui-config` (`secret-key`)
+
+## Optional Integrations (User-Provided Secrets)
+
+These are **not** generated by `scripts/generate-secrets.sh`:
+
+- Alertmanager webhook (for notifications): `alertmanager-webhook` (`url`)
+- Cloudflare API token (for ExternalDNS): `cloudflare-api-token` (`token`)
+
+## Notes
+
+- If you enable publicly trusted TLS (Let’s Encrypt), make sure your domain is publicly reachable. Let’s Encrypt will not issue certificates for `.local` domains.
+- For local domains, the default is a **local CA** via cert-manager (`ClusterIssuer: homelab-ca`). See `kubernetes/ingress/cert-manager/README.md` for how to export and trust the root CA certificate on your devices.
