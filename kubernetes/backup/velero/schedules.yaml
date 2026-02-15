@@ -1,0 +1,165 @@
+---
+# Daily backup of all namespaces
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-full-backup
+  namespace: velero
+  labels:
+    app: velero
+    schedule: daily
+spec:
+  schedule: "0 2 * * *"  # 2 AM daily
+  template:
+    # Include all namespaces except system ones
+    includedNamespaces:
+    - nextcloud
+    - gitea
+    - vaultwarden
+    - heimdall
+    - jellyfin
+    - arr-stack
+    - immich
+    - ollama
+    - paperless-ngx
+    - audiobookshelf
+    - homepage
+    - n8n
+    - mealie
+    - linkwarden
+    - authelia
+    - monitoring
+    # Exclude system namespaces
+    excludedNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - velero
+    # Include PV data
+    defaultVolumesToFsBackup: true
+    # Retention
+    ttl: 168h  # 7 days for daily backups
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+  # Skip unchanged resources
+  useOwnerReferencesInBackup: true
+---
+# Weekly full backup with longer retention
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-full-backup
+  namespace: velero
+  labels:
+    app: velero
+    schedule: weekly
+spec:
+  schedule: "0 3 * * 0"  # 3 AM Sunday
+  template:
+    # All user namespaces
+    includedNamespaces:
+    - nextcloud
+    - gitea
+    - vaultwarden
+    - heimdall
+    - jellyfin
+    - arr-stack
+    - immich
+    - ollama
+    - paperless-ngx
+    - audiobookshelf
+    - homepage
+    - n8n
+    - mealie
+    - linkwarden
+    - authelia
+    - monitoring
+    - argocd
+    - secrets
+    defaultVolumesToFsBackup: true
+    ttl: 720h  # 30 days for weekly backups
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+---
+# Monthly backup with extended retention
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: monthly-full-backup
+  namespace: velero
+  labels:
+    app: velero
+    schedule: monthly
+spec:
+  schedule: "0 4 1 * *"  # 4 AM on the 1st of each month
+  template:
+    # Include everything important
+    includedNamespaces:
+    - "*"
+    excludedNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - velero
+    - metallb-system
+    - local-path-storage
+    defaultVolumesToFsBackup: true
+    ttl: 2160h  # 90 days for monthly backups
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+---
+# Critical services backup (more frequent)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: critical-services-backup
+  namespace: velero
+  labels:
+    app: velero
+    schedule: critical
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  template:
+    # Only critical services
+    includedNamespaces:
+    - vaultwarden
+    - nextcloud
+    - gitea
+    - secrets
+    defaultVolumesToFsBackup: true
+    ttl: 72h  # 3 days for frequent backups
+    storageLocation: default
+---
+# ExternalSecret for Velero MinIO credentials
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: velero-minio-credentials
+  namespace: velero
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: velero-minio-credentials
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        cloud: |
+          [default]
+          aws_access_key_id={{ .access_key }}
+          aws_secret_access_key={{ .secret_key }}
+  data:
+  - secretKey: access_key
+    remoteRef:
+      key: velero-minio-credentials
+      property: access-key
+  - secretKey: secret_key
+    remoteRef:
+      key: velero-minio-credentials
+      property: secret-key
