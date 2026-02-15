@@ -9,6 +9,7 @@ metadata:
   labels:
     app: authelia
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: authelia

@@ -44,6 +44,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 Selector labels
 */}}
 {{- define "nextcloud.selectorLabels" -}}
+app: nextcloud
 app.kubernetes.io/name: {{ include "nextcloud.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

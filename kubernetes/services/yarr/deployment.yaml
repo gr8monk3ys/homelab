@@ -127,7 +127,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:
@@ -158,21 +158,21 @@ data:
     https://feeds.feedburner.com/oreilly/radar
     https://rss.cnn.com/rss/edition.rss
     https://feeds.bbci.co.uk/news/rss.xml
-    
+
     # Development
     https://github.blog/feed/
     https://stackoverflow.blog/feed/
     https://dev.to/feed
-    
+
     # Kubernetes & Cloud Native
     https://kubernetes.io/feed.xml
     https://blog.docker.com/feed/
-    
+
     # Security
     https://feeds.feedburner.com/TheHackersNews
     https://krebsonsecurity.com/feed/
-    
+
     # Self-hosting
     https://linuxserver.io/feed.xml
-    
+
     # Add your favorite feeds here!

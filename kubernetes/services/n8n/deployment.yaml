@@ -69,6 +69,8 @@ spec:
           value: "https://automation.homelab.local/"
         - name: GENERIC_TIMEZONE
           value: "UTC"
+        - name: N8N_METRICS
+          value: "true"
         - name: DB_TYPE
           value: "postgresdb"
         - name: DB_POSTGRESDB_HOST
@@ -142,6 +144,8 @@ kind: Service
 metadata:
   name: n8n
   namespace: n8n
+  labels:
+    app: n8n
 spec:
   selector:
     app: n8n
@@ -160,7 +164,7 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
     traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

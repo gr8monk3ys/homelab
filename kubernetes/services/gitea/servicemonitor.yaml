@@ -9,9 +9,11 @@ metadata:
   labels:
     app: gitea
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: gitea
+      component: web
   endpoints:
   - port: http
     path: /metrics

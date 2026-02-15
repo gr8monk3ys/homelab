@@ -96,6 +96,8 @@ kind: Service
 metadata:
   name: minio-service
   namespace: minio-system
+  labels:
+    app: minio
 spec:
   selector:
     app: minio

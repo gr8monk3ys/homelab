@@ -123,8 +123,9 @@ metadata:
   name: vaultwarden-ingress
   namespace: vaultwarden
   annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   rules:
   - host: vault.homelab.local

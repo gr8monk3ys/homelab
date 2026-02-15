@@ -18,8 +18,8 @@ spec:
       labels:
         app: jellyfin
     spec:
-      # Required for NVIDIA GPU access
-      runtimeClassName: nvidia
+      # Optional: NVIDIA GPU transcoding
+      # runtimeClassName: nvidia
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -37,11 +37,6 @@ spec:
           value: "1000"
         - name: TZ
           value: "UTC"
-        # NVIDIA GPU environment variables
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: "all"
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: "all"
         ports:
         - containerPort: 8096
           name: http
@@ -67,8 +62,6 @@ spec:
           limits:
             memory: "4Gi"
             cpu: "4000m"
-            # NVIDIA GPU resource limit for hardware transcoding
-            nvidia.com/gpu: 1
         livenessProbe:
           httpGet:
             path: /health
@@ -144,6 +137,9 @@ kind: Service
 metadata:
   name: jellyfin-service
   namespace: jellyfin
+  labels:
+    app: jellyfin
+    component: web
 spec:
   selector:
     app: jellyfin
@@ -161,6 +157,9 @@ kind: Service
 metadata:
   name: jellyfin-discovery
   namespace: jellyfin
+  labels:
+    app: jellyfin
+    component: discovery
 spec:
   selector:
     app: jellyfin
@@ -183,7 +182,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

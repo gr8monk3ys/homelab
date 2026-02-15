@@ -9,6 +9,7 @@ metadata:
   labels:
     app: home-assistant
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: home-assistant

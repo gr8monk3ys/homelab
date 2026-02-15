@@ -9,33 +9,33 @@ data:
     # Listen on all interfaces
     interface=eth0
     bind-interfaces
-    
+
     # DHCP Range - adjust according to your network
     dhcp-range=192.168.1.100,192.168.1.200,24h
-    
+
     # Gateway and DNS servers
     dhcp-option=3,192.168.1.1  # Gateway
     dhcp-option=6,192.168.1.1  # DNS Server (Pi-hole)
-    
+
     # Domain name
     domain=homelab.local
-    
+
     # Enable DHCP logging
     log-dhcp
-    
+
     # Static DHCP assignments (examples)
     # dhcp-host=aa:bb:cc:dd:ee:ff,192.168.1.10,server1
     # dhcp-host=11:22:33:44:55:66,192.168.1.11,server2
-    
+
     # PXE Boot options (optional)
     # dhcp-boot=pxelinux.0
-    
+
     # Authoritative DHCP server
     dhcp-authoritative
-    
+
     # Lease file
     dhcp-leasefile=/var/lib/dhcp/dhcp.leases
-    
+
     # Enable IPv6 Router Advertisements
     enable-ra
 ---

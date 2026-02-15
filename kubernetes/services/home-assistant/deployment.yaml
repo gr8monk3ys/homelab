@@ -95,6 +95,8 @@ kind: Service
 metadata:
   name: home-assistant
   namespace: home-assistant
+  labels:
+    app: home-assistant
 spec:
   selector:
     app: home-assistant
@@ -112,7 +114,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

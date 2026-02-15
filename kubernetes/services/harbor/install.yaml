@@ -22,6 +22,7 @@ spec:
       key: harbor-admin
       property: password
 
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -31,53 +32,26 @@ data:
   install.sh: |
     #!/bin/bash
     set -e
-    
+
     echo "Adding Harbor Helm repository..."
     helm repo add harbor https://helm.goharbor.io
     helm repo update
-    
+
     echo "Installing Harbor..."
     helm upgrade --install harbor harbor/harbor \
       --namespace harbor \
       --values /config/values.yaml \
       --wait
-    
+
     echo "Harbor installation completed!"
 ---
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: harbor-installer
-  namespace: harbor
-spec:
-  template:
-    spec:
-      containers:
-      - name: installer
-        image: alpine/helm:3.16.3
-        command: ["/bin/sh", "/scripts/install.sh"]
-        volumeMounts:
-        - name: install-script
-          mountPath: /scripts
-        - name: values-config
-          mountPath: /config
-      volumes:
-      - name: install-script
-        configMap:
-          name: harbor-install-script
-          defaultMode: 0755
-      - name: values-config
-        configMap:
-          name: harbor-values
-      restartPolicy: Never
-  backoffLimit: 3
----
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
   name: harbor-values
   namespace: harbor
-data:
+type: Opaque
+stringData:
   values.yaml: |
     expose:
       type: ingress
@@ -92,10 +66,10 @@ data:
         annotations:
           traefik.ingress.kubernetes.io/router.entrypoints: websecure
           traefik.ingress.kubernetes.io/router.tls: "true"
-          cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    
+          cert-manager.io/cluster-issuer: "homelab-ca"
+
     externalURL: https://registry.homelab.local
-    
+
     persistence:
       enabled: true
       resourcePolicy: "keep"
@@ -118,25 +92,57 @@ data:
         trivy:
           storageClass: "local-path"
           size: 5Gi
-    
+
     # Admin password is set via existingSecretAdminPassword
     # harborAdminPassword is intentionally omitted - use secret instead
     existingSecretAdminPassword: harbor-admin
     existingSecretAdminPasswordKey: password
-    
+
     database:
       type: internal
-    
+
     redis:
       type: internal
-    
+
     trivy:
       enabled: true
-    
+
     chartmuseum:
       enabled: true
-    
+
     metrics:
       enabled: true
       serviceMonitor:
         enabled: true
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harbor-installer
+  namespace: harbor
+spec:
+  template:
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: installer
+        image: alpine/helm:3.16.3
+        command: ["/bin/sh", "/scripts/install.sh"]
+        volumeMounts:
+        - name: install-script
+          mountPath: /scripts
+        - name: values-config
+          mountPath: /config
+      volumes:
+      - name: install-script
+        configMap:
+          name: harbor-install-script
+          defaultMode: 0755
+      - name: values-config
+        secret:
+          secretName: harbor-values
+      restartPolicy: Never
+  backoffLimit: 3
