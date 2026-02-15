@@ -1,0 +1,32 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Core ArgoCD Applications ("app-of-apps").
+#
+# This mirrors what `setup-v2.sh` installs by default (or near-default). Optional
+# stacks (for example AI services) live in `../full`.
+
+resources:
+  - applications.yaml
+
+configMapGenerator:
+  - name: homelab-gitops-config
+    literals:
+      # Update this in one place to change the repo URL for all child Applications.
+      - repoURL=https://github.com/your-username/homelab.git
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: homelab-gitops-config
+      fieldPath: data.repoURL
+    targets:
+      - select:
+          kind: Application
+        fieldPaths:
+          - spec.source.repoURL
+

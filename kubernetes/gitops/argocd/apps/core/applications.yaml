@@ -1,23 +1,28 @@
 ---
-# App of Apps pattern - manages all other applications
+# Core Applications
+#
+# These are the default (or near-default) stacks for this homelab.
+
+# Homelab Secrets (SOPS/age via KSOPS)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: homelab-apps
+  name: homelab-secrets
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: argocd
+  annotations:
+    # Ensure secrets exist before other apps sync.
+    argocd.argoproj.io/sync-wave: "-10"
 spec:
   project: homelab-infrastructure
   source:
     repoURL: https://github.com/your-username/homelab.git
     targetRevision: HEAD
-    path: kubernetes/gitops/argocd/apps
-    directory:
-      recurse: true
+    path: kubernetes/secrets/sops
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: secrets
   syncPolicy:
     automated:
       prune: true
@@ -49,33 +54,6 @@ spec:
     syncOptions:
     - CreateNamespace=true
 ---
-# Velero Backup Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: velero
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-spec:
-  project: homelab-infrastructure
-  source:
-    repoURL: https://vmware-tanzu.github.io/helm-charts
-    chart: velero
-    targetRevision: 6.0.0
-    helm:
-      valueFiles:
-      - values.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: velero
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
 # CrowdSec Security Application
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -93,6 +71,54 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: crowdsec
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Authelia Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authelia
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-security
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/authelia
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authelia
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+# Homepage Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/homepage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homepage
   syncPolicy:
     automated:
       prune: true
@@ -148,35 +174,11 @@ spec:
     syncOptions:
     - CreateNamespace=true
 ---
-# Authelia Application
+# Audiobookshelf Application
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: authelia
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-spec:
-  project: homelab-security
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/authelia
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: authelia
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-# Immich Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: immich
+  name: audiobookshelf
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: argocd
@@ -185,34 +187,10 @@ spec:
   source:
     repoURL: https://github.com/your-username/homelab.git
     targetRevision: HEAD
-    path: kubernetes/services/immich
+    path: kubernetes/services/audiobookshelf
   destination:
     server: https://kubernetes.default.svc
-    namespace: immich
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-# Ollama Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: ollama
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-spec:
-  project: homelab-infrastructure
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/ollama
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: ollama
+    namespace: audiobookshelf
   syncPolicy:
     automated:
       prune: true
@@ -237,30 +215,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: paperless-ngx
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-# Homepage Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: homepage
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-spec:
-  project: homelab-infrastructure
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/homepage
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: homepage
   syncPolicy:
     automated:
       prune: true
@@ -333,30 +287,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: linkwarden
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-# Audiobookshelf Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: audiobookshelf
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-spec:
-  project: homelab-media
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/audiobookshelf
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: audiobookshelf
   syncPolicy:
     automated:
       prune: true
