@@ -28,8 +28,9 @@ configuration:
   # Backup settings
   defaultBackupTTL: 720h  # 30 days
 
-  # Enable restic/kopia for file-level backup of PVs
-  uploaderType: restic
+  # File-level backup of PVs
+  # Note: modern Velero defaults to kopia; restic has been removed.
+  uploaderType: kopia
 
 # Credentials for MinIO - managed via ExternalSecret
 # The secret is created by external-secrets.yaml in this directory
@@ -37,7 +38,7 @@ credentials:
   useSecret: true
   existingSecret: velero-credentials
 
-# Restic/Kopia integration for PV backups
+# Node Agent (file-level PV backups via kopia)
 deployNodeAgent: true
 nodeAgent:
   resources:

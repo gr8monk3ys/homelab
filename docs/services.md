@@ -32,18 +32,27 @@
 - **Features**:
   - Automatic service discovery
   - SSL/TLS termination
-  - Let's Encrypt integration
+  - Integrates with cert-manager for TLS certificates
   - Dashboard at port 8080
 - **Configuration**: Annotations on Ingress resources
 
 #### Cert-Manager
-- **Purpose**: Automatic SSL certificate management
-- **Provider**: Let's Encrypt
+- **Purpose**: Automatic TLS certificate management
+- **Default**: Local CA issuer (`homelab-ca`) for internal domains
+- **Optional**: Let’s Encrypt issuers (`letsencrypt-staging` / `letsencrypt-prod`) for publicly reachable domains
 - **Features**:
   - Automatic certificate issuance
   - Certificate renewal
   - DNS-01 and HTTP-01 challenges
   - Certificate monitoring
+
+#### ExternalDNS (Optional)
+- **Purpose**: Automatically manage DNS records for Ingress/Service hostnames (Cloudflare)
+- **Enable**: `INSTALL_EXTERNAL_DNS=true ./setup-v2.sh`
+- **Requirements**:
+  - A real DNS zone (does not work for `.local` domains)
+  - Cloudflare API token (`cloudflare-api-token`)
+- **Safety**: Defaults to `upsert-only` (won't delete unmanaged records)
 
 ---
 
@@ -60,21 +69,36 @@
 
 #### Grafana
 - **Purpose**: Metrics visualization and alerting
-- **URL**: https://grafana.homelab.local
+- **URL**: https://grafana.<your-domain>
 - **Features**:
   - Pre-configured Prometheus datasource
   - Kubernetes dashboards
   - Custom alerting rules
   - User management
 
+#### Alertmanager
+- **Purpose**: Alert routing, grouping, silences, and notification delivery
+- **Access**: Internal (via kube-prometheus-stack)
+- **Notes**:
+  - Notification routing is opt-in via `AlertmanagerConfig` (see `docs/runbooks/alerting.md`)
+
+#### Blackbox Exporter
+- **Purpose**: Synthetic HTTP/TLS probing (verifies key HTTPS endpoints through Traefik)
+- **Enabled by default**: when monitoring is enabled (toggle `INSTALL_BLACKBOX_EXPORTER`)
+
 #### Uptime Kuma
 - **Purpose**: Service uptime monitoring
-- **URL**: https://uptime.homelab.local
+- **URL**: https://uptime.<your-domain>
 - **Features**:
   - HTTP/HTTPS monitoring
   - Status page creation
   - Multiple notification channels
   - Incident management
+
+#### Loki (Optional)
+- **Purpose**: Log aggregation
+- **Access**: Internal cluster service
+- **Enable**: `INSTALL_LOGGING=true ./setup-v2.sh` (Promtail is optional; see `docs/runbooks/logging.md`)
 
 ---
 
@@ -82,7 +106,7 @@
 
 #### Nextcloud
 - **Purpose**: File sync, sharing, and collaboration
-- **URL**: https://nextcloud.homelab.local
+- **URL**: https://nextcloud.<your-domain>
 - **Storage**: 100Gi for user data
 - **Database**: MySQL 8.0 (20Gi)
 - **Features**:
@@ -94,8 +118,8 @@
 
 #### Vaultwarden
 - **Purpose**: Password manager (Bitwarden server)
-- **URL**: https://vault.homelab.local
-- **Admin**: https://vault.homelab.local/admin
+- **URL**: https://vault.<your-domain>
+- **Admin**: https://vault.<your-domain>/admin
 - **Features**:
   - Bitwarden-compatible API
   - Web vault access
@@ -105,7 +129,7 @@
 
 #### Jellyfin
 - **Purpose**: Media server for video streaming
-- **URL**: https://jellyfin.homelab.local
+- **URL**: https://jellyfin.<your-domain>
 - **Media Path**: `/mnt/media` (configure as needed)
 - **Features**:
   - Video transcoding
@@ -114,15 +138,28 @@
   - Plugin ecosystem
   - DLNA support
 
-#### Heimdall
+#### Ollama
+- **Purpose**: Local LLM runtime (model serving)
+- **URL**: https://ai.<your-domain>
+- **Storage**: 100Gi by default for models
+- **Notes**:
+  - Can be resource intensive (CPU/RAM and storage)
+  - Downloads models over the internet by default
+
+#### Open WebUI
+- **Purpose**: Chat UI for Ollama
+- **URL**: https://chat.<your-domain>
+- **Storage**: 10Gi by default for chat history
+- **Notes**:
+  - Protected via Authelia ForwardAuth (Traefik middleware)
+
+#### Homepage
 - **Purpose**: Application dashboard
-- **URL**: https://dashboard.homelab.local
+- **URL**: https://home.<your-domain>
 - **Features**:
-  - Service bookmarks
-  - Application tiles
-  - Search integration
-  - Theme customization
-  - Widget support
+  - Service tiles and links
+  - Kubernetes-aware widgets (optional)
+  - Simple config via ConfigMap
 
 ---
 
@@ -130,7 +167,7 @@
 
 #### ArgoCD
 - **Purpose**: GitOps continuous delivery
-- **URL**: https://argocd.homelab.local
+- **URL**: https://argocd.<your-domain>
 - **Features**:
   - Git repository synchronization
   - Application lifecycle management
@@ -150,6 +187,7 @@ graph TB
     F[Prometheus] --> G[Grafana]
     H[MySQL] --> I[Nextcloud]
     J[MinIO] --> K[Backup Services]
+    L[Open WebUI] --> M[Ollama]
 ```
 
 ## Resource Requirements
@@ -163,7 +201,7 @@ graph TB
 | Jellyfin | 200m | 512Mi | Variable |
 | Grafana | 100m | 256Mi | 10Gi |
 | Prometheus | 200m | 512Mi | 50Gi |
-| Heimdall | 50m | 128Mi | 1Gi |
+| Homepage | 50m | 128Mi | 1Gi |
 | Uptime Kuma | 50m | 128Mi | 5Gi |
 | ArgoCD | 250m | 512Mi | 10Gi |
 
@@ -203,7 +241,7 @@ kubectl scale deployment <service-name> --replicas=<count> -n <namespace>
 ### External Access
 - All external access via Traefik ingress
 - HTTPS termination at ingress level
-- DNS resolution via hosts file or local DNS server
+- DNS resolution via local DNS (recommended: Pi-hole wildcard) or `/etc/hosts`
 
 ### Ports
 | Service | Internal Port | External Access |
@@ -218,7 +256,7 @@ kubectl scale deployment <service-name> --replicas=<count> -n <namespace>
 - **Application Data**: Persistent volumes
 - **Configuration**: Kubernetes manifests and configs
 - **Databases**: SQL dumps and data directories
-- **Certificates**: Let's Encrypt certificates
+- **Certificates**: TLS certificates (local CA by default; optionally Let’s Encrypt)
 
 ### Backup Schedule:
 - **Daily**: Application data (2 AM)
@@ -296,7 +334,7 @@ kubernetes/services/<service-name>/
 ├── deployment.yaml
 ├── service.yaml
 ├── ingress.yaml
-└── configmap.yaml
+└── config.yaml  # ConfigMap (non-sensitive) or Secret (sensitive)
 ```
 
 For more detailed setup instructions, see the main [README.md](../README.md).

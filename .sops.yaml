@@ -1,0 +1,9 @@
+---
+# SOPS configuration (age).
+#
+# The age private key is intentionally NOT stored in this repo.
+# See docs/runbooks/gitops-secrets.md for bootstrap steps.
+creation_rules:
+  - path_regex: kubernetes/secrets/sops/.*\.ya?ml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1k2al72x2mm49jwetctk3t2u3arhhr3t28rv8pvdjzeq6ukjq6clsz7rlt9

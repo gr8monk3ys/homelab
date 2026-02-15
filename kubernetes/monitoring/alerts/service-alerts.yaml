@@ -14,7 +14,7 @@ spec:
     rules:
     # Authelia down - authentication is critical
     - alert: AutheliaDown
-      expr: up{job="authelia"} == 0
+      expr: kube_deployment_status_replicas_available{namespace="authelia",deployment="authelia"} < 1
       for: 2m
       labels:
         severity: critical
@@ -24,7 +24,7 @@ spec:
 
     # Vaultwarden down - password manager is critical
     - alert: VaultwardenDown
-      expr: up{job="vaultwarden"} == 0
+      expr: kube_deployment_status_replicas_available{namespace="vaultwarden",deployment="vaultwarden"} < 1
       for: 5m
       labels:
         severity: critical
@@ -44,7 +44,7 @@ spec:
 
     # Gitea down
     - alert: GiteaDown
-      expr: up{job="gitea"} == 0
+      expr: kube_deployment_status_replicas_available{namespace="gitea",deployment="gitea"} < 1
       for: 5m
       labels:
         severity: warning
@@ -54,7 +54,7 @@ spec:
 
     # Nextcloud down
     - alert: NextcloudDown
-      expr: up{job="nextcloud"} == 0
+      expr: kube_deployment_status_replicas_available{namespace="nextcloud",deployment="nextcloud"} < 1
       for: 5m
       labels:
         severity: warning

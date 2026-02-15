@@ -39,15 +39,15 @@ check_service_health() {
 
 check_kubernetes_resources() {
     log "Checking Kubernetes resources..."
-    
+
     # Check if kubectl is available and cluster is accessible
     if ! kubectl cluster-info &> /dev/null; then
         error "Cannot access Kubernetes cluster"
         return 1
     fi
-    
+
     success "Kubernetes cluster is accessible"
-    
+
     # Check namespaces
     local namespaces=(
         "pihole"
@@ -63,7 +63,7 @@ check_kubernetes_resources() {
         "monitoring"
         "traefik-system"
     )
-    
+
     for ns in "${namespaces[@]}"; do
         if kubectl get namespace "$ns" &> /dev/null; then
             success "Namespace $ns exists"
@@ -71,7 +71,7 @@ check_kubernetes_resources() {
             log "WARNING: Namespace $ns not found"
         fi
     done
-    
+
     # Check pods status using structured output for reliability
     log "Checking pod status..."
     local failed_pods=0
@@ -98,14 +98,14 @@ check_kubernetes_resources() {
 
 check_docker_compose() {
     log "Checking Docker Compose setup..."
-    
+
     if [ ! -f "$SCRIPT_DIR/docker-compose.yml" ]; then
         error "Docker Compose file not found"
         return 1
     fi
-    
+
     success "Docker Compose file found"
-    
+
     # Validate Docker Compose file
     if docker-compose -f "$SCRIPT_DIR/docker-compose.yml" config &> /dev/null; then
         success "Docker Compose file is valid"
@@ -113,7 +113,7 @@ check_docker_compose() {
         error "Docker Compose file has syntax errors"
         return 1
     fi
-    
+
     # Check if services are defined
     local expected_services=(
         "traefik"
@@ -129,7 +129,7 @@ check_docker_compose() {
         "minio"
         "heimdall"
     )
-    
+
     for service in "${expected_services[@]}"; do
         if docker-compose -f "$SCRIPT_DIR/docker-compose.yml" config --services | grep -q "^$service$"; then
             success "Service $service is defined"
@@ -141,7 +141,7 @@ check_docker_compose() {
 
 check_configuration_files() {
     log "Checking configuration files..."
-    
+
     local required_files=(
         "$HOMELAB_DIR/config/homelab.yaml"
         "$HOMELAB_DIR/setup.sh"
@@ -149,7 +149,7 @@ check_configuration_files() {
         "$SCRIPT_DIR/kind-config.yaml"
         "$SCRIPT_DIR/setup-kind.sh"
     )
-    
+
     for file in "${required_files[@]}"; do
         if [ -f "$file" ]; then
             success "File exists: $file"
@@ -157,7 +157,7 @@ check_configuration_files() {
             error "Missing file: $file"
         fi
     done
-    
+
     # Check if setup script is executable
     if [ -x "$HOMELAB_DIR/setup.sh" ]; then
         success "Setup script is executable"
@@ -168,7 +168,7 @@ check_configuration_files() {
 
 check_kubernetes_manifests() {
     log "Checking Kubernetes manifests..."
-    
+
     local service_dirs=(
         "pihole"
         "wireguard"
@@ -181,19 +181,19 @@ check_kubernetes_manifests() {
         "jellyfin"
         "heimdall"
     )
-    
+
     for service in "${service_dirs[@]}"; do
         local service_dir="$HOMELAB_DIR/kubernetes/services/$service"
         if [ -d "$service_dir" ]; then
             success "Service directory exists: $service"
-            
+
             # Check for required files
             if [ -f "$service_dir/namespace.yaml" ]; then
                 success "$service has namespace.yaml"
             else
                 log "WARNING: $service missing namespace.yaml"
             fi
-            
+
             if [ -f "$service_dir/deployment.yaml" ]; then
                 success "$service has deployment.yaml"
             else
@@ -207,7 +207,7 @@ check_kubernetes_manifests() {
 
 validate_service_connectivity() {
     log "Validating service connectivity (requires running environment)..."
-    
+
     # Common service endpoints to test
     local services=(
         "Pi-hole:http://pihole.homelab.local"
@@ -219,9 +219,9 @@ validate_service_connectivity() {
         "MinIO:http://minio.homelab.local"
         "Dashboard:http://dashboard.homelab.local"
     )
-    
+
     local connectivity_failures=0
-    
+
     for service_info in "${services[@]}"; do
         IFS=':' read -r service_name service_url <<< "$service_info"
         if ! check_service_health "$service_name" "$service_url"; then
@@ -229,7 +229,7 @@ validate_service_connectivity() {
         fi
         sleep 1  # Rate limiting
     done
-    
+
     if [ $connectivity_failures -eq 0 ]; then
         success "All services are accessible"
     else
@@ -262,7 +262,7 @@ run_yaml_syntax_check() {
 
 generate_report() {
     log "Generating validation report..."
-    
+
     echo ""
     echo "========================================="
     echo "         HOMELAB VALIDATION REPORT"
@@ -270,39 +270,39 @@ generate_report() {
     echo "Generated: $(date)"
     echo "Log file: $LOGFILE"
     echo ""
-    
+
     # Count successes and errors
     local success_count
     local error_count
     success_count=$(grep -c "SUCCESS:" "$LOGFILE" 2>/dev/null || echo "0")
     error_count=$(grep -c "ERROR:" "$LOGFILE" 2>/dev/null || echo "0")
-    
+
     echo "Summary:"
     echo "✅ Successful checks: $success_count"
     echo "❌ Failed checks: $error_count"
     echo ""
-    
+
     if [ "$error_count" -gt 0 ]; then
         echo "Errors found:"
         grep "ERROR:" "$LOGFILE" | sed 's/.*ERROR: /- /'
         echo ""
     fi
-    
+
     if [ "$error_count" -eq 0 ]; then
         echo "🎉 All validations passed! Your homelab setup looks good."
     else
         echo "⚠️  Some validations failed. Please review the errors above."
     fi
-    
+
     echo ""
     echo "Full log available at: $LOGFILE"
 }
 
 main() {
     local test_type="${1:-all}"
-    
+
     log "Starting homelab validation (type: $test_type)..."
-    
+
     case "$test_type" in
         "config")
             check_configuration_files
@@ -331,9 +331,9 @@ main() {
             validate_service_connectivity
             ;;
     esac
-    
+
     generate_report
-    
+
     log "Validation completed"
 }
 

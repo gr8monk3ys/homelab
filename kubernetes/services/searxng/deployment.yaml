@@ -184,22 +184,22 @@ data:
       bind_address: "0.0.0.0"
       base_url: "https://search.homelab.local"
       public_instance: false
-      
+
     redis:
       url: "redis://searxng-redis:6379"
-      
+
     ui:
       static_use_hash: true
       default_locale: "en"
       theme_args:
         simple_style: "dark"
-        
+
     search:
       safe_search: 1
       autocomplete: "google"
       default_lang: "en"
       max_ban_time_on_fail: 5
-      
+
     general:
       debug: false
       instance_name: "Homelab Search"
@@ -207,7 +207,7 @@ data:
       donation_url: false
       contact_url: false
       enable_metrics: false
-      
+
     categories_as_tabs:
       general:
       images:
@@ -219,7 +219,7 @@ data:
       science:
       files:
       social media:
-      
+
     engines:
       - name: google
         engine: google
@@ -279,7 +279,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

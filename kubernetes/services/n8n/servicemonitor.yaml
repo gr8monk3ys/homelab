@@ -9,6 +9,7 @@ metadata:
   labels:
     app: n8n
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: n8n

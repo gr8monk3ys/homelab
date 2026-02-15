@@ -7,7 +7,7 @@
 # Required Capabilities:
 # - NET_ADMIN: Required to create/manage WireGuard network interfaces
 # - SYS_MODULE: Required to load the WireGuard kernel module
-# - privileged: true: Required for full network namespace control
+# - privileged: true: Avoided; we mount /dev/net/tun and use NET_ADMIN/SYS_MODULE instead
 #
 # Host Access Required:
 # - /lib/modules: Kernel modules for WireGuard (read-only)
@@ -35,6 +35,9 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+        # If you need packet marking/routing, WireGuard deployments often set:
+        # net.ipv4.conf.all.src_valid_mark=1
+        # This may require enabling unsafe sysctls on your nodes.
       containers:
       - name: wireguard
         image: linuxserver/wireguard:1.0.20210914-legacy
@@ -66,12 +69,16 @@ spec:
         - name: lib-modules
           mountPath: /lib/modules
           readOnly: true
+        - name: dev-net-tun
+          mountPath: /dev/net/tun
         securityContext:
+          allowPrivilegeEscalation: false
           capabilities:
+            drop:
+            - ALL
             add:
             - NET_ADMIN
             - SYS_MODULE
-          privileged: true
         resources:
           requests:
             memory: "128Mi"
@@ -106,6 +113,10 @@ spec:
         hostPath:
           path: /lib/modules
           type: Directory
+      - name: dev-net-tun
+        hostPath:
+          path: /dev/net/tun
+          type: CharDevice
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -252,7 +263,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

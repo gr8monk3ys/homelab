@@ -80,11 +80,14 @@ kind: Service
 metadata:
   name: uptime-kuma-service
   namespace: uptime-kuma
+  labels:
+    app: uptime-kuma
 spec:
   selector:
     app: uptime-kuma
   ports:
-  - port: 3001
+  - name: http
+    port: 3001
     targetPort: 3001
   type: ClusterIP
 ---
@@ -94,8 +97,9 @@ metadata:
   name: uptime-kuma-ingress
   namespace: uptime-kuma
   annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   rules:
   - host: uptime.homelab.local

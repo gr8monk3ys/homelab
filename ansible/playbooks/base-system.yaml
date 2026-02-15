@@ -14,7 +14,7 @@
       - gnupg
       - lsb-release
     docker_compose_version: "2.21.0"
-    
+
   tasks:
     - name: Update package cache
       package:

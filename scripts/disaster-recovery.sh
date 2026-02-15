@@ -7,6 +7,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
+# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
+TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
+if [[ -d "$TOOLS_DIR/bin" ]]; then
+    PATH="$TOOLS_DIR/bin:$PATH"
+fi
+if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
+    PATH="$TOOLS_DIR/venv/bin:$PATH"
+fi
+export PATH
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -19,9 +29,12 @@ NC='\033[0m' # No Color
 # Configuration
 BACKUP_NAMESPACE="${BACKUP_NAMESPACE:-velero}"
 LOG_FILE="${HOMELAB_DIR}/disaster-recovery-$(date +%Y%m%d-%H%M%S).log"
+SECRETS_BACKUP_FILE="${SECRETS_BACKUP_FILE:-}"
+AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    local msg
+    msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     echo -e "${BLUE}${msg}${NC}"
     echo "$msg" >> "$LOG_FILE"
 }
@@ -91,6 +104,12 @@ check_prerequisites() {
 
     if ! command -v helm &> /dev/null; then
         missing+=("helm")
+    fi
+
+    if [ -n "${SECRETS_BACKUP_FILE:-}" ]; then
+        if ! command -v age &> /dev/null; then
+            missing+=("age")
+        fi
     fi
 
     if [ ${#missing[@]} -gt 0 ]; then
@@ -168,7 +187,8 @@ restore_from_backup() {
 
     confirm "This will restore from backup '$backup_name'. Continue?"
 
-    local restore_name="restore-${backup_name}-$(date +%s)"
+    local restore_name
+    restore_name="restore-${backup_name}-$(date +%s)"
     log "Creating restore: $restore_name"
 
     if command -v velero &> /dev/null; then
@@ -223,7 +243,8 @@ restore_namespace() {
 
     confirm "This will restore namespace '$namespace' from backup '$backup_name'. Continue?"
 
-    local restore_name="restore-${namespace}-$(date +%s)"
+    local restore_name
+    restore_name="restore-${namespace}-$(date +%s)"
     log "Creating namespace restore: $restore_name"
 
     if command -v velero &> /dev/null; then
@@ -261,16 +282,46 @@ reinstall_infrastructure() {
 
     # Secrets management
     log "Installing External Secrets Operator..."
-    if [ -f "$HOMELAB_DIR/kubernetes/secrets/external-secrets-operator.yaml" ]; then
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/external-secrets-operator.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+    helm repo add external-secrets https://charts.external-secrets.io 2>&1 | tee -a "$LOG_FILE" || true
+    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
+    helm upgrade --install external-secrets external-secrets/external-secrets \
+        -n external-secrets --create-namespace \
+        --set installCRDs=true \
+        --wait 2>&1 | tee -a "$LOG_FILE" || true
+
+    if [ -d "$HOMELAB_DIR/kubernetes/secrets" ]; then
+        kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/" 2>&1 | tee -a "$LOG_FILE" || true
     fi
 
     # Ingress
     log "Installing Traefik..."
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/" 2>&1 | tee -a "$LOG_FILE" || true
+    helm repo add traefik https://traefik.github.io/charts 2>&1 | tee -a "$LOG_FILE" || true
+    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
+    helm upgrade --install traefik traefik/traefik \
+        -n traefik-system --create-namespace \
+        -f "$HOMELAB_DIR/kubernetes/ingress/traefik/values.yaml" \
+        --wait 2>&1 | tee -a "$LOG_FILE" || true
 
     # Cert-manager
     log "Installing cert-manager..."
+    helm repo add jetstack https://charts.jetstack.io 2>&1 | tee -a "$LOG_FILE" || true
+    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
+    helm upgrade --install cert-manager jetstack/cert-manager \
+        -n cert-manager --create-namespace \
+        --version v1.13.0 \
+        --set installCRDs=true \
+        --wait 2>&1 | tee -a "$LOG_FILE" || true
+
+    # Optional: restore encrypted secrets before (re)creating issuers/certificates.
+    if [ -n "${SECRETS_BACKUP_FILE:-}" ]; then
+        if [ ! -f "$SECRETS_BACKUP_FILE" ]; then
+            warning "SECRETS_BACKUP_FILE was set but does not exist: $SECRETS_BACKUP_FILE"
+        else
+            log "Restoring secrets from encrypted backup: $SECRETS_BACKUP_FILE"
+            AGE_IDENTITY_FILE="$AGE_IDENTITY_FILE" bash "$HOMELAB_DIR/scripts/restore-secrets.sh" "$SECRETS_BACKUP_FILE" 2>&1 | tee -a "$LOG_FILE" || true
+        fi
+    fi
+
     if [ -d "$HOMELAB_DIR/kubernetes/ingress/cert-manager" ]; then
         kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/cert-manager/" 2>&1 | tee -a "$LOG_FILE" || true
     fi
@@ -299,6 +350,12 @@ reinstall_monitoring() {
         kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/" 2>&1 | tee -a "$LOG_FILE" || true
     fi
 
+    # Promtail (optional; kept under extras/ due to required host mounts/capabilities)
+    if [ -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml" ]; then
+        log "Installing Promtail (extras)..."
+        kubectl apply -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+    fi
+
     success "Monitoring stack reinstallation initiated"
 }
 
@@ -314,6 +371,17 @@ reinstall_critical_services() {
     confirm "This will reinstall critical services: ${services[*]}. Continue?"
 
     for service in "${services[@]}"; do
+        if [[ "$service" == "nextcloud" ]]; then
+            log "Installing nextcloud (Helm)..."
+            helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
+                --namespace nextcloud \
+                --create-namespace \
+                --dependency-update \
+                -f "$HOMELAB_DIR/helm/nextcloud/values.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+            success "nextcloud installation initiated"
+            continue
+        fi
+
         local service_path="$HOMELAB_DIR/kubernetes/services/$service"
         if [ -d "$service_path" ]; then
             log "Installing $service..."

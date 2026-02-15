@@ -123,6 +123,8 @@ kind: Service
 metadata:
   name: immich-server
   namespace: immich
+  labels:
+    app: immich-server
 spec:
   selector:
     app: immich-server
@@ -140,7 +142,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
     # Allow large file uploads
     traefik.ingress.kubernetes.io/buffering: |
       maxRequestBodyBytes: 0

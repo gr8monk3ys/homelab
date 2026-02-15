@@ -7,6 +7,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
+# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
+TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
+if [[ -d "$TOOLS_DIR/bin" ]]; then
+    PATH="$TOOLS_DIR/bin:$PATH"
+fi
+if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
+    PATH="$TOOLS_DIR/venv/bin:$PATH"
+fi
+export PATH
+
+SECRETS_NAMESPACE="${SECRETS_NAMESPACE:-secrets}"
+# By default, do not overwrite existing secrets. Set ROTATE_SECRETS=true to rotate.
+ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
+CONFIG_FILE="${CONFIG_FILE:-$HOMELAB_DIR/config/homelab.yaml}"
+
+# Default admin email (used for Authelia users DB). If unset, optionally read from config/homelab.yaml.
+if [[ -z "${ADMIN_EMAIL-}" ]]; then
+    ADMIN_EMAIL="admin@homelab.local"
+    if [[ -f "$CONFIG_FILE" ]] && command -v yq &> /dev/null; then
+        cfg_email="$(yq -r '.homelab.email // empty' "$CONFIG_FILE" 2>/dev/null || true)"
+        [[ -n "${cfg_email:-}" ]] && ADMIN_EMAIL="$cfg_email"
+    fi
+fi
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
@@ -50,230 +74,213 @@ generate_secret_key() {
     openssl rand -hex "$length"
 }
 
+upsert_secret() {
+    local name="$1"
+    shift
+
+    if [[ "$ROTATE_SECRETS" != "true" ]] && kubectl get secret -n "$SECRETS_NAMESPACE" "$name" &> /dev/null; then
+        log "Secret ${SECRETS_NAMESPACE}/${name} already exists; skipping (set ROTATE_SECRETS=true to rotate)."
+        return 0
+    fi
+
+    kubectl create secret generic "$name" \
+        --namespace="$SECRETS_NAMESPACE" \
+        "$@" \
+        --dry-run=client -o yaml | kubectl apply -f -
+}
+
+# Best-effort: generate an Authelia Argon2 password hash by running Authelia in-cluster.
+# This avoids requiring Docker on the host.
+generate_authelia_argon2_hash() {
+    local password="$1"
+    local image="${AUTHELIA_IMAGE:-authelia/authelia:4.38.18}"
+    local pod_name
+    pod_name="authelia-hashgen-$(date +%s)"
+
+    local output
+    if ! output=$(
+        kubectl run "$pod_name" \
+            --namespace="$SECRETS_NAMESPACE" \
+            --image="$image" \
+            --restart=Never \
+            --rm \
+            -i \
+            --command -- \
+            authelia crypto hash generate argon2 --password "$password" 2>/dev/null
+    ); then
+        return 1
+    fi
+
+    # Extract the first argon2 hash from the output.
+    echo "$output" | grep -Eo '\\$argon2[^[:space:]]+' | head -n 1
+}
+
 # Check dependencies first
 check_dependencies
 
 log "Generating secure secrets for homelab services..."
 
 # Create secrets namespace if it doesn't exist
-kubectl create namespace secrets --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace "$SECRETS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # Core infrastructure secrets
 log "Creating core infrastructure secrets..."
 
 # MinIO root credentials (used by minio-system deployment)
-kubectl create secret generic minio-config \
+upsert_secret minio-config \
     --from-literal=root-user="minioadmin" \
-    --from-literal=root-password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=root-password="$(generate_password)"
 
 # MinIO S3 credentials (used by services like Velero for bucket access)
-kubectl create secret generic minio-credentials \
+upsert_secret minio-credentials \
     --from-literal=access-key="$(generate_password 20)" \
-    --from-literal=secret-key="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=secret-key="$(generate_secret_key 32)"
 
 # Database passwords
 log "Creating database secrets..."
 
-kubectl create secret generic mysql-root-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret mysql-root-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic nextcloud-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret nextcloud-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic gitea-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret gitea-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic harbor-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret harbor-db-password \
+    --from-literal=password="$(generate_password)"
 
 # Application admin passwords
 log "Creating application admin secrets..."
 
-kubectl create secret generic nextcloud-admin \
+upsert_secret nextcloud-admin \
     --from-literal=username="admin" \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic grafana-admin \
+upsert_secret grafana-admin \
     --from-literal=username="admin" \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic vaultwarden-admin \
-    --from-literal=admin-token="$(generate_secret_key)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret vaultwarden-admin \
+    --from-literal=admin-token="$(generate_secret_key)"
 
-kubectl create secret generic gitea-admin \
+upsert_secret gitea-admin \
     --from-literal=username="admin" \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic harbor-admin \
+upsert_secret harbor-admin \
     --from-literal=username="admin" \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=password="$(generate_password)"
 
 # Service-specific secrets
 log "Creating service-specific secrets..."
 
-kubectl create secret generic pihole-config \
+upsert_secret pihole-config \
     --from-literal=web-password="$(generate_password)" \
-    --from-literal=dns-servers="1.1.1.1;8.8.8.8" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=dns-servers="1.1.1.1;8.8.8.8"
 
-kubectl create secret generic wireguard-config \
+upsert_secret wireguard-config \
     --from-literal=ui-password="$(generate_password)" \
-    --from-literal=internal-subnet="10.13.13.0" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=internal-subnet="10.13.13.0"
 
-kubectl create secret generic searxng-config \
+upsert_secret searxng-config \
     --from-literal=secret-key="$(generate_secret_key)" \
-    --from-literal=instance-name="Homelab Search" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=instance-name="Homelab Search"
 
 YARR_PASSWORD="$(generate_password)"
-kubectl create secret generic yarr-config \
+upsert_secret yarr-config \
     --from-literal=auth-user="admin" \
     --from-literal=auth-password="$YARR_PASSWORD" \
-    --from-literal=auth-credentials="admin:$YARR_PASSWORD" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=auth-credentials="admin:$YARR_PASSWORD"
 
 DRONE_DB_PASSWORD="$(generate_password)"
-kubectl create secret generic drone-config \
+upsert_secret drone-config \
     --from-literal=gitea-client-id="$(generate_secret_key 16)" \
     --from-literal=gitea-client-secret="$(generate_secret_key)" \
     --from-literal=rpc-secret="$(generate_secret_key)" \
     --from-literal=db-password="$DRONE_DB_PASSWORD" \
-    --from-literal=database-url="postgres://drone:${DRONE_DB_PASSWORD}@drone-db:5432/drone?sslmode=disable" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=database-url="postgres://drone:${DRONE_DB_PASSWORD}@drone-db:5432/drone?sslmode=disable"
 
 # New services secrets
 log "Creating secrets for new services..."
 
 # Velero MinIO credentials
-kubectl create secret generic velero-minio-credentials \
+upsert_secret velero-minio-credentials \
     --from-literal=access-key="velero" \
-    --from-literal=secret-key="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=secret-key="$(generate_secret_key 32)"
 
 # CrowdSec secrets
-kubectl create secret generic crowdsec-config \
+upsert_secret crowdsec-config \
     --from-literal=bouncer-api-key="$(generate_secret_key 32)" \
-    --from-literal=enroll-key="" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=enroll-key=""
 
 # Authelia secrets
-kubectl create secret generic authelia-secrets \
+upsert_secret authelia-secrets \
     --from-literal=jwt-secret="$(generate_secret_key 64)" \
     --from-literal=session-secret="$(generate_secret_key 64)" \
     --from-literal=storage-encryption-key="$(generate_secret_key 64)" \
-    --from-literal=redis-password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=redis-password="$(generate_password)"
 
-# Authelia users database (stored as YAML content)
-# Generate a password hash for the admin user
+# Authelia admin credentials + users database (stored as YAML content)
+AUTHELIA_ADMIN_USERNAME="admin"
 AUTHELIA_ADMIN_PASSWORD="$(generate_password)"
-log "Authelia admin password generated (save this): $AUTHELIA_ADMIN_PASSWORD"
 
-# Create users database YAML content
-# Note: In production, generate the hash with:
-#   docker run --rm authelia/authelia:latest authelia crypto hash generate argon2 --password 'yourpassword'
-AUTHELIA_USERS_DB=$(cat <<'USERS_EOF'
+# Store the plaintext password so you can retrieve it later (e.g. after a rebuild).
+upsert_secret authelia-admin \
+    --from-literal=username="$AUTHELIA_ADMIN_USERNAME" \
+    --from-literal=password="$AUTHELIA_ADMIN_PASSWORD"
+
+AUTHELIA_ADMIN_HASH="$(generate_authelia_argon2_hash "$AUTHELIA_ADMIN_PASSWORD" || true)"
+if [ -z "${AUTHELIA_ADMIN_HASH:-}" ]; then
+    log "WARNING: Failed to generate Authelia Argon2 hash automatically."
+    log "         Using a placeholder hash. Replace it before exposing Authelia externally."
+    AUTHELIA_ADMIN_HASH='$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_PROPER_HASH'
+fi
+
+AUTHELIA_USERS_DB=$(cat <<USERS_EOF
 ---
 users:
-  admin:
+  ${AUTHELIA_ADMIN_USERNAME}:
     displayname: "Admin User"
-    # Password hash - regenerate in production with proper hash
-    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_PROPER_HASH"
-    email: admin@homelab.local
+    password: "${AUTHELIA_ADMIN_HASH}"
+    email: ${ADMIN_EMAIL}
     groups:
       - admins
       - users
 USERS_EOF
 )
 
-kubectl create secret generic authelia-users \
-    --from-literal=users_database.yml="$AUTHELIA_USERS_DB" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-log "WARNING: Authelia users database created with placeholder hash."
-log "         Generate proper password hash with:"
-log "         docker run --rm authelia/authelia:latest authelia crypto hash generate argon2 --password 'YOUR_PASSWORD'"
-log "         Then update the secret manually."
+upsert_secret authelia-users \
+    --from-literal=users_database.yml="$AUTHELIA_USERS_DB"
 
 # Immich secrets
-kubectl create secret generic immich-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-# Ollama/Open WebUI secrets
-kubectl create secret generic ollama-config \
-    --from-literal=webui-secret="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret immich-db-password \
+    --from-literal=password="$(generate_password)"
 
 # Paperless-ngx secrets
-kubectl create secret generic paperless-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret paperless-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic paperless-admin \
+upsert_secret paperless-admin \
     --from-literal=username="admin" \
     --from-literal=password="$(generate_password)" \
-    --from-literal=secret-key="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=secret-key="$(generate_secret_key 64)"
 
 # n8n secrets
-kubectl create secret generic n8n-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret n8n-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic n8n-config \
+upsert_secret n8n-config \
     --from-literal=encryption-key="$(generate_secret_key 32)" \
-    --from-literal=jwt-secret="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=jwt-secret="$(generate_secret_key 32)"
 
 # Linkwarden secrets
-kubectl create secret generic linkwarden-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret linkwarden-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic linkwarden-config \
-    --from-literal=nextauth-secret="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret linkwarden-config \
+    --from-literal=nextauth-secret="$(generate_secret_key 32)"
 
 # ============================================
 # NEW SERVICES - Added during expansion
@@ -282,189 +289,131 @@ kubectl create secret generic linkwarden-config \
 log "Creating Smart Home service secrets..."
 
 # Home Assistant secrets
-kubectl create secret generic home-assistant-token \
-    --from-literal=token="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret home-assistant-token \
+    --from-literal=token="$(generate_secret_key 64)"
 
 # Node-RED secrets
-kubectl create secret generic node-red-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret node-red-password \
+    --from-literal=password="$(generate_password)"
 
 # Mosquitto MQTT secrets
-kubectl create secret generic mosquitto-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret mosquitto-password \
+    --from-literal=password="$(generate_password)"
 
 log "Creating AI/LLM service secrets..."
 
 # Open WebUI secrets
-kubectl create secret generic open-webui-secret \
-    --from-literal=secret="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret open-webui-config \
+    --from-literal=secret-key="$(generate_secret_key 32)"
 
 # LocalAI secrets
-kubectl create secret generic localai-api-key \
-    --from-literal=api-key="$(generate_secret_key 32)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret localai-api-key \
+    --from-literal=api-key="$(generate_secret_key 32)"
 
 log "Creating Communication service secrets..."
 
 # Matrix/Synapse secrets
-kubectl create secret generic synapse-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret synapse-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic synapse-registration-secret \
+upsert_secret synapse-registration-secret \
     --from-literal=secret="$(generate_secret_key 64)" \
     --from-literal=macaroon-secret-key="$(generate_secret_key 64)" \
-    --from-literal=form-secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --from-literal=form-secret="$(generate_secret_key 64)"
 
 # Mattermost secrets
-kubectl create secret generic mattermost-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret mattermost-db-password \
+    --from-literal=password="$(generate_password)"
 
 log "Creating Observability service secrets..."
 
 # Netdata cloud claim token (optional - leave empty if not using Netdata Cloud)
-kubectl create secret generic netdata-claim-token \
-    --from-literal=token="" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret netdata-claim-token \
+    --from-literal=token=""
 
 log "Creating Development tool secrets..."
 
 # Code-Server secrets
-kubectl create secret generic code-server-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret code-server-password \
+    --from-literal=password="$(generate_password)"
 
 # Outline wiki secrets
-kubectl create secret generic outline-secret-key \
-    --from-literal=key="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret outline-secret-key \
+    --from-literal=key="$(generate_secret_key 64)"
 
-kubectl create secret generic outline-utils-secret \
-    --from-literal=key="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret outline-utils-secret \
+    --from-literal=key="$(generate_secret_key 64)"
 
-kubectl create secret generic outline-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret outline-db-password \
+    --from-literal=password="$(generate_password)"
 
 # Hoppscotch secrets
-kubectl create secret generic hoppscotch-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret hoppscotch-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic hoppscotch-jwt-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret hoppscotch-jwt-secret \
+    --from-literal=secret="$(generate_secret_key 64)"
 
-kubectl create secret generic hoppscotch-session-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret hoppscotch-session-secret \
+    --from-literal=secret="$(generate_secret_key 64)"
 
 log "Creating Data/Analytics service secrets..."
 
 # Umami secrets
-kubectl create secret generic umami-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret umami-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic umami-app-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret umami-app-secret \
+    --from-literal=secret="$(generate_secret_key 64)"
 
 # Metabase secrets
-kubectl create secret generic metabase-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret metabase-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic metabase-encryption-key \
-    --from-literal=key="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret metabase-encryption-key \
+    --from-literal=key="$(generate_secret_key 64)"
 
 # NocoDB secrets
-kubectl create secret generic nocodb-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret nocodb-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic nocodb-jwt-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret nocodb-jwt-secret \
+    --from-literal=secret="$(generate_secret_key 64)"
 
 log "Creating Security service secrets..."
 
 # Keycloak secrets
-kubectl create secret generic keycloak-admin-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret keycloak-admin-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic keycloak-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret keycloak-db-password \
+    --from-literal=password="$(generate_password)"
 
 log "Creating Entertainment service secrets..."
 
 # RomM secrets
-kubectl create secret generic romm-db-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret romm-db-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic romm-db-root-password \
-    --from-literal=password="$(generate_password)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret romm-db-root-password \
+    --from-literal=password="$(generate_password)"
 
-kubectl create secret generic romm-auth-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret romm-auth-secret \
+    --from-literal=secret="$(generate_secret_key 64)"
 
 # RomM IGDB credentials (optional - for game metadata)
-kubectl create secret generic romm-igdb-client-id \
-    --from-literal=id="" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret romm-igdb-client-id \
+    --from-literal=id=""
 
-kubectl create secret generic romm-igdb-client-secret \
-    --from-literal=secret="" \
-    --namespace=secrets \
-    --dry-run=client -o yaml | kubectl apply -f -
+upsert_secret romm-igdb-client-secret \
+    --from-literal=secret=""
 
 log "All secrets generated successfully!"
 log ""
 log "🔐 Security Notice:"
-log "   - All passwords are now randomly generated and stored in Kubernetes secrets"
-log "   - Secrets are stored in the 'secrets' namespace"
-log "   - Access admin passwords with: kubectl get secret <secret-name> -n secrets -o jsonpath='{.data.password}' | base64 -d"
+log "   - Secrets are stored in the '${SECRETS_NAMESPACE}' namespace"
+log "   - By default, existing secrets are left unchanged (set ROTATE_SECRETS=true to rotate)"
+log "   - Read a field with: kubectl get secret <secret-name> -n ${SECRETS_NAMESPACE} -o jsonpath='{.data.<key>}' | base64 -d"
 log ""
 log "📝 Next steps:"
 log "   1. Update your service deployments to use these secrets"

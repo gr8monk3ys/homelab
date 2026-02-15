@@ -94,92 +94,11 @@ spec:
         persistentVolumeClaim:
           claimName: drone-data-pvc
 ---
-# Drone Runner Deployment
-# SECURITY NOTE: This deployment mounts the Docker socket for container builds.
-# This is a security-sensitive operation that grants container control.
-# Consider using Drone Kubernetes Runner for improved isolation.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: drone-runner
-  namespace: drone
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: drone-runner
-  template:
-    metadata:
-      labels:
-        app: drone-runner
-    spec:
-      # Note: Cannot use runAsNonRoot due to Docker socket access requirements
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-      - name: drone-runner
-        image: drone/drone-runner-docker:1.8.3
-        securityContext:
-          # Docker socket access requires specific permissions
-          # Minimize other privileges where possible
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - ALL
-            add:
-              - SETUID
-              - SETGID
-        env:
-        - name: DRONE_RPC_PROTO
-          value: "https"
-        - name: DRONE_RPC_HOST
-          value: "drone.homelab.local"
-        - name: DRONE_RPC_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: drone-secret
-              key: rpc-secret
-        - name: DRONE_RUNNER_CAPACITY
-          value: "2"
-        - name: DRONE_RUNNER_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: DRONE_REGISTRY_ENDPOINT
-          value: "https://registry.homelab.local"
-        volumeMounts:
-        - name: docker-sock
-          mountPath: /var/run/docker.sock
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "50m"
-          limits:
-            memory: "512Mi"
-            cpu: "1000m"
-        livenessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "pgrep drone-runner"
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 5
-        readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - "pgrep drone-runner"
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 3
-      volumes:
-      - name: docker-sock
-        hostPath:
-          path: /var/run/docker.sock
+# NOTE:
+# A Drone runner is required to execute pipelines. Runners are intentionally not
+# installed by default. If you accept the security trade-offs of mounting the
+# Docker socket, apply:
+#   extras/kubernetes/services/drone/drone-runner-docker.yaml
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -348,7 +267,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

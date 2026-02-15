@@ -1,0 +1,40 @@
+---
+# ExternalDNS (Cloudflare) values.
+#
+# Notes:
+# - Requires a real DNS zone (this does not work for `.local` domains).
+# - Uses an API token stored in the central `secrets` namespace and synced via ESO.
+
+provider:
+  name: cloudflare
+
+env:
+  - name: CF_API_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: cloudflare-api-token
+        key: token
+
+# Safety: don't delete records you didn't create.
+policy: upsert-only
+registry: txt
+txtOwnerId: homelab
+
+sources:
+  - ingress
+  - service
+
+domainFilters:
+  - homelab.local
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+

@@ -83,6 +83,41 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
+      - name: pihole-exporter
+        image: ekofr/pihole-exporter:v0.4.0
+        args:
+        - -pihole_hostname=127.0.0.1
+        - -pihole_port=80
+        - -pihole_protocol=http
+        - -pihole_password=$(PIHOLE_PASSWORD)
+        env:
+        - name: PIHOLE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pihole-secret
+              key: web-password
+        ports:
+        - containerPort: 9617
+          name: metrics
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9617
+          initialDelaySeconds: 10
+          periodSeconds: 30
       volumes:
       - name: pihole-data
         persistentVolumeClaim:
@@ -142,6 +177,9 @@ kind: Service
 metadata:
   name: pihole-web
   namespace: pihole
+  labels:
+    app: pihole
+    component: web
 spec:
   selector:
     app: pihole
@@ -156,6 +194,9 @@ kind: Service
 metadata:
   name: pihole-dns
   namespace: pihole
+  labels:
+    app: pihole
+    component: dns
 spec:
   selector:
     app: pihole
@@ -170,6 +211,23 @@ spec:
     protocol: UDP
   type: LoadBalancer
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-metrics
+  namespace: pihole
+  labels:
+    app: pihole
+    component: metrics
+spec:
+  selector:
+    app: pihole
+  ports:
+  - name: metrics
+    port: 9617
+    targetPort: 9617
+  type: ClusterIP
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -178,7 +236,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

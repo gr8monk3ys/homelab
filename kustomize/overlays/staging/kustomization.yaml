@@ -9,9 +9,6 @@ metadata:
 resources:
   - ../../base
 
-patches:
-  - path: resource-patches.yaml
-
 # Note: namePrefix removed to preserve resource naming consistency
 
 labels:
@@ -20,21 +17,7 @@ labels:
       tier: staging
     includeSelectors: false
 
-replicas:
-  # Staging replicas (similar to production but fewer)
-  - name: traefik
-    count: 1
-  - name: external-secrets-operator
-    count: 1
-
-images:
-  # Use release candidate versions for staging
-  - name: nextcloud
-    newTag: 28-apache
-  - name: gitea/gitea
-    newTag: 1.21.0
-  - name: traefik
-    newTag: v2.10.4
+# Note: controller replicas and image pinning are managed by Helm chart values.
 
 configMapGenerator:
   - name: homelab-config

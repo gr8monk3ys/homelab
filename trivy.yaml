@@ -10,10 +10,10 @@ scan:
     - "kustomize"
 
 misconfiguration:
-  # Ignore specific checks that are false positives or intentional
-  # See: https://avd.aquasec.com/misconfig/kubernetes/
+  # Limit misconfig scanning to Kubernetes manifests.
+  # Valid values include: kubernetes, helm, dockerfile, terraform, cloudformation, etc.
   scanners:
-    - config
+    - kubernetes
 
   # Checks to skip entirely
   # KSV040: Image tag issues - causes false positives on non-deployment resources

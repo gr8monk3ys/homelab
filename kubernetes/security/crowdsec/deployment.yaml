@@ -294,19 +294,3 @@ spec:
     remoteRef:
       key: crowdsec-config
       property: enroll-key
----
-# ServiceMonitor for Prometheus
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: crowdsec
-  namespace: crowdsec
-  labels:
-    app: crowdsec
-spec:
-  selector:
-    matchLabels:
-      app: crowdsec
-  endpoints:
-  - port: metrics
-    interval: 30s

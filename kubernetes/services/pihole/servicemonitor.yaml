@@ -1,7 +1,6 @@
 ---
 # ServiceMonitor for Pi-hole
-# Requires pihole-exporter sidecar or standalone exporter
-# This assumes the exporter is running on port 9617
+# This repo deploys a pihole-exporter sidecar and exposes it via Service `pihole-metrics` on port 9617.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -10,10 +9,12 @@ metadata:
   labels:
     app: pihole
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: pihole
+      component: metrics
   endpoints:
-  - port: http
+  - port: metrics
     path: /metrics
     interval: 30s

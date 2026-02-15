@@ -43,6 +43,12 @@ KSV020
 # LEGITIMATE SERVICE REQUIREMENTS - Services that need elevated privileges
 # =============================================================================
 
+# KSV023: hostPath volumes mounted
+# Required for select services that must interact with the host:
+# - WireGuard: /dev/net/tun and /lib/modules
+# - CrowdSec (agent): optional host log ingestion (review before enabling)
+KSV023
+
 # KSV012: Runs as root
 # Some applications legitimately require root:
 # - LinuxServer.io images (use internal PUID/PGID for permissions)
@@ -50,6 +56,11 @@ KSV020
 # - Network services (pihole, dnsmasq, wireguard)
 # - Certain init containers
 KSV012
+
+# KSV022: Specific capabilities added
+# Some services legitimately require a minimal set of Linux capabilities.
+# We already drop ALL and only add the required capabilities.
+KSV022
 
 # KSV014: SYS_ADMIN capability
 # Required for specific services:
@@ -75,6 +86,11 @@ KSV009
 # =============================================================================
 # LOW PRIORITY - Already mitigated or minimal risk
 # =============================================================================
+
+# KSV113: Manage namespace secrets
+# This repo uses External Secrets Operator with the Kubernetes provider backed by a central `secrets` namespace.
+# That design requires read access to Secrets in that namespace.
+KSV113
 
 # KSV106: Container running without memory limits
 # We have resource limits on all main containers; some init containers

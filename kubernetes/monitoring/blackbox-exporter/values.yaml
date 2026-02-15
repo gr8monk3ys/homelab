@@ -1,0 +1,57 @@
+---
+# Prometheus blackbox exporter values.
+#
+# Targets probe Traefik from inside the cluster while setting HTTP Host + TLS SNI
+# via the `hostname` parameter. This avoids relying on external DNS from within
+# the cluster.
+
+config:
+  modules:
+    https_2xx_insecure:
+      prober: http
+      timeout: 10s
+      http:
+        method: GET
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        follow_redirects: false
+        preferred_ip_protocol: ip4
+        tls_config:
+          # Homelabs commonly use a local CA; don't require system trust roots.
+          insecure_skip_verify: true
+        # Many apps redirect to login; treat redirects as "up".
+        valid_status_codes: [200, 301, 302, 303, 307, 308]
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+serviceMonitor:
+  enabled: true
+  defaults:
+    module: https_2xx_insecure
+    interval: 30s
+    scrapeTimeout: 10s
+  targets:
+    # The URL is the internal Traefik service; the hostname is the public virtual host.
+    - name: grafana
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: grafana.homelab.local
+    - name: homepage
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: home.homelab.local
+    - name: authelia
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: auth.homelab.local
+    - name: nextcloud
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: nextcloud.homelab.local
+    - name: gitea
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: git.homelab.local
+    - name: vaultwarden
+      url: https://traefik.traefik-system.svc.cluster.local
+      hostname: vault.homelab.local
+

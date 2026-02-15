@@ -21,6 +21,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -116,8 +118,8 @@ spec:
               - ALL
       volumes:
       - name: config
-        configMap:
-          name: authelia-config
+        secret:
+          secretName: authelia-config
       - name: users-db
         secret:
           secretName: authelia-users-secret
@@ -146,6 +148,8 @@ kind: Service
 metadata:
   name: authelia
   namespace: authelia
+  labels:
+    app: authelia
 spec:
   selector:
     app: authelia
@@ -163,7 +167,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

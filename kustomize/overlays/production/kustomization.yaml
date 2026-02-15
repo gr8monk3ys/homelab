@@ -9,30 +9,13 @@ metadata:
 resources:
   - ../../base
 
-patches:
-  - path: resource-patches.yaml
-
 labels:
   - pairs:
       environment: production
       tier: prod
     includeSelectors: false
 
-replicas:
-  # Production replicas
-  - name: traefik
-    count: 2
-  - name: external-secrets-operator
-    count: 2
-
-images:
-  # Use stable/pinned versions for production
-  - name: nextcloud
-    newTag: 28-apache
-  - name: gitea/gitea
-    newTag: 1.21.0
-  - name: traefik
-    newTag: v2.10.4
+# Note: controller replicas and image pinning are managed by Helm chart values.
 
 configMapGenerator:
   - name: homelab-config

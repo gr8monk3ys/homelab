@@ -7,6 +7,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
+# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
+TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
+if [[ -d "$TOOLS_DIR/bin" ]]; then
+    PATH="$TOOLS_DIR/bin:$PATH"
+fi
+if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
+    PATH="$TOOLS_DIR/venv/bin:$PATH"
+fi
+export PATH
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +32,8 @@ TEST_NAMESPACE="backup-test-$(date +%s)"
 REPORT_FILE="${HOMELAB_DIR}/backup-verification-$(date +%Y%m%d-%H%M%S).log"
 
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    local msg
+    msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     echo -e "${BLUE}${msg}${NC}"
     echo "$msg" >> "$REPORT_FILE"
 }
@@ -68,7 +79,7 @@ check_velero_installation() {
 
     if ! command -v velero &> /dev/null; then
         warning "Velero CLI not installed locally"
-        info "Install with: brew install velero (macOS) or download from GitHub"
+        info "Install with: ./scripts/install-dev-tools.sh (repo-local), or brew install velero (macOS), or download from GitHub"
     else
         success "Velero CLI is installed ($(velero version --client-only 2>/dev/null | head -1 || echo 'unknown version'))"
     fi
@@ -199,7 +210,7 @@ check_volume_snapshots() {
     vsl_count=$(kubectl get volumesnapshotlocation -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
 
     if [ "$vsl_count" -eq 0 ]; then
-        warning "No VolumeSnapshotLocation configured (PV backups may use restic/kopia)"
+        warning "No VolumeSnapshotLocation configured (PV backups may use kopia file-level backups via the node agent)"
     else
         info "Found $vsl_count VolumeSnapshotLocation(s)"
     fi
@@ -248,18 +259,22 @@ test_backup_restore() {
     kubectl create namespace "$TEST_NAMESPACE" 2>/dev/null || true
 
     # Create test configmap
+    local original_value
+    original_value="backup-test-$(date +%s)"
     kubectl create configmap backup-test-config \
         --namespace="$TEST_NAMESPACE" \
-        --from-literal=test-key="backup-test-$(date +%s)" \
+        --from-literal=test-key="$original_value" \
         2>/dev/null || true
 
     # Create test backup
-    local test_backup_name="backup-test-$(date +%s)"
+    local test_backup_name
+    test_backup_name="backup-test-$(date +%s)"
     info "Creating test backup: $test_backup_name"
 
     if command -v velero &> /dev/null; then
         velero backup create "$test_backup_name" \
             --include-namespaces "$TEST_NAMESPACE" \
+            --labels homelab-backup-test=true \
             --wait \
             2>/dev/null || {
                 warning "Test backup creation failed (velero CLI)"
@@ -280,6 +295,43 @@ test_backup_restore() {
             cleanup_test
             return 1
         fi
+
+        if [ "${RUN_RESTORE_TEST:-false}" = "true" ]; then
+            info "Deleting test namespace to simulate disaster: $TEST_NAMESPACE"
+            kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true >/dev/null 2>&1 || true
+
+            # Wait for namespace to be fully deleted before restoring.
+            for _ in $(seq 1 120); do
+                if ! kubectl get namespace "$TEST_NAMESPACE" >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            local restore_name
+            restore_name="restore-${test_backup_name}"
+            info "Creating restore: $restore_name (from backup $test_backup_name)"
+            velero restore create "$restore_name" \
+                --from-backup "$test_backup_name" \
+                --labels homelab-backup-test=true \
+                --wait \
+                2>/dev/null || {
+                error "Restore creation failed"
+                cleanup_test
+                return 1
+            }
+
+            # Verify restored resource.
+            local restored_value
+            restored_value="$(kubectl -n "$TEST_NAMESPACE" get configmap backup-test-config -o jsonpath='{.data.test-key}' 2>/dev/null || true)"
+            if [ "$restored_value" = "$original_value" ]; then
+                success "Restore verified (configmap value matches)"
+            else
+                error "Restore verification failed (expected '$original_value', got '$restored_value')"
+                cleanup_test
+                return 1
+            fi
+        fi
     else
         warning "Velero CLI not available, skipping backup test"
     fi
@@ -292,7 +344,8 @@ cleanup_test() {
     kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true 2>/dev/null || true
 
     if command -v velero &> /dev/null; then
-        velero backup delete "backup-test-*" --confirm 2>/dev/null || true
+        velero restore delete --selector homelab-backup-test=true --confirm 2>/dev/null || true
+        velero backup delete --selector homelab-backup-test=true --confirm 2>/dev/null || true
     fi
 }
 

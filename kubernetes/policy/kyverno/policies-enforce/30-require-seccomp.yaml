@@ -1,0 +1,26 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: homelab-require-seccomp-runtime-default
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-seccomp-runtime-default
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchLabels:
+                  homelab-kyverno: enabled
+      validate:
+        message: "Pods must set securityContext.seccompProfile.type=RuntimeDefault."
+        pattern:
+          spec:
+            securityContext:
+              seccompProfile:
+                type: RuntimeDefault
+

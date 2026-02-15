@@ -5,7 +5,7 @@
   vars:
     ssh_port: 22
     allowed_users: ["{{ ansible_user }}"]
-    
+
   tasks:
     - name: Update all packages
       package:

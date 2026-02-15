@@ -151,6 +151,8 @@ spec:
           value: "true"
         - name: GITEA__actions__ENABLED
           value: "true"
+        - name: GITEA__metrics__ENABLED
+          value: "true"
         volumeMounts:
         - name: gitea-data
           mountPath: /data
@@ -262,13 +264,16 @@ kind: Service
 metadata:
   name: gitea
   namespace: gitea
+  labels:
+    app: gitea
+    component: web
 spec:
   selector:
     app: gitea
   ports:
   - port: 3000
     targetPort: 3000
-    name: web
+    name: http
   - port: 22
     targetPort: 22
     name: ssh
@@ -279,6 +284,9 @@ kind: Service
 metadata:
   name: gitea-ssh
   namespace: gitea
+  labels:
+    app: gitea
+    component: ssh
 spec:
   selector:
     app: gitea
@@ -296,7 +304,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
   - hosts:

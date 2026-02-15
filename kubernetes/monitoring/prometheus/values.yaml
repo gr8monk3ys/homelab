@@ -2,6 +2,21 @@
 prometheus:
   prometheusSpec:
     retention: 30d
+    # Discover ServiceMonitors/PodMonitors/PrometheusRules across the cluster.
+    # By default, kube-prometheus-stack restricts discovery to resources labeled with the Helm release.
+    # This repo defines ServiceMonitors and PrometheusRules in multiple namespaces, so we opt into broad discovery.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    probeSelectorNilUsesHelmValues: false
+    probeSelector: {}
+    probeNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
     storageSpec:
       volumeClaimTemplate:
         spec:
@@ -30,6 +45,11 @@ grafana:
     size: 10Gi
   ingress:
     enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      cert-manager.io/cluster-issuer: "homelab-ca"
     hosts:
       - grafana.homelab.local
     tls:
@@ -45,6 +65,10 @@ grafana:
 
 alertmanager:
   alertmanagerSpec:
+    # Allow AlertmanagerConfig discovery across namespaces. This enables opt-in alert routing
+    # via `kubernetes/monitoring/alertmanager/*`.
+    alertmanagerConfigSelector: {}
+    alertmanagerConfigNamespaceSelector: {}
     storage:
       volumeClaimTemplate:
         spec:

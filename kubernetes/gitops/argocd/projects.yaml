@@ -10,7 +10,7 @@ metadata:
 spec:
   description: Homelab infrastructure components
   sourceRepos:
-  - '*'
+  - https://github.com/your-username/homelab.git
   destinations:
   - namespace: '*'
     server: https://kubernetes.default.svc
@@ -34,7 +34,7 @@ metadata:
 spec:
   description: Media and entertainment services
   sourceRepos:
-  - '*'
+  - https://github.com/your-username/homelab.git
   destinations:
   - namespace: jellyfin
     server: https://kubernetes.default.svc
@@ -43,6 +43,29 @@ spec:
   - namespace: audiobookshelf
     server: https://kubernetes.default.svc
   - namespace: immich
+    server: https://kubernetes.default.svc
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true
+---
+# Project for AI services
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab-ai
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+spec:
+  description: AI/LLM services
+  sourceRepos:
+  - https://github.com/your-username/homelab.git
+  destinations:
+  - namespace: ollama
+    server: https://kubernetes.default.svc
+  - namespace: open-webui
     server: https://kubernetes.default.svc
   namespaceResourceWhitelist:
   - group: '*'
@@ -61,7 +84,7 @@ metadata:
 spec:
   description: Productivity and automation services
   sourceRepos:
-  - '*'
+  - https://github.com/your-username/homelab.git
   destinations:
   - namespace: nextcloud
     server: https://kubernetes.default.svc
@@ -90,7 +113,7 @@ metadata:
 spec:
   description: Security and authentication services
   sourceRepos:
-  - '*'
+  - https://github.com/your-username/homelab.git
   destinations:
   - namespace: vaultwarden
     server: https://kubernetes.default.svc

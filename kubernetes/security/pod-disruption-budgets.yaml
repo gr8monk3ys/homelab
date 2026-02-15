@@ -7,7 +7,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: traefik-pdb
-  namespace: kube-system
+  namespace: traefik-system
 spec:
   minAvailable: 1
   selector:

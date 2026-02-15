@@ -37,7 +37,7 @@ nextcloud:
     initialDelaySeconds: 60
     periodSeconds: 30
     timeoutSeconds: 10
-    
+
   readinessProbe:
     enabled: true
     initialDelaySeconds: 30
@@ -66,6 +66,9 @@ nextcloud:
 
 mysql:
   enabled: true
+  # Add a stable app label so NetworkPolicies can target MySQL pods.
+  commonLabels:
+    app: nextcloud-mysql
   auth:
     rootPassword: ""  # Set via secret
     database: "nextcloud"
@@ -73,6 +76,8 @@ mysql:
     password: ""  # Set via secret
 
   primary:
+    podLabels:
+      app: nextcloud-mysql
     persistence:
       enabled: true
       size: 20Gi
@@ -104,8 +109,9 @@ ingress:
   enabled: true
   className: "traefik"
   annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.tls.certresolver: "letsencrypt"
+    cert-manager.io/cluster-issuer: "homelab-ca"
   hosts:
     - host: nextcloud.homelab.local
       paths:
@@ -120,4 +126,5 @@ ingress:
 externalSecrets:
   enabled: true
   secretStore: "homelab-secret-store"
+  secretStoreKind: "ClusterSecretStore"
   refreshInterval: "1h"
