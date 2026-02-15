@@ -86,3 +86,25 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+---
+# Default deny ingress for ollama namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ollama
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Default deny ingress for open-webui namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: open-webui
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

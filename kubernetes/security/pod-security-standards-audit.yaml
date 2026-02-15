@@ -1,18 +1,17 @@
 ---
 # =============================================================================
-# Pod Security Standards (Enforce Mode)
+# Pod Security Standards (Audit Mode)
 # =============================================================================
-# These labels enforce Pod Security Standards on namespaces.
-# Modes: enforce, audit, warn
-# Levels: privileged, baseline, restricted
+# Safe migration path for Pod Security Admission:
+# - enforce=privileged (no blocking)
+# - audit/warn set to the intended target level
 #
-# - privileged: Unrestricted (for system components)
-# - baseline: Prevents known privilege escalations
-# - restricted: Heavily restricted, follows security best practices
+# Switch to enforce mode by applying pod-security-standards-enforce.yaml (or
+# setting POD_SECURITY_MODE=enforce in setup-v2.sh).
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Sensitive Services - Restricted mode (most secure)
+# Sensitive Services (target: restricted/baseline)
 # -----------------------------------------------------------------------------
 ---
 apiVersion: v1
@@ -21,7 +20,7 @@ metadata:
   name: vaultwarden
   labels:
     name: vaultwarden
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -32,7 +31,7 @@ metadata:
   name: authelia
   labels:
     name: authelia
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -43,7 +42,7 @@ metadata:
   name: nextcloud
   labels:
     name: nextcloud
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -54,7 +53,7 @@ metadata:
   name: gitea
   labels:
     name: gitea
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -65,13 +64,13 @@ metadata:
   name: paperless-ngx
   labels:
     name: paperless-ngx
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 
 # -----------------------------------------------------------------------------
-# Standard Services - Baseline mode
+# Standard Services (target: baseline/restricted)
 # -----------------------------------------------------------------------------
 ---
 apiVersion: v1
@@ -80,7 +79,7 @@ metadata:
   name: immich
   labels:
     name: immich
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -91,7 +90,7 @@ metadata:
   name: jellyfin
   labels:
     name: jellyfin
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -102,7 +101,7 @@ metadata:
   name: arr-stack
   labels:
     name: arr-stack
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -113,7 +112,7 @@ metadata:
   name: audiobookshelf
   labels:
     name: audiobookshelf
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -124,7 +123,7 @@ metadata:
   name: searxng
   labels:
     name: searxng
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -135,7 +134,7 @@ metadata:
   name: calibre-web
   labels:
     name: calibre-web
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -146,7 +145,7 @@ metadata:
   name: yarr
   labels:
     name: yarr
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -157,7 +156,7 @@ metadata:
   name: homepage
   labels:
     name: homepage
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -168,7 +167,7 @@ metadata:
   name: n8n
   labels:
     name: n8n
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -179,7 +178,7 @@ metadata:
   name: mealie
   labels:
     name: mealie
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -190,7 +189,7 @@ metadata:
   name: linkwarden
   labels:
     name: linkwarden
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -201,7 +200,7 @@ metadata:
   name: ollama
   labels:
     name: ollama
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -212,7 +211,7 @@ metadata:
   name: open-webui
   labels:
     name: open-webui
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -223,13 +222,13 @@ metadata:
   name: external-dns
   labels:
     name: external-dns
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 
 # -----------------------------------------------------------------------------
-# Development Services - Baseline mode
+# Development Services (target: baseline)
 # -----------------------------------------------------------------------------
 ---
 apiVersion: v1
@@ -238,7 +237,7 @@ metadata:
   name: harbor
   labels:
     name: harbor
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -249,13 +248,13 @@ metadata:
   name: drone
   labels:
     name: drone
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
 
 # -----------------------------------------------------------------------------
-# Network Services - Privileged (require special capabilities)
+# Network Services (target: privileged)
 # -----------------------------------------------------------------------------
 ---
 apiVersion: v1
@@ -264,7 +263,6 @@ metadata:
   name: pihole
   labels:
     name: pihole
-    # Pi-hole needs NET_ADMIN capability
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
@@ -276,7 +274,6 @@ metadata:
   name: wireguard
   labels:
     name: wireguard
-    # WireGuard needs privileged mode for kernel modules
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: privileged
@@ -288,14 +285,13 @@ metadata:
   name: dnsmasq-dhcp
   labels:
     name: dnsmasq-dhcp
-    # DHCP server needs NET_ADMIN and NET_RAW
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
 
 # -----------------------------------------------------------------------------
-# Infrastructure Services
+# Infrastructure Services (target: baseline)
 # -----------------------------------------------------------------------------
 ---
 apiVersion: v1
@@ -304,7 +300,7 @@ metadata:
   name: crowdsec
   labels:
     name: crowdsec
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -315,7 +311,7 @@ metadata:
   name: velero
   labels:
     name: velero
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
@@ -326,7 +322,7 @@ metadata:
   name: kyverno
   labels:
     name: kyverno
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline

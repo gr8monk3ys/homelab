@@ -204,6 +204,21 @@ spec:
     persistentvolumeclaims: "5"
     requests.storage: 100Gi
     pods: "10"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: resource-quota
+  namespace: open-webui
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    limits.cpu: "2"
+    limits.memory: 4Gi
+    persistentvolumeclaims: "3"
+    requests.storage: 20Gi
+    pods: "5"
 
 # -----------------------------------------------------------------------------
 # Productivity Services - Standard limits
