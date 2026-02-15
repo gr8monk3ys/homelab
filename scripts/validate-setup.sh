@@ -7,6 +7,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
+# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
+TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
+if [[ -d "$TOOLS_DIR/bin" ]]; then
+    PATH="$TOOLS_DIR/bin:$PATH"
+fi
+if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
+    PATH="$TOOLS_DIR/venv/bin:$PATH"
+fi
+export PATH
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,42 +42,42 @@ error() {
 
 check_kubernetes() {
     log "Checking Kubernetes cluster..."
-    
+
     if ! kubectl cluster-info &> /dev/null; then
         error "Kubernetes cluster is not accessible"
         return 1
     fi
-    
+
     local nodes_ready
     nodes_ready=$(kubectl get nodes --no-headers | awk '{print $2}' | grep -c Ready || true)
-    
+
     if [ "$nodes_ready" -eq 0 ]; then
         error "No Kubernetes nodes are Ready"
         return 1
     fi
-    
+
     success "Kubernetes cluster is accessible ($nodes_ready nodes ready)"
 }
 
 check_secrets() {
     log "Checking secret management..."
-    
+
     # Check if External Secrets Operator is running
     if ! kubectl get pods -n external-secrets -l app.kubernetes.io/name=external-secrets | grep -q Running; then
         error "External Secrets Operator is not running"
         return 1
     fi
-    
+
     # Check if secrets namespace exists
     if ! kubectl get namespace secrets &> /dev/null; then
         error "Secrets namespace does not exist"
         return 1
     fi
-    
+
     # Check for generated secrets
     local secrets_count
     secrets_count=$(kubectl get secrets -n secrets --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' ' || echo "0")
-    
+
     if [ "$secrets_count" -lt 5 ]; then
         warning "Only $secrets_count secrets found in secrets namespace (expected at least 5)"
         warning "Run: ./scripts/generate-secrets.sh"
@@ -78,13 +88,13 @@ check_secrets() {
 
 check_storage() {
     log "Checking storage..."
-    
+
     # Check storage class
     if ! kubectl get storageclass local-path &> /dev/null; then
         error "local-path storage class not found"
         return 1
     fi
-    
+
     # Check if local-path-provisioner is running
     if ! kubectl get pods -n local-path-storage -l app=local-path-provisioner | grep -q Running; then
         warning "local-path-provisioner may not be running"
@@ -95,13 +105,21 @@ check_storage() {
 
 check_ingress() {
     log "Checking ingress..."
-    
-    # Check Traefik
-    if ! kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik | grep -q Running; then
+
+    # Check Traefik (Helm install uses traefik-system; K3s default uses kube-system)
+    local traefik_running=false
+    if kubectl get pods -n traefik-system -l app.kubernetes.io/name=traefik 2>/dev/null | grep -q Running; then
+        traefik_running=true
+    fi
+    if kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik 2>/dev/null | grep -q Running; then
+        traefik_running=true
+    fi
+
+    if [ "$traefik_running" != "true" ]; then
         error "Traefik ingress controller is not running"
         return 1
     fi
-    
+
     # Check cert-manager
     if ! kubectl get pods -n cert-manager | grep -q Running; then
         warning "cert-manager may not be running"
@@ -112,23 +130,23 @@ check_ingress() {
 
 check_monitoring() {
     log "Checking monitoring stack..."
-    
+
     # Check if monitoring namespace exists
     if ! kubectl get namespace monitoring &> /dev/null; then
         warning "Monitoring namespace does not exist"
         return 0
     fi
-    
+
     # Check Prometheus
     if ! kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus | grep -q Running; then
         warning "Prometheus is not running"
     fi
-    
+
     # Check Grafana
     if ! kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana | grep -q Running; then
         warning "Grafana is not running"
     fi
-    
+
     success "Monitoring stack is configured"
 }
 
@@ -321,10 +339,10 @@ check_productivity_services() {
 
 check_external_secrets() {
     log "Checking External Secrets..."
-    
+
     local external_secrets
     external_secrets=$(kubectl get externalsecrets -A --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' || echo "0")
-    
+
     if [ "$external_secrets" -eq 0 ]; then
         warning "No External Secrets found"
         warning "Secrets may not be properly configured"
@@ -335,15 +353,15 @@ check_external_secrets() {
 
 check_helm_releases() {
     log "Checking Helm releases..."
-    
+
     if ! command -v helm &> /dev/null; then
         warning "Helm is not installed"
         return 0
     fi
-    
+
     local releases
     releases=$(helm list -A --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' ' || echo "0")
-    
+
     if [ "$releases" -eq 0 ]; then
         warning "No Helm releases found"
     else
@@ -357,7 +375,13 @@ check_security() {
 
     # Check for hardcoded passwords in configs (use --files-with-matches to avoid exposing passwords)
     local files_with_passwords
-    files_with_passwords=$(grep -rl "password.*:" "$HOMELAB_DIR/kubernetes" --include="*.yaml" 2>/dev/null | xargs -r grep -L "secretKeyRef" 2>/dev/null || true)
+    files_with_passwords="$(
+        while IFS= read -r -d '' f; do
+            if grep -qE "password.*:" "$f" 2>/dev/null && ! grep -q "secretKeyRef" "$f" 2>/dev/null; then
+                echo "$f"
+            fi
+        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
+    )"
     if [ -n "$files_with_passwords" ]; then
         error "Found potential hardcoded passwords in Kubernetes manifests"
         echo "Files to review:"
@@ -367,7 +391,16 @@ check_security() {
 
     # Check for base64 encoded secrets in manifests (show filenames only, not content)
     local secret_files
-    secret_files=$(find "$HOMELAB_DIR/kubernetes" -name "*.yaml" -exec grep -l "data:" {} \; 2>/dev/null | xargs -r grep -l "password\|secret" 2>/dev/null | grep -v external-secret || true)
+    secret_files="$(
+        while IFS= read -r -d '' f; do
+            case "$f" in
+                *external-secret*) continue ;;
+            esac
+            if grep -q "data:" "$f" 2>/dev/null && grep -qiE "password|secret" "$f" 2>/dev/null; then
+                echo "$f"
+            fi
+        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
+    )"
     if [ -n "$secret_files" ]; then
         warning "Found YAML files with potential hardcoded secrets:"
         echo "$secret_files" | head -5
@@ -378,10 +411,10 @@ check_security() {
 
 check_network_policies() {
     log "Checking network policies..."
-    
+
     local network_policies
     network_policies=$(kubectl get networkpolicies -A --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' ' || echo "0")
-    
+
     if [ "$network_policies" -eq 0 ]; then
         warning "No network policies found"
         warning "Consider implementing network segmentation"
@@ -392,21 +425,28 @@ check_network_policies() {
 
 show_access_info() {
     log "Gathering access information..."
-    
+
     echo ""
     echo "🔗 Service Access URLs:"
-    echo "   Add to /etc/hosts: <your-server-ip> <domain>"
+    if kubectl get namespace pihole &> /dev/null && kubectl -n pihole get svc pihole-dns &> /dev/null; then
+        echo "   Option A (recommended): wildcard DNS via Pi-hole (no /etc/hosts):"
+        echo "     ./scripts/configure-wildcard-dns.sh"
+        echo "     kubectl -n pihole get svc pihole-dns"
+        echo "   Option B: add to /etc/hosts: <your-ingress-ip> <service>.<domain>"
+    else
+        echo "   Add to /etc/hosts: <your-ingress-ip> <service>.<domain>"
+    fi
     echo ""
-    
+
     # Check for ingress resources
-    kubectl get ingress -A --no-headers 2>/dev/null | while read -r namespace name class hosts address ports age; do
+    kubectl get ingress -A --no-headers 2>/dev/null | while read -r _ name _ hosts _ _ _; do
         echo "   🌐 $name: https://$hosts"
     done
-    
+
     echo ""
     echo "🔐 Retrieve service passwords securely (not logged):"
     echo "   Nextcloud: kubectl get secret nextcloud-admin -n secrets -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   Grafana:   kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d && echo"
+    echo "   Grafana:   kubectl get secret grafana-admin -n monitoring -o jsonpath='{.data.password}' | base64 -d && echo"
     echo "   ArgoCD:    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
     echo ""
 }
@@ -415,7 +455,7 @@ show_troubleshooting() {
     echo ""
     echo "🔧 Troubleshooting Commands:"
     echo "   kubectl get pods -A                          # Check all pods"
-    echo "   kubectl get events --sort-by='.lastTimestamp' -A  # Recent events"  
+    echo "   kubectl get events --sort-by='.lastTimestamp' -A  # Recent events"
     echo "   kubectl logs -f deployment/<name> -n <ns>    # Service logs"
     echo "   kubectl describe pod <name> -n <ns>          # Pod details"
     echo ""
