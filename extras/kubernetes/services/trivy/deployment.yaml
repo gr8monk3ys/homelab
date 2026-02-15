@@ -196,7 +196,7 @@ metadata:
   name: trivy-operator
 rules:
 - apiGroups: [""]
-  resources: ["pods", "pods/log", "replicationcontrollers", "services", "resourcequotas", "limitranges", "configmaps", "secrets", "serviceaccounts"]
+  resources: ["pods", "pods/log", "replicationcontrollers", "services", "resourcequotas", "limitranges", "configmaps", "serviceaccounts"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources: ["nodes"]
@@ -208,13 +208,21 @@ rules:
   resources: ["jobs", "cronjobs"]
   verbs: ["get", "list", "watch", "create", "delete"]
 - apiGroups: ["aquasecurity.github.io"]
-  resources: ["*"]
-  verbs: ["*"]
+  # Trivy Operator CRDs (enumerated to avoid over-broad RBAC).
+  resources:
+  - configauditreports
+  - clusterconfigauditreports
+  - vulnerabilityreports
+  - clustervulnerabilityreports
+  - sbomreports
+  - clustersbomreports
+  - exposedsecretreports
+  - clusterexposedsecretreports
+  - rbacassessmentreports
+  - clusterrbacassessmentreports
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["networking.k8s.io"]
   resources: ["networkpolicies", "ingresses"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["policy"]
-  resources: ["podsecuritypolicies"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]

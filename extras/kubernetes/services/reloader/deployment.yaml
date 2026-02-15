@@ -34,6 +34,9 @@ spec:
         - --log-format=json
         - --reload-strategy=default
         - --sync-after-restart=true
+        # Secure-by-default: avoid granting cluster-wide Secret read access.
+        # Opt-in secret watching by removing this flag and adding Secret RBAC.
+        - --resources-to-ignore=secrets
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -80,7 +83,6 @@ metadata:
 rules:
 - apiGroups: [""]
   resources:
-  - secrets
   - configmaps
   verbs: ["list", "get", "watch"]
 - apiGroups: ["apps"]

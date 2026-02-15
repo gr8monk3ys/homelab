@@ -125,15 +125,15 @@ data:
     max_connections = 100
     query_cache_size = 32M
     query_cache_limit = 2M
-    
+
     # Security
     local_infile = 0
     skip_show_database
-    
+
     # Character set
     character_set_server = utf8mb4
     collation_server = utf8mb4_unicode_ci
-    
+
     # Logging
     slow_query_log = 1
     slow_query_log_file = /var/lib/mysql/slow.log

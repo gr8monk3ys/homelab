@@ -9,9 +9,11 @@ metadata:
   labels:
     app: jellyfin
 spec:
+  jobLabel: app
   selector:
     matchLabels:
       app: jellyfin
+      component: web
   endpoints:
   - port: http
     path: /metrics
