@@ -1,0 +1,39 @@
+---
+# Bootstrap a local CA for internal TLS.
+#
+# Flow:
+# 1) `homelab-selfsigned` issues a self-signed root certificate into Secret `homelab-root-ca` (in `cert-manager` namespace)
+# 2) `homelab-ca` uses that Secret to sign leaf certificates requested by Ingress annotations.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: homelab-root-ca
+  secretName: homelab-root-ca
+  duration: 87600h # 10y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: homelab-selfsigned
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca
+spec:
+  ca:
+    secretName: homelab-root-ca
+

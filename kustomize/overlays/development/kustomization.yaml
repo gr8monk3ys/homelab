@@ -9,9 +9,6 @@ metadata:
 resources:
   - ../../base
 
-patches:
-  - path: resource-patches.yaml
-
 # Note: namePrefix removed to preserve resource naming consistency
 
 labels:
@@ -20,17 +17,7 @@ labels:
       tier: dev
     includeSelectors: false
 
-replicas:
-  # Reduce replicas for development
-  - name: traefik
-    count: 1
-
-images:
-  # Use latest images for development
-  - name: nextcloud
-    newTag: latest
-  - name: gitea/gitea
-    newTag: dev
+# Note: controller replicas and image pinning are managed by Helm chart values.
 
 configMapGenerator:
   - name: homelab-config

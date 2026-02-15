@@ -5,10 +5,11 @@ metadata:
   name: homelab-base
 
 resources:
-  - ../../kubernetes/secrets/external-secrets-operator.yaml
+  - ../../kubernetes/secrets/secrets-namespace.yaml
+  - ../../kubernetes/secrets/secret-store-rbac.yaml
   - ../../kubernetes/secrets/secret-store.yaml
-  - ../../kubernetes/storage/local-path-provisioner.yaml
-  - ../../kubernetes/ingress/traefik/
+  - ../../kubernetes/storage/
+  - ../../kubernetes/ingress/cert-manager/
 
 labels:
   - pairs:
@@ -16,14 +17,4 @@ labels:
       app.kubernetes.io/managed-by: kustomize
     includeSelectors: false
 
-images:
-  - name: traefik
-    newTag: v2.10
-  - name: ghcr.io/external-secrets/external-secrets
-    newTag: v0.9.9
-
-replicas:
-  - name: traefik
-    count: 1
-  - name: external-secrets-operator
-    count: 1
+# Note: Core controllers (Traefik, cert-manager, external-secrets) are installed via Helm.
