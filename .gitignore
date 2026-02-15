@@ -29,7 +29,8 @@ ansible/inventory/host_vars/*/vault.yml
 .env
 .env.*
 !.env.example
-secrets/
+/secrets/
+/.secrets/
 credentials.json
 service-account*.json
 
@@ -140,6 +141,7 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+.tools/
 
 # =============================================================================
 # Node (for tooling)
