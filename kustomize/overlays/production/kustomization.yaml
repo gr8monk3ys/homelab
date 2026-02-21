@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-production
+
+# Note: namespace override removed to preserve per-service namespaces
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      environment: production
+      tier: prod
+    includeSelectors: false
+
+# Note: controller replicas and image pinning are managed by Helm chart values.
+
+configMapGenerator:
+  - name: homelab-config
+    literals:
+      - domain=homelab.local
+      - timezone=America/New_York
+      - environment=production
+      - log_level=info
+      - backup_enabled=true
+      - monitoring_enabled=true

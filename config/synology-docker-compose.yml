@@ -1,0 +1,17 @@
+# Docker Compose configuration for Synology NAS
+# Used by scripts/synology-setup.sh
+# Note: 'version' key is deprecated in Docker Compose v2+
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:

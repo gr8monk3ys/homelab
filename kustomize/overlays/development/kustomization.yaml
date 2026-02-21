@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: homelab-development
+
+# Note: namespace override removed to preserve per-service namespaces
+
+resources:
+  - ../../base
+
+# Note: namePrefix removed to preserve resource naming consistency
+
+labels:
+  - pairs:
+      environment: development
+      tier: dev
+    includeSelectors: false
+
+# Note: controller replicas and image pinning are managed by Helm chart values.
+
+configMapGenerator:
+  - name: homelab-config
+    literals:
+      - domain=homelab-dev.local
+      - timezone=UTC
+      - environment=development
+      - log_level=debug
+
+secretGenerator:
+  - name: dev-secrets
+    literals:
+      - debug_mode=true

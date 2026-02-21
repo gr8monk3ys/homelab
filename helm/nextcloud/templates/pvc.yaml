@@ -1,0 +1,33 @@
+{{- if .Values.nextcloud.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.fullname" . }}-data
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.nextcloud.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.nextcloud.persistence.size }}
+  {{- if .Values.nextcloud.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.persistence.storageClass }}
+  {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nextcloud.fullname" . }}-config
+  labels:
+    {{- include "nextcloud.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.nextcloud.config.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.nextcloud.config.persistence.size }}
+  {{- if .Values.nextcloud.config.persistence.storageClass }}
+  storageClassName: {{ .Values.nextcloud.config.persistence.storageClass }}
+  {{- end }}
+{{- end }}
