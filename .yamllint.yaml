@@ -1,0 +1,25 @@
+extends: default
+
+ignore: |
+  helm/**/templates/**
+  **/helm/**/templates/**
+  helm/**/_helpers.tpl
+  **/helm/**/_helpers.tpl
+
+rules:
+  line-length:
+    max: 240
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  braces:
+    max-spaces-inside: 1
+    max-spaces-inside-empty: 0
+  empty-lines: disable
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  document-start: disable
+  indentation: disable
