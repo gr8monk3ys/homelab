@@ -1,0 +1,89 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:enableMajor",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeMinor",
+    ":automergePatch"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies", "renovate"],
+  "commitMessagePrefix": "chore(deps):",
+  "prHourlyLimit": 5,
+  "prConcurrentLimit": 10,
+  "kubernetes": {
+    "fileMatch": ["\\.yaml$", "\\.yml$"]
+  },
+  "packageRules": [
+    {
+      "description": "Kubernetes deployments - group by service",
+      "matchDatasources": ["docker"],
+      "matchPaths": ["kubernetes/services/**"],
+      "groupName": "kubernetes service images",
+      "groupSlug": "k8s-services"
+    },
+    {
+      "description": "Infrastructure images",
+      "matchDatasources": ["docker"],
+      "matchPaths": ["kubernetes/ingress/**", "kubernetes/monitoring/**", "kubernetes/storage/**"],
+      "groupName": "infrastructure images",
+      "groupSlug": "infra"
+    },
+    {
+      "description": "Helm charts",
+      "matchManagers": ["helm-values", "helmfile", "helmv3"],
+      "groupName": "helm charts",
+      "groupSlug": "helm"
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "groupSlug": "gha",
+      "automerge": true
+    },
+    {
+      "description": "Database images - require manual approval",
+      "matchDatasources": ["docker"],
+      "matchPackagePatterns": ["postgres", "mysql", "mariadb", "redis", "minio"],
+      "automerge": false,
+      "labels": ["dependencies", "database", "manual-review"]
+    },
+    {
+      "description": "Security-sensitive images - require manual approval",
+      "matchDatasources": ["docker"],
+      "matchPackagePatterns": ["vaultwarden", "authelia", "traefik", "cert-manager"],
+      "automerge": false,
+      "labels": ["dependencies", "security", "manual-review"]
+    },
+    {
+      "description": "Patch updates - automerge after tests pass",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Pin digest for security",
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "Match Kubernetes image tags",
+      "fileMatch": ["\\.ya?ml$"],
+      "matchStrings": [
+        "image:\\s*(?<depName>[^:]+):(?<currentValue>[^\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "vulnerability"]
+  }
+}

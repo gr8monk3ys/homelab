@@ -1,0 +1,73 @@
+---
+name: Kind Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kind-smoke:
+    name: Kind Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install repo-local dev tools
+        run: ./scripts/install-dev-tools.sh
+
+      - name: Kind setup (smoke profile)
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.tools/bin:$PWD/.tools/venv/bin:$PATH"
+          KIND_CONFIG="$PWD/test/kind-config-smoke.yaml" \
+            KIND_ENABLE_STORAGE=false \
+            KIND_ENABLE_MONITORING=false \
+            KIND_ENABLE_NEXTCLOUD=false \
+            KIND_SERVICES="homepage" \
+            ./test/setup-kind.sh setup
+
+      - name: Validate cluster resources
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.tools/bin:$PWD/.tools/venv/bin:$PATH"
+          ./test/validate.sh k8s
+
+      - name: Diagnostics (on failure)
+        if: failure()
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.tools/bin:$PWD/.tools/venv/bin:$PATH"
+          kubectl get pods -A
+          kubectl get svc -A
+          kubectl get ingress -A
+          kubectl get events -A --sort-by=.lastTimestamp | tail -n 200 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.tools/bin:$PWD/.tools/venv/bin:$PATH"
+          kind delete cluster --name homelab-test || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kind-smoke-logs
+          path: |
+            test/kind-setup.log
+            test/validation.log
+
