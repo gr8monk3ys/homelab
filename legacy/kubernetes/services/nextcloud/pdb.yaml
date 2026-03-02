@@ -1,0 +1,43 @@
+---
+# PodDisruptionBudget for Nextcloud
+# Ensures file sync service remains available during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nextcloud-pdb
+  namespace: nextcloud
+  labels:
+    app: nextcloud
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nextcloud
+---
+# PDB for Nextcloud MySQL
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nextcloud-mysql-pdb
+  namespace: nextcloud
+  labels:
+    app: nextcloud-mysql
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nextcloud-mysql
+---
+# PDB for Nextcloud Redis
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nextcloud-redis-pdb
+  namespace: nextcloud
+  labels:
+    app: nextcloud-redis
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nextcloud-redis

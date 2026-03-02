@@ -1,0 +1,19 @@
+---
+# ServiceMonitor for MinIO
+# MinIO exposes comprehensive metrics at /minio/v2/metrics/cluster
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: minio
+  namespace: minio
+  labels:
+    app: minio
+spec:
+  selector:
+    matchLabels:
+      app: minio
+  endpoints:
+  - port: api
+    path: /minio/v2/metrics/cluster
+    interval: 30s
+    scheme: http
