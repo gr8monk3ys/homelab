@@ -139,5 +139,5 @@ spec:
   data:
   - secretKey: credential-secret
     remoteRef:
-      key: node-red-config
-      property: credential-secret
+      key: node-red-password
+      property: password

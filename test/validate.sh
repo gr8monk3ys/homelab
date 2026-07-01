@@ -144,7 +144,7 @@ check_configuration_files() {
 
     local required_files=(
         "$HOMELAB_DIR/config/homelab.yaml"
-        "$HOMELAB_DIR/setup.sh"
+        "$HOMELAB_DIR/setup-v2.sh"
         "$SCRIPT_DIR/docker-compose.yml"
         "$SCRIPT_DIR/kind-config.yaml"
         "$SCRIPT_DIR/setup-kind.sh"
@@ -159,7 +159,7 @@ check_configuration_files() {
     done
 
     # Check if setup script is executable
-    if [ -x "$HOMELAB_DIR/setup.sh" ]; then
+    if [ -x "$HOMELAB_DIR/setup-v2.sh" ]; then
         success "Setup script is executable"
     else
         error "Setup script is not executable"

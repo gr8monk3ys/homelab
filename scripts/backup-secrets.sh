@@ -101,6 +101,10 @@ main() {
   local ts out_plain out_enc
   ts="$(date +%Y%m%d-%H%M%S)"
   out_plain="$(mktemp "${TMPDIR:-/tmp}/homelab-secrets.${ts}.XXXXXX.yaml")"
+  # Remove the plaintext export on any exit path (success, error, or interrupt)
+  # so decoded secrets are never orphaned in TMPDIR if age/kubectl fails.
+  # EXIT (not RETURN) because set -e turns a failed kubectl/age into an exit.
+  trap 'rm -f "${out_plain:-}"' EXIT
   out_enc="${BACKUP_DIR}/secrets-${SECRETS_NAMESPACE}-${ts}.yaml.age"
 
   log "Exporting secrets from namespace ${SECRETS_NAMESPACE}..."

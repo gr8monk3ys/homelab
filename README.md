@@ -1,6 +1,8 @@
 # 🏠 Automated Homelab Setup v2.0
 
-A **production-ready, secure** homelab deployment using Kubernetes with proper secret management, health checks, and multi-environment support. Features Helm charts, Kustomize overlays, and comprehensive automation.
+A **self-hosted** homelab deployment on Kubernetes (K3s) with externalized secret management, health checks, and multi-environment support. Includes Helm charts, Kustomize overlays, and setup automation.
+
+> **Status:** this is a personal homelab, not a hardened product. The manifests are consistent and CI-validated, but the full 43-service stack has not been proven end-to-end on a live cluster. Deploy a subset, verify, then grow.
 
 ## 🔐 Security First
 - **No hardcoded passwords** - All secrets properly managed
@@ -53,7 +55,8 @@ A **production-ready, secure** homelab deployment using Kubernetes with proper s
 
 ### Prerequisites
 - Kubernetes cluster (K3s recommended) and `kubectl` configured
-- 4GB+ RAM, 50GB+ storage (more if you enable more services)
+- RAM: ~8GB for a minimal subset; **32GB+ recommended for the full stack** (pod memory *requests* alone total ~25 GiB before monitoring/registry overhead)
+- 100GB+ storage (more if you enable media/photo services)
 - Root or sudo access (for installing tools)
 - Internet connection (image pulls and Helm charts)
 
@@ -148,15 +151,14 @@ INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh
 ./scripts/synology-setup.sh 192.168.1.100 admin ~/.ssh/id_rsa
 
 # Then run the main setup
-./setup.sh
+./setup-v2.sh
 ```
 
 ## 📁 Project Structure
 
 ```
 homelab/
-├── setup-v2.sh             # 🆕 Enhanced secure setup script
-├── setup.sh                 # 🚫 Legacy (insecure)
+├── setup-v2.sh             # Main setup script
 ├── config/
 │   ├── homelab-secure.yaml  # 🆕 Secure configuration
 │   └── homelab.yaml         # Symlink to secure config
@@ -330,11 +332,4 @@ MIT License - see [LICENSE](LICENSE) for details
 
 ## 🙏 Acknowledgments
 
-- [K3s](https://k3s.io/) - Lightweight Kubernetes
-- [Traefik](https://traefik.io/) - Cloud Native Networking Stack
-- [Helm](https://helm.sh/) - Package Manager for Kubernetes
-- All the amazing open-source projects that make this possible
-
----
-
-⭐ **Star this repo if you found it helpful!** ⭐
+Built on [K3s](https://k3s.io/), [Traefik](https://traefik.io/), [Helm](https://helm.sh/), and the wider self-hosted open-source ecosystem.

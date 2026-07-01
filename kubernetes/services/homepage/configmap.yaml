@@ -75,7 +75,7 @@ data:
             href: https://traefik.homelab.local
             icon: traefik.svg
             description: Ingress controller
-            namespace: kube-system
+            namespace: traefik-system
             app: traefik
 
     - Media:
