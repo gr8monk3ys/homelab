@@ -5,4 +5,3 @@ resources:
   - homelab-ca.yaml
   - letsencrypt-staging.yaml
   - letsencrypt-prod.yaml
-

@@ -17,4 +17,3 @@ Use the repo script:
 ```bash
 ./scripts/configure-argocd-ksops.sh
 ```
-

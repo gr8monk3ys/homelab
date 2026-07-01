@@ -3,4 +3,3 @@
     "kustomize.buildOptions": "--enable-alpha-plugins --enable-exec"
   }
 }
-

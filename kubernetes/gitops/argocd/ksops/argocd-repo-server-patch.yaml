@@ -45,4 +45,3 @@ spec:
         - name: sops-age
           secret:
             secretName: sops-age
-

@@ -46,7 +46,13 @@ jobs:
             ran=1
             if [ ! -d node_modules ]; then
               echo "Skipping npm tests (node_modules absent; dependency install is disabled in this workflow)."
-            elif node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));const t=(p.scripts&&p.scripts.test)||"";const bad=["", "echo \"Error: no test specified\" && exit 1", "exit 1"];process.exit(bad.includes(t)?1:0)'; then
+            elif node -e '
+              const fs=require("fs");
+              const p=JSON.parse(fs.readFileSync("package.json","utf8"));
+              const t=(p.scripts&&p.scripts.test)||"";
+              const bad=["", "echo \"Error: no test specified\" && exit 1", "exit 1"];
+              process.exit(bad.includes(t)?1:0)
+            '; then
               npm test || failures=$((failures+1))
             else
               echo "No actionable npm test script; skipping Node tests."

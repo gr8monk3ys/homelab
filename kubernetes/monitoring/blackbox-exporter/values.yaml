@@ -54,4 +54,3 @@ serviceMonitor:
     - name: vaultwarden
       url: https://traefik.traefik-system.svc.cluster.local
       hostname: vault.homelab.local
-

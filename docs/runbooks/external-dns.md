@@ -33,4 +33,3 @@ kubectl -n external-dns logs deploy/external-dns --tail=200
 
 - Configuration: `kubernetes/dns/external-dns/values.yaml`
 - Safety default: `policy: upsert-only` (won't delete unmanaged records)
-

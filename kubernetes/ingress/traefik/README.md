@@ -19,4 +19,3 @@ helm upgrade --install traefik traefik/traefik \
 
 - Traefik CRDs are required for `Middleware` and other `traefik.io/*` resources used by this repo.
 - If you already have an ingress controller installed, you can skip Traefik and set `ingressClassName` / annotations accordingly.
-
