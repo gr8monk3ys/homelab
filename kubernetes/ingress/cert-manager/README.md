@@ -9,4 +9,3 @@ Notes:
 - Let's Encrypt will not issue certificates for `.local` domains.
 - If you're using the local CA: export the root CA from the `cert-manager` namespace:
   - `kubectl get secret -n cert-manager homelab-root-ca -o jsonpath='{.data.tls\\.crt}' | base64 -d > homelab-root-ca.crt`
-

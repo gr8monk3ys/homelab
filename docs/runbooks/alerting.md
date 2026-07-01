@@ -50,4 +50,3 @@ kubectl get crd alertmanagerconfigs.monitoring.coreos.com
 kubectl get externalsecret -n monitoring alertmanager-webhook
 kubectl describe externalsecret -n monitoring alertmanager-webhook
 ```
-

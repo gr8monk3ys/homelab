@@ -47,4 +47,3 @@ spec:
             name: alertmanager-webhook
             key: url
           sendResolved: true
-

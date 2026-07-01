@@ -11,13 +11,15 @@ permissions: read-all
 
 jobs:
   osv:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Run OSV Scanner
-        uses: google/osv-scanner-action/scan-repo@c5996e0193a3df57d695c1b8a1dec2a4c62e8730
-        with:
-          fail-on-vuln: false
-          upload-sarif: false
+    # OSV-Scanner v2 is invoked as a job-level reusable workflow; the old
+    # google/osv-scanner-action/scan-repo path does not exist as an action
+    # (CI failed with "Can't find 'action.yml'").
+    # Pinned to the v2.3.8 tag commit.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    with:
+      fail-on-vuln: false
+      upload-sarif: false

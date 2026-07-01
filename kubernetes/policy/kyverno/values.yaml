@@ -13,4 +13,3 @@ cleanupController:
 
 reportsController:
   replicas: 1
-

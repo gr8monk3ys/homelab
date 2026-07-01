@@ -71,4 +71,3 @@ kubectl rollout undo deployment/<name> -n <namespace>
 helm history <release> -n <namespace>
 helm rollback <release> <revision> -n <namespace>
 ```
-

@@ -29,4 +29,3 @@ replacements:
           kind: Application
         fieldPaths:
           - spec.source.repoURL
-
