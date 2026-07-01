@@ -197,7 +197,7 @@ spec:
   storageClassName: local-path
 ---
 # ExternalSecret for Drone CI credentials
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: drone-secret

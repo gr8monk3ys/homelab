@@ -69,8 +69,6 @@ run_shellcheck() {
   log "ShellCheck..."
   local files=()
   [[ -f "$REPO_ROOT/setup-v2.sh" ]] && files+=("$REPO_ROOT/setup-v2.sh")
-  [[ -f "$REPO_ROOT/setup.sh" ]] && files+=("$REPO_ROOT/setup.sh")
-  [[ -f "$REPO_ROOT/setup.sh.deprecated" ]] && files+=("$REPO_ROOT/setup.sh.deprecated")
 
   while IFS= read -r f; do
     files+=("$f")

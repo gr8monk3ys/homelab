@@ -308,7 +308,7 @@ reinstall_infrastructure() {
     helm repo update 2>&1 | tee -a "$LOG_FILE" || true
     helm upgrade --install cert-manager jetstack/cert-manager \
         -n cert-manager --create-namespace \
-        --version v1.13.0 \
+        --version v1.20.3 \
         --set installCRDs=true \
         --wait 2>&1 | tee -a "$LOG_FILE" || true
 

@@ -186,7 +186,7 @@ spec:
               number: 9091
 ---
 # ExternalSecret for Authelia secrets
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: authelia-secrets
@@ -219,7 +219,7 @@ spec:
 ---
 # ExternalSecret for Authelia users database
 # This stores user credentials securely instead of in a ConfigMap
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: authelia-users-secret

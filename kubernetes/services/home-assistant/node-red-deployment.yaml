@@ -123,7 +123,7 @@ spec:
               number: 1880
 ---
 # ExternalSecret for Node-RED credentials
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: node-red-secret
@@ -139,5 +139,5 @@ spec:
   data:
   - secretKey: credential-secret
     remoteRef:
-      key: node-red-config
-      property: credential-secret
+      key: node-red-password
+      property: password

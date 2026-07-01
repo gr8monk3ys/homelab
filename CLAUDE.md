@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Automated Homelab Setup v2.0 - A production-ready Kubernetes homelab deployment using K3s with 51 services, comprehensive monitoring, and enterprise-grade security patterns.
+A self-hosted Kubernetes homelab on K3s: 43 services (see `kubernetes/services/`) with Prometheus/Grafana monitoring, Velero backups, and security-hardened manifests (default-deny NetworkPolicies, non-root pods, externalized secrets via ESO/SOPS). Note: the full stack has not been validated end-to-end on a live cluster — treat "production-ready" as the goal, not a guarantee.
 
 ## Essential Commands
 
@@ -47,7 +47,7 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 │  │ Core: MinIO, Velero, Local Path Prov.  │ │
 │  │ Monitoring: Prometheus, Grafana, Alerts│ │
 │  │ Auth: Authelia, Keycloak               │ │
-│  │ Apps: 51 services (see services dir)   │ │
+│  │ Apps: 43 services (see services dir)   │ │
 │  └────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────┐ │
 │  │ NetworkPolicies (default deny + allow) │ │
@@ -64,7 +64,7 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 - `kubernetes/ingress/` - Traefik, cert-manager
 - `kubernetes/monitoring/` - Prometheus stack + `alerts/` (PrometheusRules)
 - `kubernetes/network-policies/` - Default deny + service-specific policies
-- `kubernetes/services/<name>/` - Individual service deployments (51 services)
+- `kubernetes/services/<name>/` - Individual service deployments (43 services)
 - `kubernetes/gitops/` - ArgoCD configurations
 - `helm/` - Helm charts
 - `kustomize/overlays/{development,staging,production}/` - Environment configs

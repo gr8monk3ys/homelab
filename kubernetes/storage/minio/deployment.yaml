@@ -111,7 +111,7 @@ spec:
   type: ClusterIP
 ---
 # ExternalSecret for MinIO credentials
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: minio-credentials
