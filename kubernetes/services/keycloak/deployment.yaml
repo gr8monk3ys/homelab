@@ -164,7 +164,7 @@ spec:
             port:
               number: 8080
 ---
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: keycloak-admin-password

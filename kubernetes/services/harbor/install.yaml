@@ -3,7 +3,7 @@
 # helm upgrade --install harbor harbor/harbor --namespace harbor --values values.yaml
 ---
 # ExternalSecret for Harbor admin credentials
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: harbor-admin

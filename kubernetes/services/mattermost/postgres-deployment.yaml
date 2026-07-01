@@ -103,7 +103,7 @@ spec:
     targetPort: 5432
   type: ClusterIP
 ---
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: mattermost-db-password
@@ -122,7 +122,7 @@ spec:
       key: mattermost-db-password
       property: password
 ---
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: mattermost-secret

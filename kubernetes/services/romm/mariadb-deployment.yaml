@@ -113,7 +113,7 @@ spec:
     targetPort: 3306
   type: ClusterIP
 ---
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: romm-db-password
@@ -132,7 +132,7 @@ spec:
       key: romm-db-password
       property: password
 ---
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: romm-db-root-password
