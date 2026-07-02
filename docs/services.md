@@ -1,340 +1,142 @@
-# 📋 Services Documentation
+# Services
 
-## Core Services Overview
+What `setup-v2.sh` installs, what each piece is for, and what exists in the
+repo but is not wired into the installer. URLs are `<name>.<domain>` with the
+domain from `config/homelab.yaml`.
 
-### 🗄️ Storage Services
+## Infrastructure (installed by default)
 
-#### MinIO Object Storage
-- **Purpose**: S3-compatible object storage for backups and application data
-- **Access**: Internal cluster service
-- **Storage**: 100Gi by default
-- **Features**:
-  - High availability storage
-  - Backup target for applications
-  - Compatible with AWS S3 APIs
-  - Web console for management
+| Component | Toggle (default) | Notes |
+|---|---|---|
+| MetalLB | `INSTALL_METALLB` (true) | LoadBalancer IPs on bare metal |
+| Traefik | `INSTALL_TRAEFIK` (true) | Ingress controller, namespace `traefik-system` |
+| cert-manager | `INSTALL_CERT_MANAGER` (true) | Local CA issuer `homelab-ca` by default; `letsencrypt-staging`/`letsencrypt-prod` issuers available for public domains (not `.local`/`.lan`) |
+| External Secrets Operator | `INSTALL_EXTERNAL_SECRETS` (true) | Copies credentials from the central `secrets` namespace into app namespaces; see `docs/credentials.md` |
+| local-path provisioner | always | Default storage class (host storage under K3s's data dir) |
+| MinIO | always | S3-compatible object store; Velero backup target |
+| Velero | `INSTALL_VELERO` (true) | Backup schedules below |
+| ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
+| CrowdSec | always | Agent + Traefik bouncer are deployed, but the bouncer is not yet referenced by any Traefik middleware and Traefik does not write the access logs the agent reads — detection/enforcement is not active until that wiring is added |
+| NetworkPolicies | always | `kubernetes/security/network-policies/` (default-deny for sensitive namespaces, DB access policies, egress rules). The separate `kubernetes/network-policies/` directory is a standalone toolkit the installer does not apply |
+| Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
+| Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
 
-#### Local Path Provisioner
-- **Purpose**: Dynamic persistent volume provisioning
-- **Type**: Default storage class
-- **Location**: Host filesystem under `/var/lib/rancher/k3s/storage`
-- **Features**:
-  - Automatic volume creation
-  - Host-local storage
-  - Simple and fast
+## Monitoring (installed by default)
 
----
+| Component | URL | Notes |
+|---|---|---|
+| Prometheus | internal | kube-prometheus-stack; PrometheusRules in `kubernetes/monitoring/alerts/` |
+| Grafana | `grafana.` | Credentials via `grafana-admin` secret |
+| Alertmanager | internal | Notification routing is opt-in: `CONFIGURE_ALERTING=true` + `docs/runbooks/alerting.md` |
+| Blackbox exporter | internal | Synthetic HTTPS probes of key endpoints through Traefik |
+| Uptime Kuma | `uptime.` | Standalone uptime monitoring and status pages |
+| Loki | internal, optional | `INSTALL_LOGGING=true`; ship logs with `INSTALL_PROMTAIL=true`; see `docs/runbooks/logging.md` |
 
-### 🌐 Networking & Ingress
+## Applications installed by default
 
-#### Traefik Ingress Controller
-- **Purpose**: Reverse proxy and load balancer
-- **Features**:
-  - Automatic service discovery
-  - SSL/TLS termination
-  - Integrates with cert-manager for TLS certificates
-  - Dashboard at port 8080
-- **Configuration**: Annotations on Ingress resources
+**Core** (always):
 
-#### Cert-Manager
-- **Purpose**: Automatic TLS certificate management
-- **Default**: Local CA issuer (`homelab-ca`) for internal domains
-- **Optional**: Let’s Encrypt issuers (`letsencrypt-staging` / `letsencrypt-prod`) for publicly reachable domains
-- **Features**:
-  - Automatic certificate issuance
-  - Certificate renewal
-  - DNS-01 and HTTP-01 challenges
-  - Certificate monitoring
+| Service | URL | Purpose |
+|---|---|---|
+| Nextcloud | `nextcloud.` | Files/calendar/contacts. The one Helm-managed app (`helm/nextcloud/`), with a separate MySQL StatefulSet |
+| Gitea | `git.` | Git hosting |
+| Vaultwarden | `vault.` | Bitwarden-compatible password manager (admin panel at `/admin`) |
+| Authelia | `auth.` | SSO/2FA; protects selected apps via Traefik ForwardAuth middleware |
+| Homepage | `home.` | Dashboard with Kubernetes-aware widgets |
 
-#### ExternalDNS (Optional)
-- **Purpose**: Automatically manage DNS records for Ingress/Service hostnames (Cloudflare)
-- **Enable**: `INSTALL_EXTERNAL_DNS=true ./setup-v2.sh`
-- **Requirements**:
-  - A real DNS zone (does not work for `.local` domains)
-  - Cloudflare API token (`cloudflare-api-token`)
-- **Safety**: Defaults to `upsert-only` (won't delete unmanaged records)
+**Media** (`ENABLE_MEDIA_SERVICES=true` by default):
 
----
+| Service | URL |
+|---|---|
+| Jellyfin | `jellyfin.` |
+| Sonarr / Radarr / Prowlarr / Bazarr | `sonarr.` / `radarr.` / `prowlarr.` / `bazarr.` |
+| Audiobookshelf | `audiobooks.` |
 
-### 📊 Monitoring Stack
+**Network** (`ENABLE_NETWORK_SERVICES=true` by default): Pi-hole (`pihole.`,
+also provides wildcard DNS for the cluster), WireGuard (`vpn.`), dnsmasq DHCP.
 
-#### Prometheus
-- **Purpose**: Metrics collection and storage
-- **Storage**: 50Gi retention for 30 days
-- **Targets**:
-  - Kubernetes cluster metrics
-  - Node metrics via node-exporter
-  - Application metrics (custom)
-- **Access**: Internal cluster service
+**Content** (`ENABLE_CONTENT_SERVICES=true` by default): Calibre-web
+(`books.`), SearXNG (`search.`), yarr (`rss.`).
 
-#### Grafana
-- **Purpose**: Metrics visualization and alerting
-- **URL**: https://grafana.<your-domain>
-- **Features**:
-  - Pre-configured Prometheus datasource
-  - Kubernetes dashboards
-  - Custom alerting rules
-  - User management
+**Productivity** (`ENABLE_PRODUCTIVITY_SERVICES=true` by default):
+Paperless-ngx (`docs.`), Mealie (`recipes.`), Linkwarden (`bookmarks.`),
+n8n (`automation.`).
 
-#### Alertmanager
-- **Purpose**: Alert routing, grouping, silences, and notification delivery
-- **Access**: Internal (via kube-prometheus-stack)
-- **Notes**:
-  - Notification routing is opt-in via `AlertmanagerConfig` (see `docs/runbooks/alerting.md`)
+## Applications that are opt-in
 
-#### Blackbox Exporter
-- **Purpose**: Synthetic HTTP/TLS probing (verifies key HTTPS endpoints through Traefik)
-- **Enabled by default**: when monitoring is enabled (toggle `INSTALL_BLACKBOX_EXPORTER`)
+| Service | URL | Toggle |
+|---|---|---|
+| Immich (photos; server + ML + Postgres/pgvecto + Redis) | `photos.` | `ENABLE_AI_SERVICES=true` |
+| Ollama (LLM runtime; large storage, heavy CPU/RAM) | `ai.` | `ENABLE_AI_SERVICES=true` |
+| Open WebUI (chat UI for Ollama; behind Authelia) | `chat.` | `ENABLE_AI_SERVICES=true` |
+| Drone CI | `drone.` | `ENABLE_DEV_SERVICES=true` |
+| Harbor (container registry, installed via in-cluster Helm job) | — | `ENABLE_DEV_SERVICES=true` |
+| ArgoCD | `argocd.` | `ENABLE_GITOPS=true` |
 
-#### Uptime Kuma
-- **Purpose**: Service uptime monitoring
-- **URL**: https://uptime.<your-domain>
-- **Features**:
-  - HTTP/HTTPS monitoring
-  - Status page creation
-  - Multiple notification channels
-  - Incident management
+## In the repo but NOT installed
 
-#### Loki (Optional)
-- **Purpose**: Log aggregation
-- **Access**: Internal cluster service
-- **Enable**: `INSTALL_LOGGING=true ./setup-v2.sh` (Promtail is optional; see `docs/runbooks/logging.md`)
+These directories under `kubernetes/services/` contain manifests the installer
+never applies. They follow the same conventions (pinned images, security
+contexts, ExternalSecrets) but have had less scrutiny — review before use,
+then `kubectl apply -f kubernetes/services/<name>/`:
 
----
+actual-budget, code-server, gatus, heimdall, home-assistant (+ Node-RED,
+Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak, localai, matrix,
+mattermost, metabase, navidrome, nocodb, outline, qbittorrent, romm, tautulli,
+umami, whisper.
 
-### 🛠️ Applications
+`extras/` holds higher-risk manifests excluded on purpose; `legacy/` is
+archived history.
 
-#### Nextcloud
-- **Purpose**: File sync, sharing, and collaboration
-- **URL**: https://nextcloud.<your-domain>
-- **Storage**: 100Gi for user data
-- **Database**: MySQL 8.0 (20Gi)
-- **Features**:
-  - File synchronization
-  - Calendar and contacts
-  - Office document editing
-  - App ecosystem
-  - External storage support
+## Dependencies
 
-#### Vaultwarden
-- **Purpose**: Password manager (Bitwarden server)
-- **URL**: https://vault.<your-domain>
-- **Admin**: https://vault.<your-domain>/admin
-- **Features**:
-  - Bitwarden-compatible API
-  - Web vault access
-  - Mobile app support
-  - Organization features
-  - Secure note storage
+- Every web UI is reached through Traefik; certificates come from
+  cert-manager.
+- Every credential flows `generate-secrets.sh` → `secrets` namespace →
+  ExternalSecret → app namespace. If ESO is down, new pods can't get secrets.
+- Databases are separate StatefulSet-style Deployments per app (Postgres for
+  Immich/Gitea/n8n etc., MySQL for Nextcloud, Redis where needed) — never
+  sidecars.
+- Open WebUI depends on Ollama; the arr-stack shares a common storage PVC.
 
-#### Jellyfin
-- **Purpose**: Media server for video streaming
-- **URL**: https://jellyfin.<your-domain>
-- **Media Path**: `/mnt/media` (configure as needed)
-- **Features**:
-  - Video transcoding
-  - Multi-device streaming
-  - User management
-  - Plugin ecosystem
-  - DLNA support
+## Backups
 
-#### Ollama
-- **Purpose**: Local LLM runtime (model serving)
-- **URL**: https://ai.<your-domain>
-- **Storage**: 100Gi by default for models
-- **Notes**:
-  - Can be resource intensive (CPU/RAM and storage)
-  - Downloads models over the internet by default
+Velero schedules (`kubernetes/backup/velero/schedules.yaml`):
 
-#### Open WebUI
-- **Purpose**: Chat UI for Ollama
-- **URL**: https://chat.<your-domain>
-- **Storage**: 10Gi by default for chat history
-- **Notes**:
-  - Protected via Authelia ForwardAuth (Traefik middleware)
+| Schedule | Cron | Scope |
+|---|---|---|
+| daily | `0 2 * * *` | Application namespaces |
+| weekly | `0 3 * * 0` | All user namespaces |
+| monthly | `0 4 1 * *` | Everything except system namespaces |
+| critical | `0 */6 * * *` | Vaultwarden, Nextcloud, Gitea, and the `secrets` namespace |
 
-#### Homepage
-- **Purpose**: Application dashboard
-- **URL**: https://home.<your-domain>
-- **Features**:
-  - Service tiles and links
-  - Kubernetes-aware widgets (optional)
-  - Simple config via ConfigMap
+Secret values themselves are backed up separately and encrypted:
+`./scripts/backup-secrets.sh` (age). Restore order and verification:
+`docs/runbooks/backup-restore.md`.
 
----
+## Resource expectations
 
-### 🔄 GitOps
+Every container declares CPU/memory requests and limits in its manifest —
+check `kubernetes/services/<name>/` for specifics. Summed across the full
+stack, memory requests alone are ~25 GiB; a default install with the AI and
+dev toggles off fits comfortably in 16 GB, and a trimmed selection in 8 GB.
+Prometheus (50Gi), MinIO (100Gi), Nextcloud (100Gi), and media libraries
+dominate storage.
 
-#### ArgoCD
-- **Purpose**: GitOps continuous delivery
-- **URL**: https://argocd.<your-domain>
-- **Features**:
-  - Git repository synchronization
-  - Application lifecycle management
-  - Multi-cluster support
-  - Rollback capabilities
-  - Automated deployments
+## Scaling and customization
 
----
+- Config lives in each service's ConfigMap/Deployment; edit and
+  `kubectl apply -f`, or change the source of truth here and re-run
+  `./setup-v2.sh` (idempotent).
+- HPAs exist for bursty services (Immich, Open WebUI, and others).
+- Do not scale database Deployments past 1 replica — none are clustered.
 
-## Service Dependencies
+## Adding a new service
 
-```mermaid
-graph TB
-    A[Traefik] --> B[All Web Services]
-    C[Cert-Manager] --> A
-    D[Local Storage] --> E[All Persistent Services]
-    F[Prometheus] --> G[Grafana]
-    H[MySQL] --> I[Nextcloud]
-    J[MinIO] --> K[Backup Services]
-    L[Open WebUI] --> M[Ollama]
-```
-
-## Resource Requirements
-
-| Service | CPU Request | Memory Request | Storage |
-|---------|-------------|----------------|---------|
-| Traefik | 100m | 128Mi | 1Gi |
-| Nextcloud | 200m | 512Mi | 100Gi |
-| MySQL | 100m | 256Mi | 20Gi |
-| Vaultwarden | 50m | 128Mi | 5Gi |
-| Jellyfin | 200m | 512Mi | Variable |
-| Grafana | 100m | 256Mi | 10Gi |
-| Prometheus | 200m | 512Mi | 50Gi |
-| Homepage | 50m | 128Mi | 1Gi |
-| Uptime Kuma | 50m | 128Mi | 5Gi |
-| ArgoCD | 250m | 512Mi | 10Gi |
-
-**Total Minimum**: 1.15 CPU cores, 3Gi RAM, ~200Gi storage
-
-## Service Configuration
-
-### Environment Variables
-Services are configured via:
-- Kubernetes ConfigMaps
-- Environment variables in deployments
-- Persistent volume mounts
-- Secrets for sensitive data
-
-### Customization
-To modify service configurations:
-1. Edit the deployment YAML files
-2. Update ConfigMaps as needed
-3. Apply changes: `kubectl apply -f <file>`
-4. Restart services if required
-
-### Scaling
-Scale services with:
-```bash
-kubectl scale deployment <service-name> --replicas=<count> -n <namespace>
-```
-
-**Note**: Some services (databases) should not be scaled beyond 1 replica without proper clustering.
-
-## Networking
-
-### Service Discovery
-- Services communicate via Kubernetes DNS
-- Format: `<service-name>.<namespace>.svc.cluster.local`
-- Internal traffic only (ClusterIP services)
-
-### External Access
-- All external access via Traefik ingress
-- HTTPS termination at ingress level
-- DNS resolution via local DNS (recommended: Pi-hole wildcard) or `/etc/hosts`
-
-### Ports
-| Service | Internal Port | External Access |
-|---------|---------------|-----------------|
-| Traefik Dashboard | 8080 | Host IP:8080 |
-| All Web Services | 80/443 | Via ingress |
-| Kubernetes API | 6443 | Host IP:6443 |
-
-## Backup Strategy
-
-### What's Backed Up:
-- **Application Data**: Persistent volumes
-- **Configuration**: Kubernetes manifests and configs
-- **Databases**: SQL dumps and data directories
-- **Certificates**: TLS certificates (local CA by default; optionally Let’s Encrypt)
-
-### Backup Schedule:
-- **Daily**: Application data (2 AM)
-- **Weekly**: Full system backup (Sunday 3 AM)
-- **Monthly**: Long-term archive
-
-### Retention:
-- Daily: 7 days
-- Weekly: 4 weeks
-- Monthly: 12 months
-
-## Monitoring & Alerts
-
-### Default Dashboards:
-- Kubernetes cluster overview
-- Node resource utilization
-- Application performance metrics
-- Service uptime status
-
-### Alert Rules:
-- High CPU/memory usage
-- Service downtime
-- Storage space warnings
-- Certificate expiration
-- Failed backup notifications
-
-### Notification Channels:
-Configure in Grafana:
-- Email notifications
-- Slack integration
-- Discord webhooks
-- Custom webhooks
-
-## Security
-
-### Network Security:
-- All traffic encrypted in transit
-- Internal service communication
-- Firewall rules (UFW)
-- No direct container access from internet
-
-### Authentication:
-- Individual service authentication
-- Kubernetes RBAC
-- SSL certificate validation
-- Optional: Authelia for SSO
-
-### Data Security:
-- Encrypted persistent volumes (optional)
-- Secure secrets management
-- Regular security updates
-- Backup encryption
-
----
-
-## Adding New Services
-
-To add a new service:
-
-1. Create namespace:
-   ```bash
-   kubectl create namespace <service-name>
-   ```
-
-2. Create deployment and service YAML
-3. Add ingress for external access
-4. Update monitoring (ServiceMonitor)
-5. Configure backup (if needed)
-6. Update documentation
-
-Example structure:
-```
-kubernetes/services/<service-name>/
-├── namespace.yaml
-├── deployment.yaml
-├── service.yaml
-├── ingress.yaml
-└── config.yaml  # ConfigMap (non-sensitive) or Secret (sensitive)
-```
-
-For more detailed setup instructions, see the main [README.md](../README.md).
+Follow the checklist in `CLAUDE.md`: create
+`kubernetes/services/<name>/` (namespace/deployment/service/ingress, plus
+`pdb.yaml` and `servicemonitor.yaml` where warranted), add an ExternalSecret
+for credentials and a matching entry in `scripts/generate-secrets.sh`, add a
+NetworkPolicy under `kubernetes/security/network-policies/`, and wire the
+directory into the appropriate `setup_*_services` function in `setup-v2.sh` —
+a directory alone does not deploy.
