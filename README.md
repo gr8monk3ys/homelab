@@ -1,5 +1,9 @@
 # 🏠 Automated Homelab Setup v2.0
 
+<p align="center">
+  <img src="docs/assets/hero.png" alt="homelab preview" width="640">
+</p>
+
 A **self-hosted** homelab deployment on Kubernetes (K3s) with externalized secret management, health checks, and multi-environment support. Includes Helm charts, Kustomize overlays, and setup automation.
 
 > **Status:** this is a personal homelab, not a hardened product. The manifests are consistent and CI-validated, but the full 43-service stack has not been proven end-to-end on a live cluster. Deploy a subset, verify, then grow.
