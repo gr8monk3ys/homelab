@@ -1,5 +1,9 @@
 # Homelab
 
+<p align="center">
+  <img src="docs/assets/hero.png" alt="homelab preview" width="640">
+</p>
+
 A self-hosted Kubernetes homelab on K3s: one installer (`setup-v2.sh`) deploys
 core infrastructure (ingress, TLS, secrets, storage, backups, monitoring) plus
 around two dozen applications, all from version-pinned manifests.
