@@ -85,7 +85,7 @@ jobs:
           skip-dirs: kubernetes/network-policies,kubernetes/security/network-policies
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@45580472a5bb82c4681c4ac726cfdb60060c2ee1
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a
         if: always()
         with:
           sarif_file: trivy-results.sarif
