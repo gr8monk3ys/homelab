@@ -1,6 +1,13 @@
-# Network Policies
+# Network Policies (standalone toolkit)
 
-This directory contains Kubernetes NetworkPolicies for securing pod-to-pod communication.
+Generic NetworkPolicies for securing pod-to-pod communication, applied
+manually or via `./apply-network-policies.sh`.
+
+> **Status:** `setup-v2.sh` does **not** apply this directory. The policies the
+> installer deploys live in `kubernetes/security/network-policies/`. Use this
+> toolkit only if you want to layer additional per-namespace default-deny +
+> allow rules on top — note that its `default-deny.yaml` also denies egress,
+> so always pair it with `allow-dns.yaml` at minimum.
 
 ## Architecture
 
@@ -10,7 +17,7 @@ This directory contains Kubernetes NetworkPolicies for securing pod-to-pod commu
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
-│               Traefik Ingress (kube-system)                  │
+│             Traefik Ingress (traefik-system)                 │
 └─────────────────────────┬───────────────────────────────────┘
                           │ (allowed by ingress-allow policy)
 ┌─────────────────────────▼───────────────────────────────────┐
@@ -36,10 +43,11 @@ This directory contains Kubernetes NetworkPolicies for securing pod-to-pod commu
 - `allow-ingress.yaml` - Allows traffic from Traefik ingress
 - `allow-monitoring.yaml` - Allows Prometheus scraping
 
-### Service-Specific Policies
+### Additional Policies
 
-- `allow-database.yaml` - Allows apps to connect to their databases
-- `allow-redis.yaml` - Allows apps to connect to Redis instances
+- `allow-same-namespace.yaml` - Allows pods within a namespace to talk to each other (app ↔ its database)
+- `allow-external-https.yaml` - Allows egress to the internet on 443 (image/feed fetching)
+- `service-specific/` - Tailored policies for individual services (Authelia, Immich)
 
 ## Usage
 

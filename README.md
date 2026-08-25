@@ -1,339 +1,216 @@
-# 🏠 Automated Homelab Setup v2.0
+# Homelab
 
 <p align="center">
   <img src="docs/assets/hero.png" alt="homelab preview" width="640">
 </p>
 
-A **self-hosted** homelab deployment on Kubernetes (K3s) with externalized secret management, health checks, and multi-environment support. Includes Helm charts, Kustomize overlays, and setup automation.
+A self-hosted Kubernetes homelab on K3s: one installer (`setup-v2.sh`) deploys
+core infrastructure (ingress, TLS, secrets, storage, backups, monitoring) plus
+around two dozen applications, all from version-pinned manifests.
 
-> **Status:** this is a personal homelab, not a hardened product. The manifests are consistent and CI-validated, but the full 43-service stack has not been proven end-to-end on a live cluster. Deploy a subset, verify, then grow.
+**Status:** this is a personal homelab, not a product. The manifests are
+consistent and CI-validated, but the full stack has not been proven end-to-end
+on a live cluster. Deploy a subset, verify, then grow.
 
-## 🔐 Security First
-- **No hardcoded passwords** - All secrets properly managed
-- **External Secrets Operator** for centralized secret management
-- **Separated databases** - No more sidecar anti-patterns
-- **Health checks & resource limits** on all services
-- **Multi-environment support** (dev/staging/production)
+## Stack
 
-## ✨ Features
+| Layer | Components | Default |
+|---|---|---|
+| Cluster | K3s (any conformant Kubernetes works) | assumed present |
+| Load balancing | MetalLB | on |
+| Ingress + TLS | Traefik, cert-manager (local CA `homelab-ca`; Let's Encrypt issuers available) | on |
+| Secrets | External Secrets Operator over a central `secrets` namespace; SOPS/age for GitOps | on |
+| Storage | local-path provisioner, MinIO (S3-compatible) | on |
+| Backups | Velero (daily/weekly/monthly + 6-hourly critical schedules) | on |
+| Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager), blackbox-exporter, Uptime Kuma | on |
+| Logging | Loki (+ optional Promtail) | off |
+| Security | CrowdSec agent, NetworkPolicies, Pod Security Admission (audit), optional Kyverno | mixed, see below |
+| GitOps | ArgoCD (+ optional KSOPS for encrypted secrets in git) | off |
 
-### 🔐 Security & Secret Management
-- **External Secrets Operator** - Centralized secret management
-- **Kubernetes Secrets** - No hardcoded passwords in Kubernetes manifests
-- **Automated secret generation** - 32+ character random passwords
-- **Secret rotation capability** - Update without service downtime
-- **SOPS + age (GitOps optional)** - Encrypted secrets at rest in git (ArgoCD via KSOPS)
+Security posture, honestly stated: pod security contexts, drop-ALL
+capabilities, and resource limits are enforced in the manifests themselves;
+Pod Security Admission defaults to `audit` (warns, does not block), Kyverno is
+opt-in, NetworkPolicies cover the sensitive namespaces rather than every
+namespace, and the CrowdSec Traefik bouncer is deployed but not yet wired into
+the request path. See `docs/runbooks/hardening.md` to tighten each of these.
 
-### 🔧 Core Infrastructure
-- **K3s Kubernetes** - Lightweight, production-ready Kubernetes
-- **Traefik Ingress** - Ingress controller (routing + TLS termination via cert-manager)
-- **MinIO** - S3-compatible object storage
-- **Local Path Provisioner** - Dynamic persistent volume provisioning
-- **Separated Databases** - StatefulSets instead of sidecars
+## Requirements
 
-### 📊 Monitoring & Observability
-- **Prometheus + Grafana** - Comprehensive metrics and visualization
-- **Uptime Kuma** - Service uptime monitoring
-- **AlertManager** - Alert management and notifications
-- **Loki (optional)** - Log aggregation (Promtail is opt-in)
+- A running Kubernetes cluster (K3s recommended) and `kubectl` access
+- `helm` (or let the installer fetch pinned tools into `.tools/`)
+- RAM: ~8 GB for a minimal subset; 32 GB+ recommended for the full stack
+  (pod memory *requests* alone total ~25 GiB)
+- 100 GB+ storage (more for media/photo libraries)
 
-### 🛠️ Self-Hosted Services
-- **Nextcloud** - File synchronization and collaboration
-- **Vaultwarden** - Password manager (Bitwarden-compatible)
-- **Jellyfin** - Media server for streaming content
-- **Homepage** - Application dashboard
-- **Authelia** - Authentication and authorization
-- **Ollama (optional)** - Local LLM runtime
-- **Open WebUI (optional)** - Chat UI for Ollama
+## Quick start
 
-### 🔄 GitOps & Automation
-- **Helm Charts** - Templated, configurable deployments
-- **Kustomize Overlays** - Environment-specific configurations
-- **ArgoCD** - GitOps continuous delivery
-- **SOPS secrets (optional)** - Store `Secret` manifests encrypted in git (see `docs/runbooks/gitops-secrets.md`)
-- **Ansible** - System configuration management
-- **Automated backups** - Scheduled data protection
-- **Health Checks** - Liveness and readiness probes
+**1. Configure first.** Edit `config/homelab.yaml` (or export env vars, which
+take precedence) — at minimum your domain and email:
 
-## 🚀 Quick Start
+```yaml
+homelab:
+  domain: example.lan      # every service becomes <name>.<domain>
+  email: you@example.com
+  timezone: America/Los_Angeles
+```
 
-### Prerequisites
-- Kubernetes cluster (K3s recommended) and `kubectl` configured
-- RAM: ~8GB for a minimal subset; **32GB+ recommended for the full stack** (pod memory *requests* alone total ~25 GiB before monitoring/registry overhead)
-- 100GB+ storage (more if you enable media/photo services)
-- Root or sudo access (for installing tools)
-- Internet connection (image pulls and Helm charts)
+Without this step everything deploys under the placeholder domain
+`homelab.local`.
 
-### 🚀 Quick Start (Secure)
+**2. Deploy.**
+
 ```bash
-git clone https://github.com/<you>/homelab.git
-cd homelab
+./setup-v2.sh              # generates missing secrets, installs everything
+```
 
-# Deploy (installs core controllers and creates any missing secrets)
-./setup-v2.sh
+**3. Validate and get access info.**
 
-# Validate deployment
+```bash
 ./scripts/validate-setup.sh
 ```
 
-### Optional: GitOps Secrets (SOPS + age)
+The installer ends with a banner listing every service URL and the exact
+`kubectl` commands to retrieve each credential (nothing is printed to logs).
+See `docs/credentials.md` for the full secret reference.
 
-If you want ArgoCD-managed encrypted Secrets:
+## Feature toggles
 
-```bash
-./scripts/sops-bootstrap.sh
-./scripts/configure-argocd-ksops.sh
-```
+Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 
-### Optional: `just` Shortcuts
+| Toggle | Default | Controls |
+|---|---|---|
+| `ENABLE_MEDIA_SERVICES` | `true` | Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf |
+| `ENABLE_NETWORK_SERVICES` | `true` | Pi-hole, WireGuard, dnsmasq (DHCP) |
+| `ENABLE_CONTENT_SERVICES` | `true` | Calibre-web, SearXNG, yarr |
+| `ENABLE_PRODUCTIVITY_SERVICES` | `true` | Paperless-ngx, Mealie, Linkwarden, n8n |
+| `ENABLE_AI_SERVICES` | `false` | Ollama, Open WebUI, Immich |
+| `ENABLE_DEV_SERVICES` | `false` | Drone CI, Harbor registry |
+| `ENABLE_GITOPS` | `false` | ArgoCD (`APPLY_GITOPS_MANIFESTS` for the app-of-apps) |
+| `INSTALL_MONITORING` | `true` | kube-prometheus-stack + Uptime Kuma |
+| `INSTALL_LOGGING` | `false` | Loki (`INSTALL_PROMTAIL` for shipping) |
+| `INSTALL_VELERO` / `INSTALL_METALLB` | `true` | Backups / LoadBalancer IPs |
+| `INSTALL_EXTERNAL_DNS` | `false` | Cloudflare DNS automation (needs API token) |
+| `INSTALL_KYVERNO` | `false` | Policy engine (`KYVERNO_POLICY_MODE=audit\|enforce`) |
+| `POD_SECURITY_MODE` | `audit` | PSA labels: `off` / `audit` / `enforce` |
+| `CONFIGURE_ALERTING` | `false` | Alertmanager notification routing |
 
-If you use [`just`](https://github.com/casey/just), this repo includes a `justfile`:
+## Services
 
-```bash
-just setup
-just validate
-just ci
-just trivy
-```
+Deployed by default (`<name>.<domain>` unless noted):
 
-## 🧰 Development
+| Service | URL | Purpose |
+|---|---|---|
+| Homepage | `home.` | Dashboard |
+| Grafana | `grafana.` | Metrics and dashboards |
+| Uptime Kuma | `uptime.` | Uptime monitoring |
+| Nextcloud | `nextcloud.` | Files, calendar, contacts |
+| Vaultwarden | `vault.` | Passwords (Bitwarden-compatible) |
+| Gitea | `git.` | Git hosting |
+| Authelia | `auth.` | SSO / ForwardAuth for protected apps |
+| Jellyfin | `jellyfin.` | Media streaming |
+| Sonarr / Radarr / Prowlarr / Bazarr | `sonarr.` etc. | Media automation |
+| Audiobookshelf | `audiobooks.` | Audiobooks and podcasts |
+| Paperless-ngx | `docs.` | Document management |
+| Mealie | `recipes.` | Recipes |
+| Linkwarden | `bookmarks.` | Bookmarks |
+| n8n | `automation.` | Workflow automation |
+| Calibre-web | `books.` | E-books |
+| SearXNG | `search.` | Metasearch |
+| yarr | `rss.` | RSS |
+| Pi-hole | `pihole.` | DNS filtering + wildcard DNS for the cluster |
+| WireGuard | `vpn.` | VPN (UI) |
 
-### Pre-commit Hooks (Recommended)
+Opt-in: Immich (`photos.`), Ollama (`ai.`), Open WebUI (`chat.`), Drone
+(`drone.`), Harbor, ArgoCD (`argocd.`) — see the toggles above.
 
-This repo includes a `.pre-commit-config.yaml` with fast local checks.
+A further ~20 directories under `kubernetes/services/` (Home Assistant,
+Keycloak, Matrix, Mattermost, and others) contain maintained manifests that
+`setup-v2.sh` does **not** install; apply them manually with
+`kubectl apply -f kubernetes/services/<name>/` if wanted. Full catalog:
+`docs/services.md`.
 
-Install `pre-commit` (pick one):
+## DNS
 
-- `pipx install pre-commit`
-- `python3 -m pip install --user pre-commit`
-- Or: run `./scripts/install-dev-tools.sh` and use `.tools/venv/bin/pre-commit`
-
-Enable the git hook:
-
-```bash
-pre-commit install
-```
-
-Optional (recommended): also run the full repo gate before pushing (runs `./scripts/ci.sh` and fails if required tools are missing):
-
-```bash
-pre-commit install --hook-type pre-push
-```
-
-Run on all files:
-
-```bash
-pre-commit run -a
-```
-
-### Repo-Local Tooling (No Sudo)
-
-Install pinned versions of the tools used by `./scripts/ci.sh` into `.tools/`:
-
-```bash
-./scripts/install-dev-tools.sh
-# or
-just dev-tools
-```
-
-Tool versions are pinned in `tools/versions.env`. Most repo scripts (including `./scripts/ci.sh` and `./setup-v2.sh`) will automatically use `.tools/` if present.
-
-### 🔧 Customize What Gets Installed
-```bash
-# Examples
-ENABLE_AI_SERVICES=true ./setup-v2.sh
-ENABLE_DEV_SERVICES=true ./setup-v2.sh
-ENABLE_GITOPS=true ./setup-v2.sh
-
-INSTALL_VELERO=false INSTALL_METALLB=false ./setup-v2.sh
-INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh
-```
-
-### For Synology NAS Integration
-```bash
-# First, setup your Synology NAS
-./scripts/synology-setup.sh 192.168.1.100 admin ~/.ssh/id_rsa
-
-# Then run the main setup
-./setup-v2.sh
-```
-
-## 📁 Project Structure
-
-```
-homelab/
-├── setup-v2.sh             # Main setup script
-├── config/
-│   ├── homelab-secure.yaml  # 🆕 Secure configuration
-│   └── homelab.yaml         # Symlink to secure config
-├── helm/                    # 🆕 Helm charts
-│   └── nextcloud/           # Example Helm chart
-├── kustomize/               # 🆕 Environment overlays
-│   ├── base/                # Base configurations
-│   └── overlays/            # Environment-specific
-│       ├── development/
-│       ├── staging/
-│       └── production/
-├── extras/                  # Optional (higher-risk) manifests not installed by default
-├── legacy/                  # Archived legacy manifests (not used by setup-v2.sh)
-├── kubernetes/
-│   ├── secrets/             # 🆕 Secret management
-│   ├── storage/             # Storage configurations
-│   ├── ingress/             # Traefik and cert-manager
-│   ├── monitoring/          # Prometheus, Grafana, Uptime Kuma
-│   ├── services/            # All self-hosted services (updated)
-│   └── gitops/              # ArgoCD configurations
-├── scripts/
-│   ├── generate-secrets.sh  # 🆕 Secure secret generation
-│   ├── backup-secrets.sh    # Encrypted secret backup (age)
-│   ├── restore-secrets.sh   # Encrypted secret restore (age)
-│   ├── configure-wildcard-dns.sh # Pi-hole wildcard DNS for *.<domain>
-│   ├── validate-setup.sh    # 🆕 Comprehensive validation
-│   └── synology-setup.sh    # Synology NAS configuration
-├── ansible/                 # System configuration
-├── docs/                    # Documentation
-└── SECURITY_NOTICE.md       # 🆕 Security upgrade guide
-```
-
-## ⚙️ Configuration
-
-- Secrets: generated into the `secrets` namespace; see `docs/credentials.md`.
-- Helm values: `kubernetes/**/values.yaml` and `helm/**/values.yaml`.
-- Feature toggles: see `ENABLE_*` and `INSTALL_*` at the top of `setup-v2.sh`.
-- Kustomize overlays: `./scripts/kustomize-apply.sh kustomize/overlays/production`
-- `setup-v2.sh` reads `config/homelab.yaml` for defaults like `homelab.domain`, `homelab.timezone`, `homelab.email`, `ingress.cert_manager.cluster_issuer`, and `gitops.repo_url` (env vars override).
-
-## 🌐 Service Access
-
-After setup, access your services at:
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| Homepage | https://home.<your-domain> | Dashboard |
-| Grafana | https://grafana.<your-domain> | Monitoring dashboard |
-| Nextcloud | https://nextcloud.<your-domain> | File sync & sharing |
-| Vaultwarden | https://vault.<your-domain> | Password manager |
-| Jellyfin | https://jellyfin.<your-domain> | Media server |
-| Uptime Kuma | https://uptime.<your-domain> | Uptime monitoring |
-| Ollama (optional) | https://ai.<your-domain> | Local LLM API |
-| Open WebUI (optional) | https://chat.<your-domain> | Chat UI for Ollama |
-| ArgoCD (optional) | https://argocd.<your-domain> | GitOps dashboard |
-
-### DNS (Recommended)
-
-If you enable Pi-hole, you can configure wildcard DNS so you do not need per-machine `/etc/hosts` entries:
+With Pi-hole enabled, the installer configures wildcard DNS for `*.<domain>`
+pointing at Traefik (disable with `CONFIGURE_WILDCARD_DNS=false`). Point your
+clients or router DHCP at the Pi-hole service IP:
 
 ```bash
-./scripts/configure-wildcard-dns.sh
-
-# Then point your clients (or router DHCP) at the Pi-hole DNS service IP:
 kubectl -n pihole get svc pihole-dns
 ```
 
-Disable the automatic DNS step during `setup-v2.sh` with:
+## Backups
+
+- **Velero** (on by default): daily 02:00 app-data backup, weekly Sunday
+  03:00, monthly, and 6-hourly for critical namespaces —
+  `kubernetes/backup/velero/schedules.yaml`.
+- **Secrets**: `./scripts/backup-secrets.sh` writes an age-encrypted export;
+  restore with `./scripts/restore-secrets.sh <file>`. Do this before rebuilds.
+- Verify: `./scripts/verify-backups.sh`. Restore procedures:
+  `docs/runbooks/backup-restore.md`.
+
+## GitOps (optional)
+
+`ENABLE_GITOPS=true` installs ArgoCD. To manage encrypted secrets in git:
 
 ```bash
-CONFIGURE_WILDCARD_DNS=false ./setup-v2.sh
+./scripts/sops-bootstrap.sh            # age key + SOPS-encrypt secret manifests
+./scripts/configure-argocd-ksops.sh    # KSOPS decryption in ArgoCD
 ```
 
-## 🔒 Security Features
+Details: `docs/runbooks/gitops-secrets.md`. Set `gitops.repo_url` in
+`config/homelab.yaml` — the ArgoCD manifests contain placeholders until then.
 
-- **TLS certificates** via cert-manager (local CA by default; optional Let’s Encrypt for public domains)
-- **Pod Security Admission (PSA)** namespace labeling (`POD_SECURITY_MODE=audit|enforce`; see `docs/runbooks/hardening.md`)
-- **Policy-as-code (optional)** with Kyverno (`INSTALL_KYVERNO=true`; see `docs/runbooks/hardening.md`)
-- **Firewall configuration** with UFW
-- **Fail2ban** for intrusion prevention
-- **SSH hardening** with key-only authentication
-- **Regular security updates** via unattended-upgrades
-- **Backup encryption** and rotation
-
-## 🛡️ Backup & Recovery
-
-Automated backups run daily at 2 AM:
-- **Configuration files** - Full cluster state
-- **Application data** - Persistent volumes
-- **Database dumps** - Complete data export
-- **Retention policy** - 30 days default
-
-Restore with:
-```bash
-/usr/local/bin/restore-homelab.sh /path/to/backup
-```
-
-Encrypted secret backups (recommended before rebuilds):
+## Development
 
 ```bash
-./scripts/backup-secrets.sh
-./scripts/restore-secrets.sh backups/secrets-secrets-<timestamp>.yaml.age
+./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
+pre-commit install               # fast local checks on commit
+./scripts/ci.sh                  # the full lint/validate gate CI runs
+just                             # task shortcuts (just validate, just ci, just kind-smoke, ...)
+cd test && ./setup-kind.sh       # throwaway KinD cluster for testing
 ```
 
-## 📚 Additional Services
+Tool and chart versions are pinned in `tools/versions.env`. Renovate is
+configured for dependency updates (database and security images gated to
+manual review).
 
-The homelab supports easy addition of more services:
+## Repository layout
 
-### Media Services
-- Radarr, Sonarr, Lidarr (media automation)
-- Overseerr (request management)
-- Tautulli (Plex/Jellyfin analytics)
+```
+setup-v2.sh                  # installer (idempotent; safe to re-run)
+config/homelab.yaml          # domain/email/timezone/issuer defaults
+kubernetes/
+  ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
+  secrets/                   # ExternalSecrets + SOPS store
+  security/                  # CrowdSec + NetworkPolicies (applied by installer)
+  network-policies/          # standalone policy toolkit (manual, not installed)
+  policy/kyverno/            # optional policy-as-code (audit + enforce sets)
+  services/<name>/           # one directory per application
+  gitops/argocd/             # optional ArgoCD app-of-apps
+helm/nextcloud/              # the one Helm-chart-managed app
+kustomize/overlays/          # development / staging / production
+scripts/                     # secrets, backup/restore, validation, DR
+ansible/                     # host provisioning (base system, security, backups)
+docs/                        # credentials reference + day-2 runbooks
+test/                        # KinD configs + validation suite
+extras/  legacy/             # not installed: higher-risk / archived manifests
+```
 
-### Development Tools
-- GitLab CE (Git repository hosting)
-- Jenkins (CI/CD)
-- Code-server (VS Code in browser)
+## Troubleshooting
 
-### Network Services
-- Pi-hole (DNS filtering)
-- WireGuard VPN
-- Nginx Proxy Manager
+Start with the symptom→fix triage table in `docs/runbooks/README.md`. Common
+first checks:
 
-Add services by placing Kubernetes manifests in `kubernetes/services/<service-name>/`
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Services not accessible:**
 ```bash
-kubectl get pods --all-namespaces
-kubectl get ingress --all-namespaces
+kubectl get pods -A                     # what's not Running?
+kubectl get externalsecrets -A          # secret sync status
+kubectl get certificates -A             # TLS issuance
+kubectl logs -f deploy/<name> -n <ns>   # service logs
 ```
 
-**Storage issues:**
-```bash
-kubectl get pv
-kubectl get pvc --all-namespaces
-```
+Installer output is logged to `setup.log`.
 
-**SSL certificate problems:**
-```bash
-kubectl get certificates --all-namespaces
-kubectl describe certificate <cert-name>
-```
+## License
 
-### Runbooks
-
-Day-2 operations (backup/restore/upgrades): `docs/runbooks/README.md`
-
-### Logs
-All setup logs are saved to `setup.log`
-
-Service logs:
-```bash
-kubectl logs -f deployment/<service-name> -n <namespace>
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add your service/improvement
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details
-
-## 🙏 Acknowledgments
-
-Built on [K3s](https://k3s.io/), [Traefik](https://traefik.io/), [Helm](https://helm.sh/), and the wider self-hosted open-source ecosystem.
+MIT — see [LICENSE](LICENSE).

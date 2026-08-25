@@ -26,8 +26,8 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 ./scripts/verify-backups.sh        # Verify backup integrity
 ./scripts/disaster-recovery.sh     # Disaster recovery procedures
 
-# Network policies
-./kubernetes/network-policies/apply-network-policies.sh
+# Network policies: setup-v2.sh applies kubernetes/security/network-policies/.
+# (kubernetes/network-policies/ is a standalone manual toolkit — NOT installed.)
 ```
 
 **IMPORTANT**: Never use `setup.sh` (legacy/insecure). Always use `setup-v2.sh`.
@@ -46,8 +46,8 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 │  ┌────────────────────────────────────────┐ │
 │  │ Core: MinIO, Velero, Local Path Prov.  │ │
 │  │ Monitoring: Prometheus, Grafana, Alerts│ │
-│  │ Auth: Authelia, Keycloak               │ │
-│  │ Apps: 43 services (see services dir)   │ │
+│  │ Auth: Authelia (ForwardAuth SSO)       │ │
+│  │ Apps: ~24 installed (43 service dirs)  │ │
 │  └────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────┐ │
 │  │ NetworkPolicies (default deny + allow) │ │
@@ -63,8 +63,9 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 - `kubernetes/storage/` - MinIO, local-path provisioner
 - `kubernetes/ingress/` - Traefik, cert-manager
 - `kubernetes/monitoring/` - Prometheus stack + `alerts/` (PrometheusRules)
-- `kubernetes/network-policies/` - Default deny + service-specific policies
-- `kubernetes/services/<name>/` - Individual service deployments (43 services)
+- `kubernetes/security/network-policies/` - Policies applied by `setup-v2.sh` (default-deny, DB, egress)
+- `kubernetes/network-policies/` - Standalone policy toolkit (manual use; NOT applied by `setup-v2.sh`)
+- `kubernetes/services/<name>/` - Individual service deployments (43 dirs; ~24 installed by `setup-v2.sh`, the rest are manifest-only)
 - `kubernetes/gitops/` - ArgoCD configurations
 - `helm/` - Helm charts
 - `kustomize/overlays/{development,staging,production}/` - Environment configs
@@ -88,8 +89,9 @@ kubectl get secret <name> -n <namespace> -o jsonpath='{.data.password}' | base64
    - `pdb.yaml` (PodDisruptionBudget) for critical services
    - `servicemonitor.yaml` for Prometheus scraping
    - `hpa.yaml` for auto-scaling if variable load
-2. Add ExternalSecret for credentials
-3. Add NetworkPolicy in `kubernetes/network-policies/service-specific/`
+2. Add ExternalSecret for credentials (and a matching entry in `scripts/generate-secrets.sh`)
+3. Add NetworkPolicy in `kubernetes/security/network-policies/`
+4. Wire the directory into the appropriate `setup_*_services` function in `setup-v2.sh` — a directory alone does not deploy
 
 **Databases**: Always use separate StatefulSets (e.g., `postgres-deployment.yaml`), never sidecars.
 
