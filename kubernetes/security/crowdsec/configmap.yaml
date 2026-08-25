@@ -14,12 +14,6 @@ data:
     labels:
       type: traefik
     ---
-    # Kubernetes audit logs
-    filenames:
-      - /var/log/audit/*.log
-    labels:
-      type: syslog
-    ---
     # SSH logs (if available)
     filenames:
       - /var/log/auth.log

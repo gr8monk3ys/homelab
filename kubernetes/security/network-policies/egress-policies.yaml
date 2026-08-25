@@ -132,7 +132,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: nextcloud
+      app.kubernetes.io/name: nextcloud
   policyTypes:
     - Egress
   egress:
@@ -153,7 +153,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: nextcloud
+      app.kubernetes.io/name: nextcloud
   policyTypes:
     - Egress
   egress:
@@ -203,7 +203,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: paperless
+      app: paperless-ngx
   policyTypes:
     - Egress
   egress:
@@ -223,7 +223,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: paperless
+      app: paperless-ngx
   policyTypes:
     - Egress
   egress:
@@ -339,7 +339,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: gitea-postgres
+              app: gitea-db
       ports:
         - protocol: TCP
           port: 5432

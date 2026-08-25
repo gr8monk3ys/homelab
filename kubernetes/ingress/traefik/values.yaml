@@ -3,6 +3,17 @@
 
 deployment:
   replicas: 1
+  # Write access logs to the node so the CrowdSec agent can tail them
+  # (kubernetes/security/crowdsec/deployment.yaml mounts the same hostPath).
+  additionalVolumes:
+    - name: traefik-logs
+      hostPath:
+        path: /var/log/traefik
+        type: DirectoryOrCreate
+
+additionalVolumeMounts:
+  - name: traefik-logs
+    mountPath: /var/log/traefik
 
 service:
   type: LoadBalancer
@@ -10,6 +21,9 @@ service:
 providers:
   kubernetesCRD:
     enabled: true
+    # Ingresses reference middlewares in other namespaces
+    # (authelia-authelia-forwardauth, crowdsec-crowdsec-bouncer).
+    allowCrossNamespace: true
   kubernetesIngress:
     enabled: true
 
@@ -31,10 +45,18 @@ ports:
     http:
       tls:
         enabled: true
+      # Screen every request through the CrowdSec bouncer
+      # (Middleware in kubernetes/security/crowdsec/deployment.yaml).
+      middlewares:
+        - crowdsec-crowdsec-bouncer@kubernetescrd
 
 logs:
   general:
     level: INFO
+  access:
+    enabled: true
+    format: json
+    filePath: /var/log/traefik/access.log
 
 resources:
   requests:

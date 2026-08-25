@@ -70,10 +70,11 @@ mysql:
   commonLabels:
     app: nextcloud-mysql
   auth:
-    rootPassword: ""  # Set via secret
+    # Credentials come from the ESO-managed secret rendered by
+    # templates/external-secrets.yaml (keys: mysql-root-password, mysql-password).
+    existingSecret: nextcloud-db-password
     database: "nextcloud"
     username: "nextcloud"
-    password: ""  # Set via secret
 
   primary:
     podLabels:
