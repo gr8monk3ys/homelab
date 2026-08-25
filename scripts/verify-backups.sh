@@ -27,7 +27,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 BACKUP_NAMESPACE="${BACKUP_NAMESPACE:-velero}"
-MINIO_NAMESPACE="${MINIO_NAMESPACE:-minio}"
+MINIO_NAMESPACE="${MINIO_NAMESPACE:-minio-system}"
 TEST_NAMESPACE="backup-test-$(date +%s)"
 REPORT_FILE="${HOMELAB_DIR}/backup-verification-$(date +%Y%m%d-%H%M%S).log"
 
@@ -225,22 +225,22 @@ check_volume_snapshots() {
     fi
 }
 
-# Verify PVC backup configuration
+# Verify pod volume backup configuration
 check_pvc_backup_config() {
-    log "Checking PVC backup configuration..."
+    log "Checking pod volume backup configuration..."
 
-    local pvcs_with_backup
-    pvcs_with_backup=$(kubectl get pvc -A -o jsonpath='{.items[?(@.metadata.annotations.backup\.velero\.io/backup-volumes)].metadata.name}' 2>/dev/null | wc -w)
+    local pods_with_backup
+    pods_with_backup=$(kubectl get pods -A -o jsonpath='{.items[?(@.metadata.annotations.backup\.velero\.io/backup-volumes)].metadata.name}' 2>/dev/null | wc -w | tr -d ' ')
 
     local total_pvcs
     total_pvcs=$(kubectl get pvc -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
 
     if [ "$total_pvcs" -gt 0 ]; then
-        info "PVCs with explicit backup annotation: $pvcs_with_backup / $total_pvcs"
+        info "Pods with explicit backup-volumes annotation: $pods_with_backup (PVCs in cluster: $total_pvcs)"
 
-        if [ "$pvcs_with_backup" -lt "$total_pvcs" ]; then
-            warning "Some PVCs may not be included in backups"
-            info "Add annotation: kubectl annotate pvc <name> backup.velero.io/backup-volumes=<volume-name>"
+        if [ "$pods_with_backup" -eq 0 ]; then
+            warning "No pods opt volumes into file-level backups"
+            info "Add annotation to the pod template: backup.velero.io/backup-volumes=<volume-name>"
         fi
     fi
 }
@@ -248,11 +248,6 @@ check_pvc_backup_config() {
 # Create test backup and verify
 test_backup_restore() {
     log "Testing backup and restore capability..."
-
-    if [ "${SKIP_RESTORE_TEST:-false}" = "true" ]; then
-        info "Skipping restore test (SKIP_RESTORE_TEST=true)"
-        return 0
-    fi
 
     # Create test namespace
     info "Creating test namespace: $TEST_NAMESPACE"
@@ -418,10 +413,10 @@ main() {
 
     local failed=0
 
-    check_velero_installation || ((failed++))
+    check_velero_installation || failed=$((failed+1))
     echo ""
 
-    check_backup_storage || ((failed++))
+    check_backup_storage || failed=$((failed+1))
     echo ""
 
     list_backups
@@ -440,7 +435,7 @@ main() {
     echo ""
 
     if [ "${RUN_RESTORE_TEST:-false}" = "true" ]; then
-        test_backup_restore || ((failed++))
+        test_backup_restore || failed=$((failed+1))
         echo ""
     fi
 
@@ -467,14 +462,12 @@ Options:
 
 Environment Variables:
   BACKUP_NAMESPACE   Velero namespace (default: velero)
-  MINIO_NAMESPACE    MinIO namespace (default: minio)
-  SKIP_RESTORE_TEST  Skip restore test (default: false)
-  RUN_RESTORE_TEST   Run full restore test (default: false)
+  MINIO_NAMESPACE    MinIO namespace (default: minio-system)
+  RUN_RESTORE_TEST   Run full backup/restore test (default: false)
 
 Examples:
   $0                           # Run basic verification
-  RUN_RESTORE_TEST=true $0     # Run with restore test
-  SKIP_RESTORE_TEST=true $0    # Skip restore testing
+  RUN_RESTORE_TEST=true $0     # Run with backup/restore test
 
 EOF
     exit 0

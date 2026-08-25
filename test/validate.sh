@@ -5,17 +5,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 LOGFILE="$SCRIPT_DIR/validation.log"
 
+FAILURES=0
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
 }
 
 error() {
     log "ERROR: $*"
-    return 1
+    FAILURES=$((FAILURES+1))
 }
 
 success() {
     log "SUCCESS: $*"
+}
+
+compose_cmd() {
+    if command -v docker-compose &> /dev/null; then
+        docker-compose "$@"
+    else
+        docker compose "$@"
+    fi
 }
 
 check_service_health() {
@@ -85,7 +95,7 @@ check_kubernetes_resources() {
             name=$(echo "$pod_info" | cut -d'|' -f2)
             phase=$(echo "$pod_info" | cut -d'|' -f3)
             error "Pod not healthy: $ns/$name (status: $phase)"
-            ((failed_pods++))
+            failed_pods=$((failed_pods+1))
         fi
     done < <(kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.status.phase}{"\n"}{end}' 2>/dev/null | grep -v -E '\|(Running|Succeeded)$' || true)
 
@@ -106,8 +116,13 @@ check_docker_compose() {
 
     success "Docker Compose file found"
 
+    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+        error "Docker Compose is not available (install docker-compose or the docker compose plugin)"
+        return 1
+    fi
+
     # Validate Docker Compose file
-    if docker-compose -f "$SCRIPT_DIR/docker-compose.yml" config &> /dev/null; then
+    if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config &> /dev/null; then
         success "Docker Compose file is valid"
     else
         error "Docker Compose file has syntax errors"
@@ -131,7 +146,7 @@ check_docker_compose() {
     )
 
     for service in "${expected_services[@]}"; do
-        if docker-compose -f "$SCRIPT_DIR/docker-compose.yml" config --services | grep -q "^$service$"; then
+        if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config --services | grep -q "^$service$"; then
             success "Service $service is defined"
         else
             error "Service $service is not defined"
@@ -176,11 +191,17 @@ check_kubernetes_manifests() {
         "harbor"
         "drone"
         "dnsmasq-dhcp"
-        "nextcloud"
         "vaultwarden"
         "jellyfin"
         "heimdall"
     )
+
+    # Nextcloud is deployed from the repo Helm chart, not kubernetes/services/
+    if [ -f "$HOMELAB_DIR/helm/nextcloud/Chart.yaml" ]; then
+        success "Nextcloud Helm chart exists"
+    else
+        error "Nextcloud Helm chart missing: helm/nextcloud"
+    fi
 
     for service in "${service_dirs[@]}"; do
         local service_dir="$HOMELAB_DIR/kubernetes/services/$service"
@@ -225,7 +246,7 @@ validate_service_connectivity() {
     for service_info in "${services[@]}"; do
         IFS=':' read -r service_name service_url <<< "$service_info"
         if ! check_service_health "$service_name" "$service_url"; then
-            ((connectivity_failures++))
+            connectivity_failures=$((connectivity_failures+1))
         fi
         sleep 1  # Rate limiting
     done
@@ -249,9 +270,9 @@ run_yaml_syntax_check() {
             log "YAML syntax OK: $(basename "$yaml_file")"
         else
             error "YAML syntax error in: $yaml_file"
-            ((syntax_errors++))
+            syntax_errors=$((syntax_errors+1))
         fi
-    done < <(find "$HOMELAB_DIR" \( -name "*.yaml" -o -name "*.yml" \) -print0)
+    done < <(find "$HOMELAB_DIR" \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/helm/*/templates/*" -print0)
 
     if [ $syntax_errors -eq 0 ]; then
         success "All YAML files have valid syntax"
@@ -274,8 +295,9 @@ generate_report() {
     # Count successes and errors
     local success_count
     local error_count
-    success_count=$(grep -c "SUCCESS:" "$LOGFILE" 2>/dev/null || echo "0")
-    error_count=$(grep -c "ERROR:" "$LOGFILE" 2>/dev/null || echo "0")
+    success_count=$(grep -c "SUCCESS:" "$LOGFILE" 2>/dev/null || true)
+    success_count=${success_count:-0}
+    error_count=$FAILURES
 
     echo "Summary:"
     echo "✅ Successful checks: $success_count"
@@ -284,7 +306,7 @@ generate_report() {
 
     if [ "$error_count" -gt 0 ]; then
         echo "Errors found:"
-        grep "ERROR:" "$LOGFILE" | sed 's/.*ERROR: /- /'
+        grep "ERROR:" "$LOGFILE" 2>/dev/null | sed 's/.*ERROR: /- /' | tail -n "$error_count"
         echo ""
     fi
 
@@ -305,36 +327,40 @@ main() {
 
     case "$test_type" in
         "config")
-            check_configuration_files
-            run_yaml_syntax_check
+            check_configuration_files || true
+            run_yaml_syntax_check || true
             ;;
         "k8s")
-            check_kubernetes_manifests
-            check_kubernetes_resources
+            check_kubernetes_manifests || true
+            check_kubernetes_resources || true
             ;;
         "docker")
-            check_docker_compose
+            check_docker_compose || true
             ;;
         "connectivity")
-            validate_service_connectivity
+            validate_service_connectivity || true
             ;;
         "all"|*)
-            check_configuration_files
-            run_yaml_syntax_check
-            check_kubernetes_manifests
-            check_docker_compose
+            check_configuration_files || true
+            run_yaml_syntax_check || true
+            check_kubernetes_manifests || true
+            check_docker_compose || true
             if kubectl cluster-info &> /dev/null; then
-                check_kubernetes_resources
+                check_kubernetes_resources || true
             else
                 log "Skipping Kubernetes checks (cluster not accessible)"
             fi
-            validate_service_connectivity
+            validate_service_connectivity || true
             ;;
     esac
 
     generate_report
 
     log "Validation completed"
+
+    if [ "$FAILURES" -gt 0 ]; then
+        exit 1
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

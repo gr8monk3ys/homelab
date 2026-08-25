@@ -95,10 +95,6 @@ success() {
     log "✅ $*"
 }
 
-info() {
-    log "ℹ️  $*"
-}
-
 warning() {
     log "⚠️  $*"
 }
@@ -767,7 +763,8 @@ setup_loadbalancer() {
         --wait
 
     # Wait for MetalLB to be ready
-    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s
+    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s || \
+        warning "MetalLB pods not ready yet (continuing)"
 
     # Apply IP address pool and L2 advertisement
     kubectl_apply_rendered_file kubernetes/loadbalancing/metallb/ipaddresspool.yaml
@@ -926,7 +923,8 @@ setup_authentication() {
     kubectl_apply_rendered_dir kubernetes/services/authelia
 
     # Wait for Redis
-    kubectl wait --for=condition=Ready pods -l app=authelia-redis -n authelia --timeout=300s
+    kubectl wait --for=condition=Ready pods -l app=authelia-redis -n authelia --timeout=300s || \
+        warning "Authelia Redis pods not ready yet (continuing)"
 
     success "Authelia SSO setup completed"
 }
@@ -1136,7 +1134,7 @@ get_access_info() {
     echo ""
     echo "🔗 Service URLs:"
     echo ""
-    if [[ "$CONFIGURE_WILDCARD_DNS" == "true" ]]; then
+    if [[ "$CONFIGURE_WILDCARD_DNS" == "true" && "$ENABLE_NETWORK_SERVICES" == "true" ]]; then
         echo "   DNS: Wildcard DNS via Pi-hole is enabled (no /etc/hosts)."
         echo "   Pi-hole DNS service: kubectl -n pihole get svc pihole-dns"
     else
@@ -1220,8 +1218,9 @@ backup_configuration() {
     cp -r "$HOMELAB_DIR/helm" "$backup_dir/"
     cp -r "$HOMELAB_DIR/kustomize" "$backup_dir/"
 
-    # Secure backup directory permissions
-    chmod -R 600 "$backup_dir"/*
+    # Secure backup directory permissions (dirs must stay traversable)
+    find "$backup_dir" -mindepth 1 -type d -exec chmod 700 {} +
+    find "$backup_dir" -type f -exec chmod 600 {} +
     chmod 700 "$backup_dir"
 
     log "Configuration backup created: $backup_dir"
@@ -1291,15 +1290,6 @@ main() {
     success "Enhanced homelab setup completed successfully!"
     log "Total setup time: $SECONDS seconds"
 }
-
-# Cleanup function
-cleanup() {
-    if [[ -n "${cleanup_needed:-}" ]]; then
-        log "Performing cleanup..."
-        # Add any cleanup tasks here
-    fi
-}
-trap cleanup EXIT
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"

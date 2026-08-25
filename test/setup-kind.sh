@@ -226,7 +226,6 @@ deploy_core_services() {
             "searxng"
             "calibre-web"
             "yarr"
-            "minio"
         )
     fi
 
@@ -350,7 +349,9 @@ show_access_info() {
     echo "127.0.0.1 grafana.homelab.local"
     echo "127.0.0.1 git.homelab.local"
     echo "127.0.0.1 dashboard.homelab.local"
-    echo "127.0.0.1 minio.homelab.local"
+    if [[ "$KIND_ENABLE_STORAGE" == "true" ]]; then
+        echo "127.0.0.1 minio.homelab.local"
+    fi
     echo "127.0.0.1 search.homelab.local"
     echo "127.0.0.1 books.homelab.local"
     echo "127.0.0.1 rss.homelab.local"

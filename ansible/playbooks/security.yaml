@@ -5,12 +5,23 @@
   vars:
     ssh_port: 22
     allowed_users: ["{{ ansible_user }}"]
+    # Security patches are applied automatically via unattended-upgrades.
+    # Set full_upgrade: true to also upgrade every installed package on each run.
+    full_upgrade: false
 
   tasks:
-    - name: Update all packages
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+      tags: updates
+
+    - name: Upgrade all packages (full_upgrade enabled)
       package:
         name: '*'
         state: latest
+      when: full_upgrade | bool
       tags: updates
 
     - name: Install security packages

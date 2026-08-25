@@ -112,7 +112,7 @@ generate_authelia_argon2_hash() {
     fi
 
     # Extract the first argon2 hash from the output.
-    echo "$output" | grep -Eo '\\$argon2[^[:space:]]+' | head -n 1
+    echo "$output" | grep -Eo '\$argon2[^[:space:]]+' | head -n 1
 }
 
 # Check dependencies first

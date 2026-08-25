@@ -1,0 +1,12 @@
+# {{ ansible_managed | default('Managed by Ansible - do not edit manually.') }}
+[DEFAULT]
+bantime = {{ fail2ban_bantime | default('1h') }}
+findtime = {{ fail2ban_findtime | default('10m') }}
+maxretry = {{ fail2ban_maxretry | default(5) }}
+backend = systemd
+
+[sshd]
+enabled = true
+port = {{ ssh_port | default(22) }}
+filter = sshd
+maxretry = {{ fail2ban_ssh_maxretry | default(3) }}

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# {{ ansible_managed | default('Managed by Ansible - do not edit manually.') }}
+# Restores an archive created by /usr/local/bin/backup-homelab.sh.
+# Archive members are stored with relative paths, so extracting into /
+# restores files to their original locations.
+
+BACKUP_DIR="{{ backup_dir }}"
+
+usage() {
+    cat <<USAGE
+Usage: $0 <archive|latest> [target-dir]
+
+Arguments:
+  archive     Path to a homelab-*.tar.gz archive, or 'latest' to use the
+              most recent archive in ${BACKUP_DIR}
+  target-dir  Directory to extract into (default: /)
+
+Examples:
+  $0 latest
+  $0 ${BACKUP_DIR}/homelab-20260101-020000.tar.gz /tmp/restore-staging
+USAGE
+}
+
+if [ $# -lt 1 ]; then
+    usage
+    exit 1
+fi
+
+ARCHIVE="$1"
+TARGET_DIR="${2:-/}"
+
+if [ "$ARCHIVE" = "latest" ]; then
+    ARCHIVE="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'homelab-*.tar.gz' | sort | tail -n 1)"
+    if [ -z "$ARCHIVE" ]; then
+        echo "ERROR: no homelab-*.tar.gz archives found in $BACKUP_DIR" >&2
+        exit 1
+    fi
+fi
+
+if [ ! -f "$ARCHIVE" ]; then
+    echo "ERROR: archive not found: $ARCHIVE" >&2
+    exit 1
+fi
+
+echo "Restoring $ARCHIVE into $TARGET_DIR"
+read -r -p "Type 'yes' to continue: " response
+if [ "$response" != "yes" ]; then
+    echo "Restore cancelled"
+    exit 1
+fi
+
+mkdir -p "$TARGET_DIR"
+tar -xzf "$ARCHIVE" -C "$TARGET_DIR"
+
+echo "Restore completed from $ARCHIVE"
