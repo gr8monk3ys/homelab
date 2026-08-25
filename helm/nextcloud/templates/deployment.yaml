@@ -20,6 +20,7 @@ spec:
         {{- include "nextcloud.selectorLabels" . | nindent 8 }}
     spec:
       securityContext:
+        runAsNonRoot: true
         runAsUser: {{ .Values.nextcloud.securityContext.runAsUser }}
         runAsGroup: {{ .Values.nextcloud.securityContext.runAsGroup }}
         fsGroup: {{ .Values.nextcloud.securityContext.fsGroup }}
@@ -35,6 +36,19 @@ spec:
                 sleep 5
               done
               echo "MySQL is ready!"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
       containers:
         - name: nextcloud
           image: "{{ .Values.nextcloud.image.repository }}:{{ .Values.nextcloud.image.tag }}"

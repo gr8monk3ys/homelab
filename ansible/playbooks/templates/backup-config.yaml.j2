@@ -1,0 +1,13 @@
+# {{ ansible_managed | default('Managed by Ansible - do not edit manually.') }}
+# Reference configuration for /usr/local/bin/backup-homelab.sh.
+# The values below are rendered into the backup/restore scripts at deploy time;
+# change them in the Ansible playbook (ansible/playbooks/backup.yaml), not here.
+backup:
+  user: {{ backup_user }}
+  directory: {{ backup_dir }}
+  retention_days: {{ backup_retention_days | default(14) }}
+  schedule: "0 2 * * *"
+  sources:
+{% for src in backup_sources | default(['/etc/rancher', '/opt/homelab/config']) %}
+    - {{ src }}
+{% endfor %}

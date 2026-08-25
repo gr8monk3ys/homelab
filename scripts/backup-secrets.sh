@@ -60,7 +60,8 @@ ensure_age_identity() {
 
 sanitize_secret_list() {
   # Reads a SecretList from stdin and writes a sanitized SecretList to stdout.
-  yq -y '
+  # Uses mikefarah yq v4 syntax (pinned in tools/versions.env).
+  yq eval '
     .items |= map(select(.type != "kubernetes.io/service-account-token")) |
     del(.items[].metadata.uid) |
     del(.items[].metadata.resourceVersion) |
@@ -68,19 +69,20 @@ sanitize_secret_list() {
     del(.items[].metadata.creationTimestamp) |
     del(.items[].metadata.managedFields) |
     del(.items[].metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")
-  '
+  ' -
 }
 
 sanitize_secret() {
   # Reads a Secret from stdin and writes a sanitized Secret to stdout.
-  yq -y '
+  # Uses mikefarah yq v4 syntax (pinned in tools/versions.env).
+  yq eval '
     del(.metadata.uid) |
     del(.metadata.resourceVersion) |
     del(.metadata.generation) |
     del(.metadata.creationTimestamp) |
     del(.metadata.managedFields) |
     del(.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration")
-  '
+  ' -
 }
 
 main() {

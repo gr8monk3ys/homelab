@@ -17,6 +17,14 @@ if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
 fi
 export PATH
 
+VERSIONS_FILE="${VERSIONS_FILE:-$HOMELAB_DIR/tools/versions.env}"
+if [[ ! -f "$VERSIONS_FILE" ]]; then
+    echo "ERROR: Missing versions file: $VERSIONS_FILE" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$VERSIONS_FILE"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -66,6 +74,36 @@ info() {
 prompt() {
     local msg="$*"
     echo -e "${BOLD}${msg}${NC}"
+}
+
+# Best-effort step runner: log failures instead of aborting, and track them
+# so the calling function can print an honest summary.
+FAILED_STEPS=()
+
+run_step() {
+    local desc="$1"
+    shift
+    log "$desc..."
+    if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+        return 0
+    fi
+    error "Step failed: $desc"
+    FAILED_STEPS+=("$desc")
+    return 0
+}
+
+report_step_results() {
+    local what="$1"
+    if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
+        success "$what completed successfully"
+        return 0
+    fi
+    error "$what completed with ${#FAILED_STEPS[@]} failed step(s):"
+    local step
+    for step in "${FAILED_STEPS[@]}"; do
+        error "  - $step"
+    done
+    return 1
 }
 
 # Confirmation prompt
@@ -276,58 +314,66 @@ reinstall_infrastructure() {
 
     log "Reinstalling core infrastructure..."
 
+    FAILED_STEPS=()
+
     # Storage provisioner
-    log "Installing local-path-provisioner..."
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/storage/local-path-provisioner.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+    run_step "Installing local-path-provisioner" \
+        kubectl apply -f "$HOMELAB_DIR/kubernetes/storage/local-path-provisioner.yaml"
 
     # Secrets management
-    log "Installing External Secrets Operator..."
-    helm repo add external-secrets https://charts.external-secrets.io 2>&1 | tee -a "$LOG_FILE" || true
-    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
-    helm upgrade --install external-secrets external-secrets/external-secrets \
+    run_step "Adding external-secrets Helm repo" \
+        helm repo add external-secrets https://charts.external-secrets.io --force-update
+    run_step "Updating Helm repos" helm repo update
+    run_step "Installing External Secrets Operator" \
+        helm upgrade --install external-secrets external-secrets/external-secrets \
         -n external-secrets --create-namespace \
+        --version "${EXTERNAL_SECRETS_CHART_VERSION}" \
         --set installCRDs=true \
-        --wait 2>&1 | tee -a "$LOG_FILE" || true
+        --wait
 
     if [ -d "$HOMELAB_DIR/kubernetes/secrets" ]; then
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/" 2>&1 | tee -a "$LOG_FILE" || true
+        run_step "Applying secrets manifests" \
+            kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/"
     fi
 
     # Ingress
-    log "Installing Traefik..."
-    helm repo add traefik https://traefik.github.io/charts 2>&1 | tee -a "$LOG_FILE" || true
-    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
-    helm upgrade --install traefik traefik/traefik \
+    run_step "Adding traefik Helm repo" \
+        helm repo add traefik https://traefik.github.io/charts --force-update
+    run_step "Installing Traefik" \
+        helm upgrade --install traefik traefik/traefik \
         -n traefik-system --create-namespace \
+        --version "${TRAEFIK_CHART_VERSION}" \
         -f "$HOMELAB_DIR/kubernetes/ingress/traefik/values.yaml" \
-        --wait 2>&1 | tee -a "$LOG_FILE" || true
+        --wait
 
     # Cert-manager
-    log "Installing cert-manager..."
-    helm repo add jetstack https://charts.jetstack.io 2>&1 | tee -a "$LOG_FILE" || true
-    helm repo update 2>&1 | tee -a "$LOG_FILE" || true
-    helm upgrade --install cert-manager jetstack/cert-manager \
+    run_step "Adding jetstack Helm repo" \
+        helm repo add jetstack https://charts.jetstack.io --force-update
+    run_step "Installing cert-manager" \
+        helm upgrade --install cert-manager jetstack/cert-manager \
         -n cert-manager --create-namespace \
-        --version v1.20.3 \
+        --version "${CERT_MANAGER_CHART_VERSION}" \
         --set installCRDs=true \
-        --wait 2>&1 | tee -a "$LOG_FILE" || true
+        --wait
 
     # Optional: restore encrypted secrets before (re)creating issuers/certificates.
     if [ -n "${SECRETS_BACKUP_FILE:-}" ]; then
         if [ ! -f "$SECRETS_BACKUP_FILE" ]; then
             warning "SECRETS_BACKUP_FILE was set but does not exist: $SECRETS_BACKUP_FILE"
+            FAILED_STEPS+=("Restoring secrets from encrypted backup (file not found)")
         else
-            log "Restoring secrets from encrypted backup: $SECRETS_BACKUP_FILE"
-            AGE_IDENTITY_FILE="$AGE_IDENTITY_FILE" bash "$HOMELAB_DIR/scripts/restore-secrets.sh" "$SECRETS_BACKUP_FILE" 2>&1 | tee -a "$LOG_FILE" || true
+            run_step "Restoring secrets from encrypted backup: $SECRETS_BACKUP_FILE" \
+                env AGE_IDENTITY_FILE="$AGE_IDENTITY_FILE" bash "$HOMELAB_DIR/scripts/restore-secrets.sh" "$SECRETS_BACKUP_FILE"
         fi
     fi
 
     if [ -d "$HOMELAB_DIR/kubernetes/ingress/cert-manager" ]; then
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/cert-manager/" 2>&1 | tee -a "$LOG_FILE" || true
+        run_step "Applying cert-manager issuers" \
+            kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/cert-manager/"
     fi
 
-    success "Core infrastructure reinstallation initiated"
     info "Note: Some components may take time to become ready"
+    report_step_results "Core infrastructure reinstallation"
 }
 
 # Reinstall monitoring stack
@@ -336,27 +382,33 @@ reinstall_monitoring() {
 
     log "Reinstalling monitoring stack..."
 
+    FAILED_STEPS=()
+
     # Prometheus
     if [ -d "$HOMELAB_DIR/kubernetes/monitoring/prometheus" ]; then
-        log "Installing Prometheus..."
-        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+        run_step "Adding prometheus-community Helm repo" \
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+        run_step "Updating Helm repos" helm repo update
+        run_step "Installing kube-prometheus-stack" \
+            helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
             -n monitoring --create-namespace \
-            -f "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+            --version "${KUBE_PROMETHEUS_STACK_CHART_VERSION}" \
+            -f "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml"
     fi
 
     # Loki
     if [ -d "$HOMELAB_DIR/kubernetes/services/loki" ]; then
-        log "Installing Loki..."
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/" 2>&1 | tee -a "$LOG_FILE" || true
+        run_step "Installing Loki" \
+            kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/"
     fi
 
     # Promtail (optional; kept under extras/ due to required host mounts/capabilities)
     if [ -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml" ]; then
-        log "Installing Promtail (extras)..."
-        kubectl apply -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+        run_step "Installing Promtail (extras)" \
+            kubectl apply -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml"
     fi
 
-    success "Monitoring stack reinstallation initiated"
+    report_step_results "Monitoring stack reinstallation"
 }
 
 # Reinstall critical services
@@ -370,34 +422,37 @@ reinstall_critical_services() {
 
     confirm "This will reinstall critical services: ${services[*]}. Continue?"
 
+    FAILED_STEPS=()
+
     for service in "${services[@]}"; do
         if [[ "$service" == "nextcloud" ]]; then
-            log "Installing nextcloud (Helm)..."
-            helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
+            run_step "Installing nextcloud (Helm)" \
+                helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
                 --namespace nextcloud \
                 --create-namespace \
                 --dependency-update \
-                -f "$HOMELAB_DIR/helm/nextcloud/values.yaml" 2>&1 | tee -a "$LOG_FILE" || true
-            success "nextcloud installation initiated"
+                -f "$HOMELAB_DIR/helm/nextcloud/values.yaml"
             continue
         fi
 
         local service_path="$HOMELAB_DIR/kubernetes/services/$service"
         if [ -d "$service_path" ]; then
-            log "Installing $service..."
-
             # Apply namespace first if exists
             if [ -f "$service_path/namespace.yaml" ]; then
-                kubectl apply -f "$service_path/namespace.yaml" 2>&1 | tee -a "$LOG_FILE" || true
+                run_step "Applying $service namespace" \
+                    kubectl apply -f "$service_path/namespace.yaml"
             fi
 
             # Apply all manifests
-            kubectl apply -f "$service_path/" 2>&1 | tee -a "$LOG_FILE" || true
-            success "$service installation initiated"
+            run_step "Installing $service" \
+                kubectl apply -f "$service_path/"
         else
             warning "Service directory not found: $service_path"
+            FAILED_STEPS+=("Installing $service (directory not found)")
         fi
     done
+
+    report_step_results "Critical services reinstallation"
 }
 
 # Full cluster recovery
@@ -414,25 +469,33 @@ full_recovery() {
     echo "4. Reinstall critical services"
     echo ""
 
-    reinstall_infrastructure
+    local failed_phases=0
+
+    reinstall_infrastructure || failed_phases=$((failed_phases+1))
     sleep 30  # Wait for infrastructure
 
-    reinstall_monitoring
+    reinstall_monitoring || failed_phases=$((failed_phases+1))
     sleep 30  # Wait for monitoring
 
     if kubectl get namespace "$BACKUP_NAMESPACE" &> /dev/null; then
-        list_available_backups
+        list_available_backups || true
         read -r -p "Enter backup name to restore (or press Enter to skip): " backup_name
         if [ -n "$backup_name" ]; then
             restore_from_backup "$backup_name"
         fi
     fi
 
-    reinstall_critical_services
+    reinstall_critical_services || failed_phases=$((failed_phases+1))
 
-    success "Full recovery process completed"
     info "Check pod status: kubectl get pods -A"
     info "Review log file: $LOG_FILE"
+
+    if [ "$failed_phases" -gt 0 ]; then
+        error "Full recovery completed with failures in $failed_phases phase(s)"
+        return 1
+    fi
+
+    success "Full recovery process completed"
 }
 
 # Verify cluster health
@@ -497,13 +560,13 @@ interactive_mode() {
         read -r -p "Select option [1-9]: " choice
 
         case $choice in
-            1) list_available_backups ;;
+            1) list_available_backups || true ;;
             2) restore_from_backup ;;
             3) restore_namespace ;;
-            4) reinstall_infrastructure ;;
-            5) reinstall_monitoring ;;
-            6) reinstall_critical_services ;;
-            7) full_recovery ;;
+            4) reinstall_infrastructure || true ;;
+            5) reinstall_monitoring || true ;;
+            6) reinstall_critical_services || true ;;
+            7) full_recovery || true ;;
             8) verify_health ;;
             9)
                 log "Exiting disaster recovery"

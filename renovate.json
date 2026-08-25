@@ -17,18 +17,21 @@
   "kubernetes": {
     "fileMatch": ["\\.yaml$", "\\.yml$"]
   },
+  "github-actions": {
+    "enabled": false
+  },
   "packageRules": [
     {
       "description": "Kubernetes deployments - group by service",
       "matchDatasources": ["docker"],
-      "matchPaths": ["kubernetes/services/**"],
+      "matchFileNames": ["kubernetes/services/**"],
       "groupName": "kubernetes service images",
       "groupSlug": "k8s-services"
     },
     {
       "description": "Infrastructure images",
       "matchDatasources": ["docker"],
-      "matchPaths": ["kubernetes/ingress/**", "kubernetes/monitoring/**", "kubernetes/storage/**"],
+      "matchFileNames": ["kubernetes/ingress/**", "kubernetes/monitoring/**", "kubernetes/storage/**"],
       "groupName": "infrastructure images",
       "groupSlug": "infra"
     },
@@ -39,23 +42,16 @@
       "groupSlug": "helm"
     },
     {
-      "description": "GitHub Actions",
-      "matchManagers": ["github-actions"],
-      "groupName": "github actions",
-      "groupSlug": "gha",
-      "automerge": true
-    },
-    {
       "description": "Database images - require manual approval",
       "matchDatasources": ["docker"],
-      "matchPackagePatterns": ["postgres", "mysql", "mariadb", "redis", "minio"],
+      "matchPackageNames": ["/postgres/", "/mysql/", "/mariadb/", "/redis/", "/minio/"],
       "automerge": false,
       "labels": ["dependencies", "database", "manual-review"]
     },
     {
       "description": "Security-sensitive images - require manual approval",
       "matchDatasources": ["docker"],
-      "matchPackagePatterns": ["vaultwarden", "authelia", "traefik", "cert-manager"],
+      "matchPackageNames": ["/vaultwarden/", "/authelia/", "/traefik/", "/cert-manager/"],
       "automerge": false,
       "labels": ["dependencies", "security", "manual-review"]
     },
@@ -72,8 +68,9 @@
       "pinDigests": true
     }
   ],
-  "regexManagers": [
+  "customManagers": [
     {
+      "customType": "regex",
       "description": "Match Kubernetes image tags",
       "fileMatch": ["\\.ya?ml$"],
       "matchStrings": [

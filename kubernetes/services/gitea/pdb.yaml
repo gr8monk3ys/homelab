@@ -18,12 +18,12 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: gitea-postgres-pdb
+  name: gitea-db-pdb
   namespace: gitea
   labels:
-    app: gitea-postgres
+    app: gitea-db
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: gitea-postgres
+      app: gitea-db

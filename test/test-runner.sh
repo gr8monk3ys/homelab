@@ -12,6 +12,14 @@ error() {
     exit 1
 }
 
+compose_cmd() {
+    if command -v docker-compose &> /dev/null; then
+        docker-compose "$@"
+    else
+        docker compose "$@"
+    fi
+}
+
 show_help() {
     cat << EOF
 Homelab Test Runner
@@ -65,35 +73,35 @@ docker_command() {
         "up")
             log "Starting Docker Compose stack..."
             cd "$SCRIPT_DIR"
-            docker-compose up -d
+            compose_cmd up -d
             log "Docker Compose stack started"
             log "Access services via http://localhost with .homelab.local domains"
             ;;
         "down")
             log "Stopping Docker Compose stack..."
             cd "$SCRIPT_DIR"
-            docker-compose down
+            compose_cmd down
             log "Docker Compose stack stopped"
             ;;
         "logs")
             local service="${2:-}"
             cd "$SCRIPT_DIR"
             if [ -n "$service" ]; then
-                docker-compose logs -f "$service"
+                compose_cmd logs -f "$service"
             else
-                docker-compose logs -f
+                compose_cmd logs -f
             fi
             ;;
         "ps")
             cd "$SCRIPT_DIR"
-            docker-compose ps
+            compose_cmd ps
             ;;
         "test")
             log "Running full Docker Compose test..."
             cd "$SCRIPT_DIR"
 
             # Start stack
-            docker-compose up -d
+            compose_cmd up -d
 
             # Wait for services
             log "Waiting for services to start..."
@@ -186,7 +194,7 @@ clean_all() {
 
     # Clean Docker Compose
     cd "$SCRIPT_DIR"
-    docker-compose down -v 2>/dev/null || true
+    compose_cmd down -v 2>/dev/null || true
 
     # Clean Kind
     "$SCRIPT_DIR/setup-kind.sh" cleanup 2>/dev/null || true

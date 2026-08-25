@@ -37,6 +37,7 @@ spec:
   selector:
     matchLabels:
       app: crowdsec
+      component: agent
 ---
 # CrowdSec Bouncer - Traffic filtering
 apiVersion: policy/v1
@@ -48,6 +49,7 @@ spec:
   minAvailable: 1
   selector:
     matchLabels:
+      app: crowdsec
       component: bouncer
 ---
 # MetalLB Controller - Load balancer IPs

@@ -53,7 +53,7 @@ spec:
         image: quay.io/keycloak/keycloak:26.0.7
         args:
         - start
-        - --hostname=auth.homelab.local
+        - --hostname=keycloak.homelab.local
         - --hostname-strict=false
         - --http-enabled=true
         - --proxy-headers=xforwarded
@@ -150,10 +150,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - auth.homelab.local
+    - keycloak.homelab.local
     secretName: keycloak-tls
   rules:
-  - host: auth.homelab.local
+  - host: keycloak.homelab.local
     http:
       paths:
       - path: /

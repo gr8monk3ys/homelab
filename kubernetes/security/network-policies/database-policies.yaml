@@ -217,7 +217,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: gitea-postgres
+      app: gitea-db
   policyTypes:
     - Ingress
     - Egress
@@ -254,7 +254,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: nextcloud
+              app.kubernetes.io/name: nextcloud
       ports:
         - protocol: TCP
           port: 3306

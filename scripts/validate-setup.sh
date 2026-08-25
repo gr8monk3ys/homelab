@@ -137,17 +137,25 @@ check_monitoring() {
         return 0
     fi
 
+    local monitoring_ok=true
+
     # Check Prometheus
     if ! kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus | grep -q Running; then
         warning "Prometheus is not running"
+        monitoring_ok=false
     fi
 
     # Check Grafana
     if ! kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana | grep -q Running; then
         warning "Grafana is not running"
+        monitoring_ok=false
     fi
 
-    success "Monitoring stack is configured"
+    if [ "$monitoring_ok" = true ]; then
+        success "Monitoring stack is configured"
+    else
+        warning "Monitoring stack is only partially running"
+    fi
 }
 
 check_core_services() {
@@ -160,7 +168,7 @@ check_core_services() {
         if kubectl get namespace "$service" &> /dev/null; then
             if kubectl get pods -n "$service" | grep -q Running; then
                 success "$service is running"
-                ((healthy_services++))
+                healthy_services=$((healthy_services+1))
             else
                 warning "$service namespace exists but pods are not running"
             fi
@@ -277,7 +285,7 @@ check_media_services() {
         if kubectl get namespace "$ns" &> /dev/null; then
             if kubectl get pods -n "$ns" | grep -q Running; then
                 success "$ns is running"
-                ((healthy_count++))
+                healthy_count=$((healthy_count+1))
             else
                 warning "$ns namespace exists but pods are not running"
             fi
@@ -325,7 +333,7 @@ check_productivity_services() {
         if kubectl get namespace "$ns" &> /dev/null; then
             if kubectl get pods -n "$ns" | grep -q Running; then
                 success "$ns is running"
-                ((healthy_count++))
+                healthy_count=$((healthy_count+1))
             else
                 warning "$ns namespace exists but pods are not running"
             fi
@@ -373,14 +381,23 @@ check_helm_releases() {
 check_security() {
     log "Checking security configuration..."
 
-    # Check for hardcoded passwords in configs (use --files-with-matches to avoid exposing passwords)
+    local security_ok=true
+
+    # Check for hardcoded passwords in configs (show filenames only, not content).
+    # Skips SOPS-encrypted secrets and files that reference secrets indirectly
+    # (secretKeyRef/remoteRef/existingSecret). Flags only password-like keys
+    # that carry a non-empty inline value.
     local files_with_passwords
     files_with_passwords="$(
         while IFS= read -r -d '' f; do
-            if grep -qE "password.*:" "$f" 2>/dev/null && ! grep -q "secretKeyRef" "$f" 2>/dev/null; then
+            if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
+                continue
+            fi
+            if grep -E "^[[:space:]-]*[\"']?[A-Za-z0-9_.-]*[Pp]assword[\"']?:" "$f" 2>/dev/null | \
+                grep -vE ":[[:space:]]*(\"\"|'')?[[:space:]]*(#.*)?$" | grep -q .; then
                 echo "$f"
             fi
-        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
+        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/secrets/sops/*" -print0 2>/dev/null)
     )"
     if [ -n "$files_with_passwords" ]; then
         error "Found potential hardcoded passwords in Kubernetes manifests"
@@ -395,8 +412,12 @@ check_security() {
         while IFS= read -r -d '' f; do
             case "$f" in
                 *external-secret*) continue ;;
+                */secrets/sops/*) continue ;;
             esac
-            if grep -q "data:" "$f" 2>/dev/null && grep -qiE "password|secret" "$f" 2>/dev/null; then
+            if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
+                continue
+            fi
+            if grep -qE "^kind:[[:space:]]*Secret[[:space:]]*$" "$f" 2>/dev/null && grep -qE "^[[:space:]]*data:" "$f" 2>/dev/null; then
                 echo "$f"
             fi
         done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
@@ -404,9 +425,12 @@ check_security() {
     if [ -n "$secret_files" ]; then
         warning "Found YAML files with potential hardcoded secrets:"
         echo "$secret_files" | head -5
+        security_ok=false
     fi
 
-    success "No hardcoded passwords found in manifests"
+    if [ "$security_ok" = true ]; then
+        success "No hardcoded passwords found in manifests"
+    fi
 }
 
 check_network_policies() {
@@ -471,44 +495,44 @@ main() {
 
     local failed_checks=0
 
-    check_kubernetes || ((failed_checks++))
-    check_secrets || ((failed_checks++))
-    check_storage || ((failed_checks++))
-    check_ingress || ((failed_checks++))
+    check_kubernetes || failed_checks=$((failed_checks+1))
+    check_secrets || failed_checks=$((failed_checks+1))
+    check_storage || failed_checks=$((failed_checks+1))
+    check_ingress || failed_checks=$((failed_checks+1))
 
     echo ""
     echo "--- Infrastructure ---"
-    check_loadbalancer
-    check_backup
-    check_crowdsec
+    check_loadbalancer || true
+    check_backup || true
+    check_crowdsec || true
 
     echo ""
     echo "--- Core Services ---"
-    check_monitoring
-    check_core_services || ((failed_checks++))
+    check_monitoring || true
+    check_core_services || failed_checks=$((failed_checks+1))
 
     echo ""
     echo "--- Authentication ---"
-    check_authelia
+    check_authelia || true
 
     echo ""
     echo "--- Media Services ---"
-    check_media_services
+    check_media_services || true
 
     echo ""
     echo "--- AI Services ---"
-    check_ai_services
+    check_ai_services || true
 
     echo ""
     echo "--- Productivity Services ---"
-    check_productivity_services
+    check_productivity_services || true
 
     echo ""
     echo "--- Configuration ---"
-    check_external_secrets
-    check_helm_releases
-    check_security || ((failed_checks++))
-    check_network_policies
+    check_external_secrets || true
+    check_helm_releases || true
+    check_security || failed_checks=$((failed_checks+1))
+    check_network_policies || true
 
     echo ""
     echo "================================"
@@ -524,6 +548,10 @@ main() {
     fi
 
     show_troubleshooting
+
+    if [ "$failed_checks" -gt 0 ]; then
+        exit 1
+    fi
 }
 
 main "$@"

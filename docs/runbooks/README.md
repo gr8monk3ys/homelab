@@ -25,7 +25,7 @@ Repo-provided health checks:
 |---|---|---|---|
 | `https://*.${DOMAIN}` not reachable | `kubectl -n traefik-system get svc,pods` | Ingress / LoadBalancer | See "Ingress/DNS" below |
 | DNS works but TLS is broken | `kubectl get certificates -A` | cert-manager / issuer | Check certificate + issuer events |
-| Services stuck in `ImagePullBackOff` | `kubectl get pods -A | rg ImagePullBackOff` | Registry / DNS / network | Check node DNS + registry creds |
+| Services stuck in `ImagePullBackOff` | `kubectl get pods -A | grep ImagePullBackOff` | Registry / DNS / network | Check node DNS + registry creds |
 | Many pods failing with secret errors | `kubectl get externalsecret -A` | External Secrets Operator | Reconcile ESO + SecretStore |
 | Storage/PVC issues | `kubectl get pvc -A` | StorageClass / PVs | Inspect PV binding + node disk |
 | Backups failing | `kubectl -n velero get schedule,backup` | Velero / MinIO | Run `./scripts/verify-backups.sh` |

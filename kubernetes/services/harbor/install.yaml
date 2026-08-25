@@ -1,6 +1,6 @@
-# Harbor installation script - to be run via helm
-# helm repo add harbor https://helm.goharbor.io
-# helm upgrade --install harbor harbor/harbor --namespace harbor --values values.yaml
+# Harbor installation via in-cluster helm Job.
+# The chart values are embedded in the harbor-values ConfigMap below - the
+# single source of truth for this deployment.
 ---
 # ExternalSecret for Harbor admin credentials
 apiVersion: external-secrets.io/v1
@@ -23,6 +23,29 @@ spec:
       property: password
 
 ---
+# ServiceAccount for the installer Job. The Job runs helm in-cluster, which
+# creates namespaced and cluster-scoped resources across the chart, so it
+# needs cluster-admin (acceptable for a one-shot installer in this repo).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: harbor-installer
+  namespace: harbor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: harbor-installer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: harbor-installer
+  namespace: harbor
+
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -33,12 +56,16 @@ data:
     #!/bin/bash
     set -e
 
+    # Pinned harbor chart version (chart 1.17.1 = Harbor v2.13.1).
+    HARBOR_CHART_VERSION="1.17.1"
+
     echo "Adding Harbor Helm repository..."
     helm repo add harbor https://helm.goharbor.io
     helm repo update
 
-    echo "Installing Harbor..."
+    echo "Installing Harbor ${HARBOR_CHART_VERSION}..."
     helm upgrade --install harbor harbor/harbor \
+      --version "${HARBOR_CHART_VERSION}" \
       --namespace harbor \
       --values /config/values.yaml \
       --wait
@@ -46,12 +73,11 @@ data:
     echo "Harbor installation completed!"
 ---
 apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
   name: harbor-values
   namespace: harbor
-type: Opaque
-stringData:
+data:
   values.yaml: |
     expose:
       type: ingress
@@ -77,9 +103,6 @@ stringData:
         registry:
           storageClass: "local-path"
           size: 100Gi
-        chartmuseum:
-          storageClass: "local-path"
-          size: 5Gi
         jobservice:
           storageClass: "local-path"
           size: 1Gi
@@ -107,8 +130,17 @@ stringData:
     trivy:
       enabled: true
 
-    chartmuseum:
-      enabled: true
+    portal:
+      replicas: 1
+
+    core:
+      replicas: 1
+
+    jobservice:
+      replicas: 1
+
+    registry:
+      replicas: 1
 
     metrics:
       enabled: true
@@ -124,13 +156,32 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: harbor-installer
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: installer
         image: alpine/helm:3.16.3
         command: ["/bin/sh", "/scripts/install.sh"]
+        env:
+        # helm needs a writable HOME for its repo cache/config
+        - name: HOME
+          value: /tmp
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
         volumeMounts:
         - name: install-script
           mountPath: /scripts
@@ -142,7 +193,7 @@ spec:
           name: harbor-install-script
           defaultMode: 0755
       - name: values-config
-        secret:
-          secretName: harbor-values
+        configMap:
+          name: harbor-values
       restartPolicy: Never
   backoffLimit: 3

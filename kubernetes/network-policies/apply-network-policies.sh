@@ -16,6 +16,20 @@ log() { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warning() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
+FAILED_APPLIES=0
+
+apply_policy() {
+    local file="$1"
+    local namespace="$2"
+
+    if kubectl apply -f "$file" -n "$namespace" >/dev/null; then
+        return 0
+    fi
+    warning "Failed to apply $(basename "$file") to $namespace"
+    FAILED_APPLIES=$((FAILED_APPLIES+1))
+    return 1
+}
+
 # Namespaces that should have network policies
 # Excludes system namespaces (kube-system, monitoring, etc.)
 SERVICE_NAMESPACES=(
@@ -75,16 +89,22 @@ apply_base_policies() {
         return 0
     fi
 
+    local failed=0
+
     # Apply default deny
-    kubectl apply -f "$SCRIPT_DIR/default-deny.yaml" -n "$namespace" 2>/dev/null || true
+    apply_policy "$SCRIPT_DIR/default-deny.yaml" "$namespace" || failed=$((failed+1))
 
     # Apply common allows
-    kubectl apply -f "$SCRIPT_DIR/allow-dns.yaml" -n "$namespace" 2>/dev/null || true
-    kubectl apply -f "$SCRIPT_DIR/allow-ingress.yaml" -n "$namespace" 2>/dev/null || true
-    kubectl apply -f "$SCRIPT_DIR/allow-monitoring.yaml" -n "$namespace" 2>/dev/null || true
-    kubectl apply -f "$SCRIPT_DIR/allow-same-namespace.yaml" -n "$namespace" 2>/dev/null || true
+    apply_policy "$SCRIPT_DIR/allow-dns.yaml" "$namespace" || failed=$((failed+1))
+    apply_policy "$SCRIPT_DIR/allow-ingress.yaml" "$namespace" || failed=$((failed+1))
+    apply_policy "$SCRIPT_DIR/allow-monitoring.yaml" "$namespace" || failed=$((failed+1))
+    apply_policy "$SCRIPT_DIR/allow-same-namespace.yaml" "$namespace" || failed=$((failed+1))
 
-    success "Applied base policies to $namespace"
+    if [ "$failed" -eq 0 ]; then
+        success "Applied base policies to $namespace"
+    else
+        warning "$namespace: $failed base policy(ies) failed to apply"
+    fi
 }
 
 apply_external_access() {
@@ -95,8 +115,9 @@ apply_external_access() {
     fi
 
     log "Applying external HTTPS access to $namespace..."
-    kubectl apply -f "$SCRIPT_DIR/allow-external-https.yaml" -n "$namespace" 2>/dev/null || true
-    success "Applied external access to $namespace"
+    if apply_policy "$SCRIPT_DIR/allow-external-https.yaml" "$namespace"; then
+        success "Applied external access to $namespace"
+    fi
 }
 
 verify_policies() {
@@ -151,7 +172,11 @@ main() {
 
     echo ""
     echo "========================================"
-    echo "Network Policies Applied Successfully"
+    if [ "$FAILED_APPLIES" -eq 0 ]; then
+        echo "Network Policies Applied Successfully"
+    else
+        echo "Network Policies Applied With $FAILED_APPLIES Failure(s)"
+    fi
     echo "========================================"
     echo ""
     echo "To verify a specific namespace:"
@@ -160,6 +185,10 @@ main() {
     echo "To test connectivity:"
     echo "  kubectl run test --rm -it --image=busybox -n <namespace> -- wget -qO- <service>"
     echo ""
+
+    if [ "$FAILED_APPLIES" -gt 0 ]; then
+        exit 1
+    fi
 }
 
 # Handle --dry-run flag

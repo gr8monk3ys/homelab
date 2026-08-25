@@ -53,30 +53,12 @@ data:
   services.yaml: |
     ---
     - Infrastructure:
-        - ArgoCD:
-            href: https://argocd.homelab.local
-            icon: argocd.svg
-            description: GitOps continuous delivery
-            namespace: argocd
-            app: argocd
         - Grafana:
             href: https://grafana.homelab.local
             icon: grafana.svg
             description: Monitoring dashboards
             namespace: monitoring
             app: grafana
-        - Prometheus:
-            href: https://prometheus.homelab.local
-            icon: prometheus.svg
-            description: Metrics collection
-            namespace: monitoring
-            app: prometheus
-        - Traefik:
-            href: https://traefik.homelab.local
-            icon: traefik.svg
-            description: Ingress controller
-            namespace: traefik-system
-            app: traefik
 
     - Media:
         - Jellyfin:
@@ -167,12 +149,6 @@ data:
             description: SSO & 2FA
             namespace: authelia
             app: authelia
-        - CrowdSec:
-            href: https://crowdsec.homelab.local
-            icon: crowdsec.svg
-            description: Security engine
-            namespace: crowdsec
-            app: crowdsec
 
     - Development:
         - Gitea:
