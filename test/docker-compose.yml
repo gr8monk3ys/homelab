@@ -27,6 +27,7 @@ volumes:
   calibre_config:
   calibre_books:
   yarr_data:
+  heimdall_config:
 
 services:
   # Reverse Proxy
@@ -285,7 +286,7 @@ services:
       PGID: 1000
       TZ: UTC
     volumes:
-      - ./heimdall_config:/config
+      - heimdall_config:/config
     networks:
       - homelab
     labels:

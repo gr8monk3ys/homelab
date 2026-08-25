@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A self-hosted Kubernetes homelab on K3s: 43 services (see `kubernetes/services/`) with Prometheus/Grafana monitoring, Velero backups, and security-hardened manifests (default-deny NetworkPolicies, non-root pods, externalized secrets via ESO/SOPS). Note: the full stack has not been validated end-to-end on a live cluster — treat "production-ready" as the goal, not a guarantee.
+A self-hosted Kubernetes homelab on K3s: ~24 installed applications (43 directories under `kubernetes/services/`) with Prometheus/Grafana monitoring, Velero backups, and security-hardened manifests (default-deny NetworkPolicies, non-root pods, externalized secrets via ESO/SOPS). Note: the full stack has not been validated end-to-end on a live cluster — treat "production-ready" as the goal, not a guarantee.
 
 ## Essential Commands
 
@@ -14,13 +14,13 @@ A self-hosted Kubernetes homelab on K3s: 43 services (see `kubernetes/services/`
 ./setup-v2.sh                      # Deploy entire stack
 ./scripts/validate-setup.sh        # Validate deployment health
 
-# Environment-specific deployment
-ENVIRONMENT=production DOMAIN=yourdomain.com ./setup-v2.sh
+# Custom domain deployment (ENVIRONMENT is parsed but currently unused — only DOMAIN has effect)
+DOMAIN=yourdomain.com ./setup-v2.sh
 
 # Testing
 cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 ./test/setup-kind.sh               # KinD cluster for CI/CD
-./test/test-runner.sh              # Run test suite
+./test/test-runner.sh full-test    # Run test suite (bare invocation just prints help)
 
 # Backup & Recovery
 ./scripts/verify-backups.sh        # Verify backup integrity
@@ -30,7 +30,7 @@ cd test && docker-compose up -d    # Docker Compose-based (no K8s required)
 # (kubernetes/network-policies/ is a standalone manual toolkit — NOT installed.)
 ```
 
-**IMPORTANT**: Never use `setup.sh` (legacy/insecure). Always use `setup-v2.sh`.
+**Note**: The installer is `setup-v2.sh`. (A legacy insecure `setup.sh` once existed; it has been removed.)
 
 ## Architecture
 

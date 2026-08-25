@@ -46,7 +46,7 @@ These are the secrets created by `scripts/generate-secrets.sh` in the `secrets` 
 - MySQL root password: `mysql-root-password` (`password`)
 - Vaultwarden admin token: `vaultwarden-admin` (`admin-token`)
 - Pi-hole web password: `pihole-config` (`web-password`)
-- Gitea admin: `gitea-admin` (`username`, `password`)
+- Gitea admin: `gitea-admin` (`username`, `password`) — generated as a bootstrap credential only; nothing auto-provisions this account (Gitea runs with `INSTALL_LOCK=true` and registration disabled). Create the first admin with it manually: `kubectl -n gitea exec deploy/gitea -- gitea admin user create --admin --username <u> --password <p> --email <e>`
 - MinIO root creds: `minio-config` (`root-user`, `root-password`)
 - Authelia admin (plaintext for recovery): `authelia-admin` (`username`, `password`)
 - Authelia users database: `authelia-users` (`users_database.yml`)

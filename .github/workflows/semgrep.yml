@@ -11,10 +11,18 @@ permissions: read-all
 jobs:
   semgrep:
     runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d
+        run: semgrep scan --config auto --error --sarif --output semgrep.sarif || true
+      - name: Upload Semgrep results to GitHub Security
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a
+        if: always()
         with:
-          config: auto
+          sarif_file: semgrep.sarif

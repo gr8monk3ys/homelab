@@ -33,7 +33,7 @@ CONFIGURE_ALERTING=true ./setup-v2.sh
 ```bash
 kubectl get alertmanagerconfig -n monitoring
 kubectl get secret -n monitoring alertmanager-webhook
-kubectl -n monitoring get pods | rg alertmanager
+kubectl -n monitoring get pods | grep alertmanager
 ```
 
 ## Troubleshooting

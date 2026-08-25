@@ -31,8 +31,9 @@ Security posture, honestly stated: pod security contexts, drop-ALL
 capabilities, and resource limits are enforced in the manifests themselves;
 Pod Security Admission defaults to `audit` (warns, does not block), Kyverno is
 opt-in, NetworkPolicies cover the sensitive namespaces rather than every
-namespace, and the CrowdSec Traefik bouncer is deployed but not yet wired into
-the request path. See `docs/runbooks/hardening.md` to tighten each of these.
+namespace, and the CrowdSec Traefik bouncer is enforced on the `websecure`
+entrypoint (Traefik writes access logs the agent reads; decisions are applied
+via bouncer middleware). See `docs/runbooks/hardening.md` to tighten the rest.
 
 ## Requirements
 
@@ -86,13 +87,18 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | `ENABLE_AI_SERVICES` | `false` | Ollama, Open WebUI, Immich |
 | `ENABLE_DEV_SERVICES` | `false` | Drone CI, Harbor registry |
 | `ENABLE_GITOPS` | `false` | ArgoCD (`APPLY_GITOPS_MANIFESTS` for the app-of-apps) |
+| `INSTALL_TRAEFIK` | `true` | Traefik ingress controller |
+| `INSTALL_CERT_MANAGER` | `true` | cert-manager + TLS issuers |
+| `INSTALL_EXTERNAL_SECRETS` | `true` | External Secrets Operator |
 | `INSTALL_MONITORING` | `true` | kube-prometheus-stack + Uptime Kuma |
+| `INSTALL_BLACKBOX_EXPORTER` | `true` | Synthetic HTTPS probes via blackbox-exporter |
 | `INSTALL_LOGGING` | `false` | Loki (`INSTALL_PROMTAIL` for shipping) |
 | `INSTALL_VELERO` / `INSTALL_METALLB` | `true` | Backups / LoadBalancer IPs |
 | `INSTALL_EXTERNAL_DNS` | `false` | Cloudflare DNS automation (needs API token) |
 | `INSTALL_KYVERNO` | `false` | Policy engine (`KYVERNO_POLICY_MODE=audit\|enforce`) |
 | `POD_SECURITY_MODE` | `audit` | PSA labels: `off` / `audit` / `enforce` |
 | `CONFIGURE_ALERTING` | `false` | Alertmanager notification routing |
+| `BACKUP_SECRETS` | `false` | Age-encrypted secret export during install |
 
 ## Services
 

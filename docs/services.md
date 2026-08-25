@@ -16,7 +16,7 @@ domain from `config/homelab.yaml`.
 | MinIO | always | S3-compatible object store; Velero backup target |
 | Velero | `INSTALL_VELERO` (true) | Backup schedules below |
 | ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
-| CrowdSec | always | Agent + Traefik bouncer are deployed, but the bouncer is not yet referenced by any Traefik middleware and Traefik does not write the access logs the agent reads — detection/enforcement is not active until that wiring is added |
+| CrowdSec | always | Agent + Traefik bouncer, wired into the request path: Traefik writes the access logs the agent reads, and the bouncer middleware is enforced on the `websecure` entrypoint |
 | NetworkPolicies | always | `kubernetes/security/network-policies/` (default-deny for sensitive namespaces, DB access policies, egress rules). The separate `kubernetes/network-policies/` directory is a standalone toolkit the installer does not apply |
 | Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
 | Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
@@ -81,7 +81,8 @@ contexts, ExternalSecrets) but have had less scrutiny — review before use,
 then `kubectl apply -f kubernetes/services/<name>/`:
 
 actual-budget, code-server, gatus, heimdall, home-assistant (+ Node-RED,
-Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak, localai, matrix,
+Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak (ingress host
+`keycloak.<domain>` — `auth.` belongs to Authelia), localai, matrix,
 mattermost, metabase, navidrome, nocodb, outline, qbittorrent, romm, tautulli,
 umami, whisper.
 
