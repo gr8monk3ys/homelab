@@ -6,7 +6,9 @@ This directory contains testing configurations for the homelab setup.
 
 Test individual services without the complexity of Kubernetes.
 
-⚠️ **Security note**: this Compose stack is for local testing only. It uses simple, static credentials in `test/docker-compose.yml`. Do not expose it to the internet.
+This Compose stack is for local testing only; do not expose it to the internet.
+Credentials are read from `test/.env` (gitignored) — copy `test/.env.example`
+and fill it in before `docker compose up`.
 
 ### Prerequisites
 
@@ -53,7 +55,7 @@ Test individual services without the complexity of Kubernetes.
    - Calibre-web: http://books.homelab.local (digital library)
    - Yarr: http://rss.homelab.local
 
-   Credentials for the Compose stack are defined in `test/docker-compose.yml`.
+   Credentials are whatever you put in `test/.env`.
 
 ### Service Status
 

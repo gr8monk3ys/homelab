@@ -646,10 +646,10 @@ setup_logging() {
     fi
 
     if [[ "$INSTALL_PROMTAIL" == "true" ]]; then
-        if [[ -f "extras/kubernetes/services/loki/promtail-deployment.yaml" ]]; then
-            kubectl_apply_rendered_file extras/kubernetes/services/loki/promtail-deployment.yaml
+        if [[ -f "kubernetes/services/loki/promtail-deployment.yaml" ]]; then
+            kubectl_apply_rendered_file kubernetes/services/loki/promtail-deployment.yaml
         else
-            warning "Promtail manifest not found: extras/kubernetes/services/loki/promtail-deployment.yaml (skipping)."
+            warning "Promtail manifest not found: kubernetes/services/loki/promtail-deployment.yaml (skipping)."
         fi
     else
         warning "INSTALL_PROMTAIL=false; skipping Promtail (no default log shipper will be installed)."

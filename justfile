@@ -10,12 +10,6 @@ default:
 ci:
   ./scripts/ci.sh
 
-trivy *ARGS:
-  docker run --rm -v "$PWD:/repo" -w /repo aquasec/trivy:0.58.2 config --skip-check-update --ignorefile /repo/.trivyignore {{ARGS}} /repo/kubernetes
-  # On macOS + Docker Desktop, scanning the entire extras tree can intermittently fail due to FS walk errors.
-  # Scanning the services subtree is equivalent for this repo and is more reliable.
-  docker run --rm -v "$PWD:/repo" -w /repo aquasec/trivy:0.58.2 config --skip-check-update --ignorefile /repo/.trivyignore {{ARGS}} /repo/extras/kubernetes/services
-
 dev-tools:
   ./scripts/install-dev-tools.sh
 

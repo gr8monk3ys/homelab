@@ -5,11 +5,6 @@
 #   pre-commit install
 #   pre-commit install --hook-type pre-push  # optional (runs the full ./scripts/ci.sh gate)
 
-exclude: |
-  (?x)^(
-    \.claude/
-  )
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

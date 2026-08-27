@@ -86,8 +86,8 @@ Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak (ingress host
 mattermost, metabase, navidrome, nocodb, outline, qbittorrent, romm, tautulli,
 umami, whisper.
 
-`extras/` holds higher-risk manifests excluded on purpose; `legacy/` is
-archived history.
+Older and higher-risk manifests that used to live in `extras/` and `legacy/`
+are preserved on the `archive/legacy` branch.
 
 ## Dependencies
 

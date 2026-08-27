@@ -402,10 +402,10 @@ reinstall_monitoring() {
             kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/"
     fi
 
-    # Promtail (optional; kept under extras/ due to required host mounts/capabilities)
-    if [ -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml" ]; then
-        run_step "Installing Promtail (extras)" \
-            kubectl apply -f "$HOMELAB_DIR/extras/kubernetes/services/loki/promtail-deployment.yaml"
+    # Promtail (optional; needs host mounts/capabilities)
+    if [ -f "$HOMELAB_DIR/kubernetes/services/loki/promtail-deployment.yaml" ]; then
+        run_step "Installing Promtail" \
+            kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/promtail-deployment.yaml"
     fi
 
     report_step_results "Monitoring stack reinstallation"

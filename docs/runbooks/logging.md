@@ -24,7 +24,7 @@ Enable it explicitly:
 INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh
 ```
 
-This applies `extras/kubernetes/services/loki/promtail-deployment.yaml`.
+This applies `kubernetes/services/loki/promtail-deployment.yaml`.
 
 ## Grafana Datasource (Optional)
 
