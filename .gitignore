@@ -154,3 +154,7 @@ npm-debug.log*
 # =============================================================================
 *.generated.yaml
 *.generated.yml
+
+# editor / agent local state
+.claude/settings.local.json
+.DS_Store

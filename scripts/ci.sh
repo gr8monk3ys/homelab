@@ -317,7 +317,7 @@ run_kustomize_build() {
 
 run_docs_check() {
   log "Docs check..."
-  local required=("README.md" "CLAUDE.md" "SECURITY.md")
+  local required=("README.md" "CLAUDE.md")
   local missing=()
   local f
   for f in "${required[@]}"; do

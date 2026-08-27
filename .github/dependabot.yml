@@ -1,7 +1,5 @@
 version: 2
 updates:
-  # Enable version updates for GitHub Actions
-  # (Docker/Helm image updates are handled by Renovate — see renovate.json)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

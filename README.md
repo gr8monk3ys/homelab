@@ -1,16 +1,34 @@
 # Homelab
 
-<p align="center">
-  <img src="docs/assets/hero.png" alt="homelab preview" width="640">
-</p>
+**Status: not yet proven end-to-end on a live cluster.** The manifests are
+consistent and CI-validated (yamllint, shellcheck, kubeconform, helm lint,
+kustomize build), and subsets have run on KinD, but nobody has deployed the
+whole stack to a real K3s node and watched it stay up. Deploy a subset,
+verify, then grow.
 
-A self-hosted Kubernetes homelab on K3s: one installer (`setup-v2.sh`) deploys
-core infrastructure (ingress, TLS, secrets, storage, backups, monitoring) plus
-around two dozen applications, all from version-pinned manifests.
+A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
+the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
+MinIO, Velero, kube-prometheus-stack) and 23 of the 43 application directories
+under `kubernetes/services/`; the other 20 are maintained manifests you apply
+by hand.
 
-**Status:** this is a personal homelab, not a product. The manifests are
-consistent and CI-validated, but the full stack has not been proven end-to-end
-on a live cluster. Deploy a subset, verify, then grow.
+## Secrets design
+
+No credential is committed, not as a default and not as an example. Two paths:
+
+- **Generated (default).** `scripts/generate-secrets.sh` creates random
+  credentials as Kubernetes Secrets in one central `secrets` namespace.
+  External Secrets Operator copies each into the namespace that needs it, so
+  app manifests only ever reference an `ExternalSecret`. The installer prints
+  the `kubectl` command to read each secret instead of the value.
+- **GitOps (opt-in).** `scripts/sops-bootstrap.sh` generates an age key and
+  SOPS-encrypts Secret manifests into `kubernetes/secrets/sops/`
+  (`.sops.yaml` holds only the public recipient). ArgoCD decrypts them at
+  sync time through KSOPS. The age private key lives in `local/`, which is
+  gitignored.
+
+`scripts/validate-setup.sh` greps the rendered cluster state for hardcoded
+passwords as one of its checks. `docs/credentials.md` lists every secret name.
 
 ## Stack
 
@@ -102,38 +120,12 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 
 ## Services
 
-Deployed by default (`<name>.<domain>` unless noted):
-
-| Service | URL | Purpose |
-|---|---|---|
-| Homepage | `home.` | Dashboard |
-| Grafana | `grafana.` | Metrics and dashboards |
-| Uptime Kuma | `uptime.` | Uptime monitoring |
-| Nextcloud | `nextcloud.` | Files, calendar, contacts |
-| Vaultwarden | `vault.` | Passwords (Bitwarden-compatible) |
-| Gitea | `git.` | Git hosting |
-| Authelia | `auth.` | SSO / ForwardAuth for protected apps |
-| Jellyfin | `jellyfin.` | Media streaming |
-| Sonarr / Radarr / Prowlarr / Bazarr | `sonarr.` etc. | Media automation |
-| Audiobookshelf | `audiobooks.` | Audiobooks and podcasts |
-| Paperless-ngx | `docs.` | Document management |
-| Mealie | `recipes.` | Recipes |
-| Linkwarden | `bookmarks.` | Bookmarks |
-| n8n | `automation.` | Workflow automation |
-| Calibre-web | `books.` | E-books |
-| SearXNG | `search.` | Metasearch |
-| yarr | `rss.` | RSS |
-| Pi-hole | `pihole.` | DNS filtering + wildcard DNS for the cluster |
-| WireGuard | `vpn.` | VPN (UI) |
-
-Opt-in: Immich (`photos.`), Ollama (`ai.`), Open WebUI (`chat.`), Drone
-(`drone.`), Harbor, ArgoCD (`argocd.`) — see the toggles above.
-
-A further ~20 directories under `kubernetes/services/` (Home Assistant,
-Keycloak, Matrix, Mattermost, and others) contain maintained manifests that
-`setup-v2.sh` does **not** install; apply them manually with
-`kubectl apply -f kubernetes/services/<name>/` if wanted. Full catalog:
-`docs/services.md`.
+Installed by default: Homepage, Grafana, Uptime Kuma, Nextcloud, Vaultwarden,
+Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
+Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
+WireGuard. Opt-in via the toggles: Immich, Ollama, Open WebUI, Drone, Harbor,
+ArgoCD. The full catalog with URLs, plus the 20 manifest-only directories, is
+in `docs/services.md`.
 
 ## DNS
 
@@ -177,9 +169,10 @@ just                             # task shortcuts (just validate, just ci, just 
 cd test && ./setup-kind.sh       # throwaway KinD cluster for testing
 ```
 
-Tool and chart versions are pinned in `tools/versions.env`. Renovate is
-configured for dependency updates (database and security images gated to
-manual review).
+Tool and chart versions are pinned in `tools/versions.env`; Dependabot
+bumps the GitHub Actions. CI is one workflow (`.github/workflows/ci.yml`)
+that runs `scripts/ci.sh` on pull requests — the repo is private, so
+Actions minutes are capped and nothing runs on a schedule.
 
 ## Repository layout
 
@@ -195,28 +188,18 @@ kubernetes/
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps
 helm/nextcloud/              # the one Helm-chart-managed app
-kustomize/overlays/          # development / staging / production
+kustomize/overlays/production/  # the single overlay (one node, one environment)
 scripts/                     # secrets, backup/restore, validation, DR
 ansible/                     # host provisioning (base system, security, backups)
 docs/                        # credentials reference + day-2 runbooks
-test/                        # KinD configs + validation suite
-extras/  legacy/             # not installed: higher-risk / archived manifests
+test/                        # KinD configs, Compose stack, validation suite
 ```
 
 ## Troubleshooting
 
-Start with the symptom→fix triage table in `docs/runbooks/README.md`. Common
-first checks:
-
-```bash
-kubectl get pods -A                     # what's not Running?
-kubectl get externalsecrets -A          # secret sync status
-kubectl get certificates -A             # TLS issuance
-kubectl logs -f deploy/<name> -n <ns>   # service logs
-```
-
-Installer output is logged to `setup.log`.
+Symptom-to-fix table: `docs/runbooks/README.md`. Installer output goes to
+`setup.log`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPL-3.0 — see [LICENSE](LICENSE).
