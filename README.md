@@ -187,6 +187,13 @@ kubectl -n pihole get svc pihole-dns
 - Verify: `./scripts/verify-backups.sh`. Restore procedures:
   `docs/runbooks/backup-restore.md`.
 
+> **The default backup target is not a backup.** Velero writes to the
+> in-cluster MinIO, which on a single node with `local-path` lives on that
+> node's own disk: one disk failure loses the data and its backups together.
+> `verify-backups.sh` says so on every run until you point Velero at a NAS,
+> an external S3 bucket or another machine. See
+> `docs/runbooks/backup-restore.md`.
+
 ## GitOps (optional)
 
 `ENABLE_GITOPS=true` installs ArgoCD. To manage encrypted secrets in git:

@@ -82,6 +82,43 @@ check_backup_storage() {
     else
         warning "$line"
     fi
+
+    check_backup_shares_fate "$available_bsl"
+}
+
+# check_backup_shares_fate <bsl names>
+#
+# A backup that lives on the disk it is backing up is not a backup. The
+# default target here is the in-cluster MinIO, which on a single node with
+# the local-path provisioner sits on that node's own disk: one disk failure
+# loses the data and the backup together. This says so, every run, until the
+# target points somewhere else.
+check_backup_shares_fate() {
+    local bsl_names="$1" name bucket_url in_cluster=""
+
+    for name in $bsl_names; do
+        bucket_url="$(kubectl get backupstoragelocation "$name" -n "$BACKUP_NAMESPACE" \
+            -o jsonpath='{.spec.config.s3Url}' 2>/dev/null || true)"
+        case "$bucket_url" in
+            *.svc.cluster.local*|*.svc:*|*minio.minio*) in_cluster+="${in_cluster:+ }$name" ;;
+        esac
+    done
+
+    [[ -n "$in_cluster" ]] || return 0
+
+    # Only a real risk while the object store shares a node with the workloads.
+    local node_count storage_class
+    node_count="$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+    storage_class="$(kubectl get pvc -n minio-system -o jsonpath='{.items[0].spec.storageClassName}' 2>/dev/null || true)"
+
+    warning "BackupStorageLocation '$in_cluster' points at the in-cluster object store."
+    if [[ "$node_count" == "1" || "$storage_class" == "local-path" ]]; then
+        warning "  That store is on this node's own disk (${node_count} node, storageClass '${storage_class:-unknown}')."
+        warning "  A disk failure loses the data AND its backups. Point Velero at a NAS, an"
+        warning "  external S3 bucket or another machine: docs/runbooks/backup-restore.md."
+    else
+        info "  Confirm that store is not on the same disk as the volumes it backs up."
+    fi
 }
 
 # List existing backups

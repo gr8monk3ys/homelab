@@ -68,12 +68,17 @@ files under `/var/log/pods` are root-owned and mode 0600 on K3s, and the
 `allowPrivilegeEscalation` is false, the root filesystem is read-only, the
 seccomp profile is `RuntimeDefault`, and `/var/log` is mounted read-only.
 
-Note that the `loki` namespace is labelled
-`pod-security.kubernetes.io/enforce: baseline`, and the baseline Pod Security
-Standard forbids hostPath volumes. On a cluster where that label is enforced,
-the Alloy pods are not admitted; relabel the namespace to `privileged` (the
-convention this repo uses for the other hostPath services, see
-`kubernetes/services/kured/namespace.yaml`) before enabling `INSTALL_ALLOY`.
+The `loki` namespace enforces the `privileged` Pod Security Standard, because
+both `baseline` and `restricted` forbid the hostPath volume any log shipper
+needs to read `/var/log/pods`. That matches the convention for the repo's
+other node-level services (`kured`, the device plugins,
+`system-upgrade-controller`). `audit` and `warn` stay at `restricted`, so
+anything else that lands in this namespace is still reported.
+
+This is worth knowing rather than worrying about: the namespace holds only
+Loki and Alloy, and the relaxation buys exactly one thing, the hostPath
+mount. If you would rather not have a privileged namespace at all, leave
+`INSTALL_ALLOY` off and ship logs from outside the cluster instead.
 
 ## Check that Alloy is shipping
 
