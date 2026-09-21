@@ -1,0 +1,20 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# The NVIDIA device plugin is Helm-chart-managed; it advertises nvidia.com/gpu
+# on nodes where the NVIDIA container toolkit is installed.
+name: nvidia-device-plugin
+namespace: nvidia-device-plugin
+group: core
+optin: true
+priority: 20
+description: NVIDIA device plugin (nvidia.com/gpu); needs the NVIDIA driver and container toolkit on the host
+kind: helm
+chart: nvdp/nvidia-device-plugin
+release: nvidia-device-plugin
+values: kubernetes/services/nvidia-device-plugin/values.yaml
+versionVar: NVIDIA_DEVICE_PLUGIN_CHART_VERSION
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: a privileged DaemonSet that only talks to the kubelet
+# device-plugin socket on the host; nothing to isolate.
+networkPolicies: []

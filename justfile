@@ -25,6 +25,15 @@ setup *ARGS:
 validate:
   ./scripts/validate-setup.sh
 
+services:
+  ./scripts/services.sh list
+
+services-check:
+  ./scripts/services.sh check
+
+services-render DIR:
+  ./scripts/services.sh render {{DIR}}
+
 dns:
   ./scripts/configure-wildcard-dns.sh
 
@@ -40,8 +49,9 @@ rotate-secrets:
 verify-backups:
   ./scripts/verify-backups.sh
 
-kustomize-apply OVERLAY:
-  ./scripts/kustomize-apply.sh {{OVERLAY}}
+# Host prep for K3s nodes (run before setup-v2.sh); see ansible/README.md.
+ansible-prep *ARGS:
+  cd ansible && ansible-playbook -i inventory/hosts.yaml playbooks/base-system.yaml playbooks/security.yaml playbooks/backup.yaml {{ARGS}}
 
 kind-up:
   ./test/setup-kind.sh

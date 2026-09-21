@@ -1,0 +1,257 @@
+---
+# Frigate: local NVR with object detection.
+#
+# Hardware, before you enable this:
+#   - The CPU detector below works but is slow. A Google Coral (USB or PCIe)
+#     or an Intel iGPU via OpenVINO is what makes Frigate usable; both need
+#     device access, so the matching blocks are commented out and paired
+#     with the device plugins in kubernetes/services/{intel,nvidia}-device-plugin.
+#   - /media/frigate holds recordings. 200Gi is a starting point for two
+#     cameras at medium retention; size it for your cameras.
+#   - MQTT points at Mosquitto in the home-assistant namespace, so
+#     ENABLE_HOME_SERVICES=true must have installed it. The cross-namespace
+#     NetworkPolicy pair lives in
+#     kubernetes/security/network-policies/cross-namespace-policies.yaml.
+#
+# See docs/runbooks/storage-and-hardware.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frigate-config
+  namespace: frigate
+data:
+  config.yml: |
+    mqtt:
+      enabled: true
+      host: mosquitto.home-assistant.svc.cluster.local
+      port: 1883
+      topic_prefix: frigate
+      client_id: frigate
+
+    detectors:
+      # CPU detection: correct, slow, and heavy. Replace with one of the
+      # blocks below once the hardware is present.
+      cpu1:
+        type: cpu
+        num_threads: 2
+      # coral:
+      #   type: edgetpu
+      #   device: usb
+      # ov:
+      #   type: openvino
+      #   device: GPU
+
+    ffmpeg:
+      hwaccel_args: preset-cpu
+      # preset-vaapi for an Intel iGPU, preset-nvidia for NVIDIA.
+
+    detect:
+      enabled: true
+      fps: 5
+
+    record:
+      enabled: true
+      retain:
+        days: 7
+        mode: motion
+      alerts:
+        retain:
+          days: 30
+      detections:
+        retain:
+          days: 30
+
+    snapshots:
+      enabled: true
+      retain:
+        default: 14
+
+    objects:
+      track:
+        - person
+        - car
+
+    cameras:
+      # One example camera. Delete or replace it: Frigate refuses to start
+      # when a camera's streams are unreachable, so keep only real cameras.
+      example_camera:
+        enabled: false
+        ffmpeg:
+          inputs:
+            - path: rtsp://user:password@192.168.1.50:554/stream1
+              roles:
+                - detect
+                - record
+        detect:
+          width: 1280
+          height: 720
+
+    version: 0.16-0
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: frigate-config-pvc
+  namespace: frigate
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: frigate-media-pvc
+  namespace: frigate
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frigate
+  namespace: frigate
+  labels:
+    app: frigate
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: frigate
+  template:
+    metadata:
+      labels:
+        app: frigate
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frigate
+          image: ghcr.io/blakeblackshear/frigate:0.18.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: TZ
+              value: "UTC"
+            - name: FRIGATE_MQTT_HOST
+              value: "mosquitto.home-assistant.svc.cluster.local"
+          ports:
+            - containerPort: 8971
+              name: http
+            - containerPort: 8554
+              name: rtsp
+          volumeMounts:
+            - name: config-file
+              mountPath: /config/config.yml
+              subPath: config.yml
+              readOnly: true
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media/frigate
+            - name: cache
+              mountPath: /tmp/cache
+            - name: shm
+              mountPath: /dev/shm
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "4000m"
+              # Uncomment with the Intel device plugin installed:
+              # gpu.intel.com/i915: 1
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: 8971
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: 8971
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: config-file
+          configMap:
+            name: frigate-config
+        - name: config
+          persistentVolumeClaim:
+            claimName: frigate-config-pvc
+        - name: media
+          persistentVolumeClaim:
+            claimName: frigate-media-pvc
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frigate
+  namespace: frigate
+spec:
+  selector:
+    app: frigate
+  ports:
+    - name: http
+      port: 8971
+      targetPort: 8971
+    - name: rtsp
+      port: 8554
+      targetPort: 8554
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frigate-ingress
+  namespace: frigate
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Camera feeds are sensitive: behind Authelia like the other private UIs.
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+    - hosts:
+        - frigate.homelab.local
+      secretName: frigate-tls
+  rules:
+    - host: frigate.homelab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frigate
+                port:
+                  number: 8971

@@ -1,8 +1,47 @@
 # Services
 
-What `setup-v2.sh` installs, what each piece is for, and what exists in the
-repo but is not wired into the installer. URLs are `<name>.<domain>` with the
-domain from `config/homelab.yaml`.
+What `setup-v2.sh` installs and what each piece is for. URLs are
+`<name>.<domain>` with the domain from `config/homelab.yaml`.
+
+Applications are a **catalogue**: every `kubernetes/services/<name>/` carries a
+`service.yaml` descriptor (namespace, group, opt-in flag, ordered install
+steps). `./scripts/services.sh list` prints it; `./scripts/services.sh check`
+is what CI runs. A service's `group` is one row of `SERVICE_GROUPS` in
+`scripts/lib/services.sh` -- the one place a group's toggle, its default and
+its ArgoCD AppProject are written, in install order. The installer seeds its
+toggles from it and the generated app-of-apps reads the same defaults, so this
+table is a copy for readers; change the rows, not this:
+
+| Group | Toggle (default) | ArgoCD project |
+|---|---|---|
+| `core` | always | `homelab-infrastructure` |
+| `media` | `ENABLE_MEDIA_SERVICES` (true) | `homelab-media` |
+| `network` | `ENABLE_NETWORK_SERVICES` (true) | `homelab-infrastructure` |
+| `dev` | `ENABLE_DEV_SERVICES` (false) | `homelab-infrastructure` |
+| `content` | `ENABLE_CONTENT_SERVICES` (true) | `homelab-productivity` |
+| `ai` | `ENABLE_AI_SERVICES` (false) | `homelab-ai` |
+| `productivity` | `ENABLE_PRODUCTIVITY_SERVICES` (true) | `homelab-productivity` |
+| `home` | `ENABLE_HOME_SERVICES` (false) | `homelab-infrastructure` |
+| `communication` | `ENABLE_COMMUNICATION_SERVICES` (false) | `homelab-productivity` |
+| `monitoring` | `INSTALL_MONITORING` (true) | `homelab-infrastructure` |
+| `logging` | `INSTALL_LOGGING` (false) | `homelab-infrastructure` |
+
+A descriptor's own `project:` wins over its group's (Authelia, Keycloak and
+Vaultwarden are in `homelab-security`). A group's default is also what
+"installed by default" means in the generated app-of-apps.
+
+The same catalogue generates the ArgoCD app-of-apps
+(`kubernetes/gitops/argocd/apps/services/`, see `kubernetes/gitops/argocd/README.md`),
+drives the KinD harness (`KIND_SERVICE_GROUPS`, default `core network content`)
+and `test/validate.sh`.
+
+A service marked `optin: true` additionally needs its name in
+`OPTIN_SERVICES` (space or comma separated, or `all`):
+
+```bash
+OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
+./scripts/services.sh install gatus      # one service into the current cluster
+```
 
 ## Infrastructure (installed by default)
 
@@ -17,9 +56,15 @@ domain from `config/homelab.yaml`.
 | Velero | `INSTALL_VELERO` (true) | Backup schedules below |
 | ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
 | CrowdSec | always | Agent + Traefik bouncer, wired into the request path: Traefik writes the access logs the agent reads, and the bouncer middleware is enforced on the `websecure` entrypoint |
-| NetworkPolicies | always | `kubernetes/security/network-policies/` (default-deny for sensitive namespaces, DB access policies, egress rules). The separate `kubernetes/network-policies/` directory is a standalone toolkit the installer does not apply |
+| NetworkPolicies | always | Per-namespace isolation is declared in each service's `service.yaml` (`networkPolicies:`, rendered from `kubernetes/security/network-policies/templates/` by `scripts/lib/netpol.sh`); infrastructure namespaces, Nextcloud and the finer per-pod DB/egress rules stay in `kubernetes/security/network-policies/*.yaml` |
 | Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
 | Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
+
+Every Helm-installed piece above is one row of `HELM_INFRA_RELEASES` in
+`scripts/lib/helm.sh` (chart, namespace, version variable, values, toggle and
+the pod selector its health check looks for), and
+`./scripts/validate-setup.sh --infra` checks exactly those rows plus
+local-path, MinIO, CrowdSec and ArgoCD. See ADR-0006.
 
 ## Monitoring (installed by default)
 
@@ -30,7 +75,7 @@ domain from `config/homelab.yaml`.
 | Alertmanager | internal | Notification routing is opt-in: `CONFIGURE_ALERTING=true` + `docs/runbooks/alerting.md` |
 | Blackbox exporter | internal | Synthetic HTTPS probes of key endpoints through Traefik |
 | Uptime Kuma | `uptime.` | Standalone uptime monitoring and status pages |
-| Loki | internal, optional | `INSTALL_LOGGING=true`; ship logs with `INSTALL_PROMTAIL=true`; see `docs/runbooks/logging.md` |
+| Loki | internal, optional | `INSTALL_LOGGING=true`; ship logs with `INSTALL_ALLOY=true` (Grafana Alloy, which replaced the end-of-life Promtail); see `docs/runbooks/logging.md` |
 
 ## Applications installed by default
 
@@ -38,7 +83,7 @@ domain from `config/homelab.yaml`.
 
 | Service | URL | Purpose |
 |---|---|---|
-| Nextcloud | `nextcloud.` | Files/calendar/contacts. The one Helm-managed app (`helm/nextcloud/`), with a separate MySQL StatefulSet |
+| Nextcloud | `nextcloud.` | Files/calendar/contacts. Helm chart (`helm/nextcloud/`) declared with `kind: helm` in its descriptor; separate MySQL StatefulSet |
 | Gitea | `git.` | Git hosting |
 | Vaultwarden | `vault.` | Bitwarden-compatible password manager (admin panel at `/admin`) |
 | Authelia | `auth.` | SSO/2FA; protects selected apps via Traefik ForwardAuth middleware |
@@ -62,7 +107,7 @@ also provides wildcard DNS for the cluster), WireGuard (`vpn.`), dnsmasq DHCP.
 Paperless-ngx (`docs.`), Mealie (`recipes.`), Linkwarden (`bookmarks.`),
 n8n (`automation.`).
 
-## Applications that are opt-in
+## Applications behind a group toggle
 
 | Service | URL | Toggle |
 |---|---|---|
@@ -71,20 +116,61 @@ n8n (`automation.`).
 | Open WebUI (chat UI for Ollama; behind Authelia) | `chat.` | `ENABLE_AI_SERVICES=true` |
 | Drone CI | `drone.` | `ENABLE_DEV_SERVICES=true` |
 | Harbor (container registry, installed via in-cluster Helm job) | — | `ENABLE_DEV_SERVICES=true` |
+| Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT | `hass.`, `nodered.`, `zigbee.` | `ENABLE_HOME_SERVICES=true` |
+| Matrix (Synapse + Element) | `matrix.`, `element.` | `ENABLE_COMMUNICATION_SERVICES=true` |
+| Mattermost | `mattermost.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | ArgoCD | `argocd.` | `ENABLE_GITOPS=true` |
 
-## In the repo but NOT installed
+## Opt-in services (`OPTIN_SERVICES`)
 
-These directories under `kubernetes/services/` contain manifests the installer
-never applies. They follow the same conventions (pinned images, security
-contexts, ExternalSecrets) but have had less scrutiny — review before use,
-then `kubectl apply -f kubernetes/services/<name>/`:
+These have had less scrutiny than the defaults; they follow the same
+conventions (pinned images, security contexts, ExternalSecrets) and their
+secrets are already generated. Add them by name:
 
-actual-budget, code-server, gatus, heimdall, home-assistant (+ Node-RED,
-Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak (ingress host
-`keycloak.<domain>` — `auth.` belongs to Authelia), localai, matrix,
-mattermost, metabase, navidrome, nocodb, outline, qbittorrent, romm, tautulli,
-umami, whisper.
+| Service | URL | Group |
+|---|---|---|
+| Actual Budget | `budget.` | productivity |
+| Cloudflare Tunnel (`cloudflared`; no URL, publishes services outbound-only; needs the user-supplied `cloudflare-tunnel-token` secret) | — | network |
+| code-server | `code.` | dev |
+| CyberChef | `cyberchef.` | productivity |
+| Frigate (local NVR; needs Mosquitto from Home Assistant and, realistically, a Coral or iGPU) | `frigate.` | home |
+| Gatus | `status.` | monitoring |
+| Heimdall | `dashboard.` | core |
+| Homebox | `inventory.` | productivity |
+| Hoppscotch | `hoppscotch.` | dev |
+| Intel device plugin (no URL; exposes `gpu.intel.com/i915` for transcoding and detection) | — | core |
+| IT-Tools | `tools.` | productivity |
+| Jellyseerr | `requests.` | media |
+| Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
+| Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
+| kured (no URL; reboots the node when `/var/run/reboot-required` appears; hostPID + privileged by design) | — | core |
+| LocalAI | `localai.` | ai |
+| Longhorn (distributed block storage, snapshots, backups to MinIO; needs open-iscsi on the host) | `longhorn.` | core |
+| Metabase | `metabase.` | productivity |
+| Miniflux (feed reader, Postgres-backed; overlaps yarr) | `reader.` | content |
+| Navidrome | `music.` | media |
+| NocoDB | `nocodb.` | productivity |
+| node-feature-discovery (no URL; labels nodes so the device plugins can target them) | — | core |
+| ntfy | `ntfy.` | productivity |
+| NVIDIA device plugin (no URL; exposes `nvidia.com/gpu`; needs the NVIDIA container toolkit on the host) | — | core |
+| Outline | `wiki.` | productivity |
+| qBittorrent | `torrent.` | media |
+| Reloader (no URL; workloads opt in with the `reloader.stakater.com/auto: "true"` annotation) | — | core |
+| Renovate (no URL; nightly CronJob opening dependency PRs, needs the user-supplied `renovate-token` secret and the repo name in its ConfigMap) | — | dev |
+| RomM | `games.` | media |
+| snapshot-controller (no URL; CSI VolumeSnapshot support, prerequisite for VolSync snapshot copies) | — | core |
+| Stirling-PDF | `pdf.` | productivity |
+| system-upgrade-controller (no URL; k3s server/agent upgrade Plans on the stable channel, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
+| Tailscale operator (no URL; exposes services on your tailnet; needs the user-supplied `tailscale-oauth` secret) | — | network |
+| Tautulli (Plex statistics; Plex-only, so it is useful here only if you run Plex somewhere alongside this cluster's Jellyfin) | `stats.` | media |
+| Umami | `analytics.` | productivity |
+| VolSync (no URL; PVC replication and restic backups to MinIO) | — | core |
+| Whisper | `whisper.` | ai |
+
+Storage, remote access and hardware acceleration (Longhorn, VolSync,
+snapshot-controller, the Tailscale operator, node-feature-discovery and the
+Intel/NVIDIA device plugins) have host prerequisites: see
+`docs/runbooks/storage-and-hardware.md`.
 
 Older and higher-risk manifests that used to live in `extras/` and `legacy/`
 are preserved on the `archive/legacy` branch.
@@ -134,10 +220,38 @@ dominate storage.
 
 ## Adding a new service
 
-Follow the checklist in `CLAUDE.md`: create
-`kubernetes/services/<name>/` (namespace/deployment/service/ingress, plus
-`pdb.yaml` and `servicemonitor.yaml` where warranted), add an ExternalSecret
-for credentials and a matching entry in `scripts/generate-secrets.sh`, add a
-NetworkPolicy under `kubernetes/security/network-policies/`, and wire the
-directory into the appropriate `setup_*_services` function in `setup-v2.sh` —
-a directory alone does not deploy.
+Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
+manifests (plus `pdb.yaml` and `servicemonitor.yaml` where warranted), an
+ExternalSecret for credentials and a matching entry in
+`scripts/generate-secrets.sh`, and a `service.yaml` descriptor:
+
+```yaml
+name: <name>            # equals the directory name
+namespace: <name>
+group: productivity     # picks the toggle (table above)
+optin: true             # omit for services that should install by default
+url: <host-prefix>
+description: One line
+steps:                  # only when order matters; everything else applies after, sorted
+  - apply: postgres-deployment.yaml
+    wait: app=<name>-postgres
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]
+```
+
+`networkPolicies:` is the service's network isolation. Each name is a policy
+template in `kubernetes/security/network-policies/templates/`; the installer
+renders every listed template into the service's namespace
+(`scripts/lib/netpol.sh`). The five above are the standard set: deny
+everything, then allow DNS, Traefik, Prometheus scraping and same-namespace
+traffic (app to its database). Add `allow-external-https` only when the app
+fetches from the internet (feeds, models, webhooks); it excludes private
+ranges, so it never opens the LAN or other namespaces. Leave the key out for
+a service that must talk to the LAN or the Kubernetes API (Home Assistant,
+Homepage) until a template expresses that. An unknown template name fails
+the install and `./scripts/ci.sh`. Cross-namespace rules (one app reaching
+another's database) are not templates; add them to
+`kubernetes/security/network-policies/*.yaml`.
+
+Nothing in `setup-v2.sh` changes. `./scripts/ci.sh` fails on a directory
+without a descriptor, and renders every service through the same code path
+the installer uses.

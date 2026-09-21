@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: pihole
+namespace: pihole
+group: network
+priority: 10
+url: pihole
+description: DNS sinkhole; wildcard DNS for the cluster
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: LAN DNS server behind a LoadBalancer; default-deny would block clients.
+networkPolicies: []

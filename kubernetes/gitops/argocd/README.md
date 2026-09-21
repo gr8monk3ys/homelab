@@ -43,6 +43,26 @@ Or have `setup-v2.sh` apply them automatically after ArgoCD is installed:
 ENABLE_GITOPS=true APPLY_GITOPS_MANIFESTS=true ./setup-v2.sh
 ```
 
+## Service Applications are generated
+
+`apps/services/default.yaml` (what the installer deploys by default),
+`apps/services/optional.yaml` (opt-in and toggled-off services) and
+`projects.yaml` (AppProject destinations) are generated from the service
+catalogue (`kubernetes/services/*/service.yaml`):
+
+```bash
+./scripts/services.sh argocd          # regenerate
+./scripts/services.sh argocd --check  # what CI runs; fails when stale
+```
+
+`apps/core/applications.yaml` keeps only the hand-written infrastructure
+Applications (secrets, MetalLB, CrowdSec). Each generated Application excludes
+`service.yaml` and values files from its directory source. ArgoCD applies the
+manifests exactly as committed, so for the GitOps path the placeholder domain
+(`homelab.local`) must be rendered into git first, for example with
+`./scripts/services.sh render <dir>` and a commit of the output, or a
+Kustomize replacement in your fork.
+
 ## Notes
 
 - Some parts of this homelab are installed via Helm directly in `setup-v2.sh` (for example Traefik, cert-manager, External Secrets Operator, and kube-prometheus-stack). If you want "full GitOps", migrate those installs into ArgoCD-managed Helm Applications.

@@ -1,0 +1,23 @@
+---
+# VolSync Helm values (chart backube/volsync, VOLSYNC_CHART_VERSION in
+# tools/versions.env). Rendered like a manifest.
+#
+# The operator installs its CRDs (ReplicationSource, ReplicationDestination)
+# and waits for them to be used. An example ReplicationSource that backs one
+# PVC up to the in-cluster MinIO with restic is in
+# docs/runbooks/storage-and-hardware.md; nothing is replicated until you
+# create one.
+replicaCount: 1
+
+manageCRDs: true
+
+metrics:
+  disableAuth: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

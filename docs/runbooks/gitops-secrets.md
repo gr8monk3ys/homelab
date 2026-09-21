@@ -23,6 +23,13 @@ This repo can store the homelab's Kubernetes `Secret` resources **encrypted** us
 ./scripts/sops-bootstrap.sh
 ```
 
+The script writes one `secrets/<name>.sops.yaml` per entry of the secret
+table in `scripts/lib/secrets.sh`, the same table `scripts/generate-secrets.sh`
+creates in-cluster, so both paths produce identical secret names and keys.
+The Authelia admin password hash needs `authelia crypto hash` to run: the
+script uses a reachable cluster (`kubectl run`) or, failing that, `docker`;
+with neither it stops rather than commit a placeholder hash.
+
 3. Configure ArgoCD to decrypt with KSOPS (creates `argocd/sops-age`, patches repo-server, updates `argocd-cm`):
 
 ```bash

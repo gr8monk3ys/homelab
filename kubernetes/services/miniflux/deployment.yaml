@@ -1,0 +1,181 @@
+---
+# Miniflux - minimalist feed reader (Postgres-only; all state lives in the
+# database, so the app itself needs no volume). Tag 2.2.13 verified on Docker
+# Hub; the image runs as uid 65534 and listens on 0.0.0.0:8080 (its
+# Dockerfile), so the pod security context matches.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniflux
+  namespace: miniflux
+  labels:
+    app: miniflux
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: miniflux
+  template:
+    metadata:
+      labels:
+        app: miniflux
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z miniflux-postgres 5432; do
+            echo "Waiting for database..."
+            sleep 5
+          done
+          echo "Database ready!"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
+      containers:
+      - name: miniflux
+        image: miniflux/miniflux:2.2.13
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        # DATABASE_URL is assembled from the generated password at pod start
+        # ($(VAR) expansion happens in the kubelet, like linkwarden).
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: miniflux-db-password
+              key: password
+        - name: DATABASE_URL
+          value: "postgres://miniflux:$(DB_PASSWORD)@miniflux-postgres:5432/miniflux?sslmode=disable"
+        - name: RUN_MIGRATIONS
+          value: "1"
+        # First start creates the admin user from the miniflux-admin secret;
+        # later starts are a no-op because the user already exists.
+        - name: CREATE_ADMIN
+          value: "1"
+        - name: ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: miniflux-admin
+              key: username
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: miniflux-admin
+              key: password
+        - name: LISTEN_ADDR
+          value: "0.0.0.0:8080"
+        - name: BASE_URL
+          value: "https://reader.homelab.local"
+        - name: POLLING_FREQUENCY
+          value: "60"
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniflux
+  namespace: miniflux
+spec:
+  selector:
+    app: miniflux
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: miniflux-ingress
+  namespace: miniflux
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - reader.homelab.local
+    secretName: miniflux-tls
+  rules:
+  - host: reader.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: miniflux
+            port:
+              number: 8080
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: miniflux-admin
+  namespace: miniflux
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: miniflux-admin
+    creationPolicy: Owner
+  data:
+  - secretKey: username
+    remoteRef:
+      key: miniflux-admin
+      property: username
+  - secretKey: password
+    remoteRef:
+      key: miniflux-admin
+      property: password

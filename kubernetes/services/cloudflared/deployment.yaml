@@ -1,0 +1,100 @@
+---
+# cloudflared - Cloudflare Tunnel connector. Opens an outbound-only
+# connection to Cloudflare's edge so selected hostnames can be published
+# without any inbound port; which hostname maps to which in-cluster
+# service is configured in the Cloudflare Zero Trust dashboard (remotely
+# managed tunnel), and the tunnel token the dashboard hands out is the
+# user-supplied secret cloudflare-tunnel-token (docs/credentials.md).
+# No Service, no Ingress: it is the thing that replaces them from outside.
+#
+# One replica: on a single node a second connector only doubles the
+# sessions to the same edge. Tag 2025.9.1 verified on Docker Hub; the image
+# is distroless and runs as the nonroot user 65532.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cloudflared
+        image: cloudflare/cloudflared:2025.9.1
+        args:
+        - tunnel
+        - --no-autoupdate
+        - --metrics
+        - 0.0.0.0:2000
+        - run
+        env:
+        - name: TUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-tunnel-token
+              key: token
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 2000
+          name: metrics
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 2000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloudflare-tunnel-token
+  namespace: cloudflared
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: cloudflare-tunnel-token
+    creationPolicy: Owner
+  data:
+  - secretKey: token
+    remoteRef:
+      key: cloudflare-tunnel-token
+      property: token

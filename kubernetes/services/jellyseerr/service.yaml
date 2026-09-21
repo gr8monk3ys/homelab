@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: jellyseerr
+namespace: jellyseerr
+group: media
+optin: true
+url: requests
+description: Media requests for Jellyfin
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: talks to Jellyfin and the arr-stack in other namespaces.
+networkPolicies: []

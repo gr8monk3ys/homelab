@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: wireguard
+namespace: wireguard
+group: network
+url: vpn
+description: WireGuard VPN
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: LAN-facing VPN endpoint on UDP; forwards to the whole cluster.
+networkPolicies: []

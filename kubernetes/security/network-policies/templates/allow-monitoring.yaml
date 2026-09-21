@@ -1,0 +1,36 @@
+---
+# Policy template: allow-monitoring
+# Lets Prometheus (namespace monitoring) scrape the common metrics ports.
+# The namespace is filled in by scripts/lib/netpol.sh at install time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: PLACEHOLDER_NAMESPACE
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090  # Prometheus
+        - protocol: TCP
+          port: 9100  # Node exporter
+        - protocol: TCP
+          port: 9113  # Nginx exporter
+        - protocol: TCP
+          port: 9114  # Elasticsearch exporter
+        - protocol: TCP
+          port: 9187  # Postgres exporter
+        - protocol: TCP
+          port: 8080  # Various apps
+        - protocol: TCP
+          port: 3000  # Various apps

@@ -1,31 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
+# KinD harness validation. Cluster health and service URLs come from
+# scripts/lib/health.sh (the catalogue decides both); this script keeps the
+# harness-specific checks: config files, YAML syntax, the descriptor check,
+# and HTTP reachability of each service URL.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
-LOGFILE="$SCRIPT_DIR/validation.log"
+LOGFILE="${LOGFILE:-$SCRIPT_DIR/validation.log}"
+: > "$LOGFILE"
+
+source "$HOMELAB_DIR/scripts/lib/health.sh"
+source "$HOMELAB_DIR/scripts/lib/netpol.sh"
 
 FAILURES=0
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
-}
-
-error() {
+# fail <msg>: a counted, non-fatal failure (common.sh's error() exits).
+fail() {
     log "ERROR: $*"
     FAILURES=$((FAILURES+1))
-}
-
-success() {
-    log "SUCCESS: $*"
-}
-
-compose_cmd() {
-    if command -v docker-compose &> /dev/null; then
-        docker-compose "$@"
-    else
-        docker compose "$@"
-    fi
 }
 
 check_service_health() {
@@ -42,116 +35,21 @@ check_service_health() {
         success "$service_name is accessible (HTTP $http_code)"
         return 0
     else
-        error "$service_name returned HTTP $http_code (expected $expected_code) at $url"
+        fail "$service_name returned HTTP $http_code (expected $expected_code) at $url"
         return 1
     fi
 }
 
 check_kubernetes_resources() {
-    log "Checking Kubernetes resources..."
-
-    # Check if kubectl is available and cluster is accessible
-    if ! kubectl cluster-info &> /dev/null; then
-        error "Cannot access Kubernetes cluster"
-        return 1
-    fi
-
-    success "Kubernetes cluster is accessible"
-
-    # Check namespaces
-    local namespaces=(
-        "pihole"
-        "wireguard"
-        "gitea"
-        "harbor"
-        "drone"
-        "dnsmasq-dhcp"
-        "nextcloud"
-        "vaultwarden"
-        "jellyfin"
-        "heimdall"
-        "monitoring"
-        "traefik-system"
-    )
-
-    for ns in "${namespaces[@]}"; do
-        if kubectl get namespace "$ns" &> /dev/null; then
-            success "Namespace $ns exists"
-        else
-            log "WARNING: Namespace $ns not found"
-        fi
-    done
-
-    # Check pods status using structured output for reliability
-    log "Checking pod status..."
-    local failed_pods=0
-    local pod_info
-
-    # Use JSON output for reliable parsing - catches all non-healthy states
-    while IFS= read -r pod_info; do
-        if [ -n "$pod_info" ]; then
-            local ns name phase
-            ns=$(echo "$pod_info" | cut -d'|' -f1)
-            name=$(echo "$pod_info" | cut -d'|' -f2)
-            phase=$(echo "$pod_info" | cut -d'|' -f3)
-            error "Pod not healthy: $ns/$name (status: $phase)"
-            failed_pods=$((failed_pods+1))
-        fi
-    done < <(kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.status.phase}{"\n"}{end}' 2>/dev/null | grep -v -E '\|(Running|Succeeded)$' || true)
-
-    if [ $failed_pods -eq 0 ]; then
-        success "All pods are running or completed"
-    else
-        error "$failed_pods pods are not running properly"
-    fi
-}
-
-check_docker_compose() {
-    log "Checking Docker Compose setup..."
-
-    if [ ! -f "$SCRIPT_DIR/docker-compose.yml" ]; then
-        error "Docker Compose file not found"
-        return 1
-    fi
-
-    success "Docker Compose file found"
-
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-        error "Docker Compose is not available (install docker-compose or the docker compose plugin)"
-        return 1
-    fi
-
-    # Validate Docker Compose file
-    if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config &> /dev/null; then
-        success "Docker Compose file is valid"
-    else
-        error "Docker Compose file has syntax errors"
-        return 1
-    fi
-
-    # Check if services are defined
-    local expected_services=(
-        "traefik"
-        "pihole"
-        "nextcloud"
-        "nextcloud-db"
-        "vaultwarden"
-        "jellyfin"
-        "prometheus"
-        "grafana"
-        "gitea"
-        "gitea-db"
-        "minio"
-        "heimdall"
-    )
-
-    for service in "${expected_services[@]}"; do
-        if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config --services | grep -q "^$service$"; then
-            success "Service $service is defined"
-        else
-            error "Service $service is not defined"
-        fi
-    done
+    log "Checking Kubernetes resources (catalogue-enabled services and installed infrastructure)..."
+    local rc=0
+    health_report --all --enabled-only || rc=$?
+    case "$rc" in
+        0) success "Every enabled service and infrastructure piece is healthy" ;;
+        2) fail "Cannot access Kubernetes cluster" ;;
+        *) fail "Some services or infrastructure pieces are not healthy (see the table above)" ;;
+    esac
+    return "$rc"
 }
 
 check_configuration_files() {
@@ -160,7 +58,6 @@ check_configuration_files() {
     local required_files=(
         "$HOMELAB_DIR/config/homelab.yaml"
         "$HOMELAB_DIR/setup-v2.sh"
-        "$SCRIPT_DIR/docker-compose.yml"
         "$SCRIPT_DIR/kind-config.yaml"
         "$SCRIPT_DIR/setup-kind.sh"
     )
@@ -169,7 +66,7 @@ check_configuration_files() {
         if [ -f "$file" ]; then
             success "File exists: $file"
         else
-            error "Missing file: $file"
+            fail "Missing file: $file"
         fi
     done
 
@@ -177,51 +74,36 @@ check_configuration_files() {
     if [ -x "$HOMELAB_DIR/setup-v2.sh" ]; then
         success "Setup script is executable"
     else
-        error "Setup script is not executable"
+        fail "Setup script is not executable"
     fi
 }
 
 check_kubernetes_manifests() {
     log "Checking Kubernetes manifests..."
 
-    local service_dirs=(
-        "pihole"
-        "wireguard"
-        "gitea"
-        "harbor"
-        "drone"
-        "dnsmasq-dhcp"
-        "vaultwarden"
-        "jellyfin"
-        "heimdall"
-    )
-
-    # Nextcloud is deployed from the repo Helm chart, not kubernetes/services/
+    # Nextcloud is a kind: helm catalogue service; the chart it names lives here.
     if [ -f "$HOMELAB_DIR/helm/nextcloud/Chart.yaml" ]; then
         success "Nextcloud Helm chart exists"
     else
-        error "Nextcloud Helm chart missing: helm/nextcloud"
+        fail "Nextcloud Helm chart missing: helm/nextcloud"
     fi
 
-    for service in "${service_dirs[@]}"; do
-        local service_dir="$HOMELAB_DIR/kubernetes/services/$service"
-        if [ -d "$service_dir" ]; then
-            success "Service directory exists: $service"
+    # Every service directory must carry a valid descriptor (same check CI runs).
+    if services_check; then
+        success "Service catalogue is consistent"
+    else
+        fail "Service catalogue check failed"
+    fi
 
-            # Check for required files
-            if [ -f "$service_dir/namespace.yaml" ]; then
-                success "$service has namespace.yaml"
-            else
-                log "WARNING: $service missing namespace.yaml"
-            fi
-
-            if [ -f "$service_dir/deployment.yaml" ]; then
-                success "$service has deployment.yaml"
-            else
-                log "WARNING: $service missing deployment.yaml"
-            fi
+    local name service_dir
+    for name in $(services_all); do
+        # A kind: helm service's chart owns its namespace.
+        [ "$(service_field "$name" '.kind' manifests)" != "helm" ] || continue
+        service_dir="$HOMELAB_DIR/kubernetes/services/$name"
+        if [ -f "$service_dir/namespace.yaml" ]; then
+            success "$name has namespace.yaml"
         else
-            error "Service directory missing: $service"
+            fail "$name missing namespace.yaml"
         fi
     done
 }
@@ -229,20 +111,16 @@ check_kubernetes_manifests() {
 validate_service_connectivity() {
     log "Validating service connectivity (requires running environment)..."
 
-    # Common service endpoints to test
-    local services=(
-        "Pi-hole:http://pihole.homelab.local"
-        "Nextcloud:http://nextcloud.homelab.local"
-        "Vaultwarden:http://vault.homelab.local"
-        "Jellyfin:http://jellyfin.homelab.local"
-        "Grafana:http://grafana.homelab.local"
-        "Gitea:http://git.homelab.local"
-        "MinIO:http://minio.homelab.local"
-        "Dashboard:http://dashboard.homelab.local"
-    )
+    # Endpoints: infrastructure UIs plus every enabled service's descriptor url.
+    local services=("Grafana:https://grafana.$DOMAIN" "MinIO:https://minio.$DOMAIN")
+    local name url
+    for name in $(services_all); do
+        service_enabled "$name" || continue
+        url="$(service_url "$name")"
+        [[ -n "$url" ]] && services+=("$name:$url")
+    done
 
     local connectivity_failures=0
-
     for service_info in "${services[@]}"; do
         IFS=':' read -r service_name service_url <<< "$service_info"
         if ! check_service_health "$service_name" "$service_url"; then
@@ -269,15 +147,19 @@ run_yaml_syntax_check() {
         if python3 -c "import yaml, sys; list(yaml.safe_load_all(open(sys.argv[1])))" "$yaml_file" 2>/dev/null; then
             log "YAML syntax OK: $(basename "$yaml_file")"
         else
-            error "YAML syntax error in: $yaml_file"
+            fail "YAML syntax error in: $yaml_file"
             syntax_errors=$((syntax_errors+1))
         fi
-    done < <(find "$HOMELAB_DIR" \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/helm/*/templates/*" -print0)
+    # The repo's own YAML only: .tools/ is the pinned toolchain (a Go module
+    # cache full of deliberately malformed test fixtures), and a chart template
+    # is Go templating, not YAML.
+    done < <(find "$HOMELAB_DIR" \( -path "*/.git" -o -path "$HOMELAB_DIR/.tools" \) -prune -o \
+        \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/helm/*/templates/*" -print0)
 
     if [ $syntax_errors -eq 0 ]; then
         success "All YAML files have valid syntax"
     else
-        error "$syntax_errors YAML files have syntax errors"
+        fail "$syntax_errors YAML files have syntax errors"
     fi
 }
 
@@ -295,7 +177,7 @@ generate_report() {
     # Count successes and errors
     local success_count
     local error_count
-    success_count=$(grep -c "SUCCESS:" "$LOGFILE" 2>/dev/null || true)
+    success_count=$(grep -c "✅" "$LOGFILE" 2>/dev/null || true)
     success_count=${success_count:-0}
     error_count=$FAILURES
 
@@ -320,6 +202,17 @@ generate_report() {
     echo "Full log available at: $LOGFILE"
 }
 
+usage() {
+    cat << EOF
+Usage: $0 [all|config|k8s|connectivity]
+
+  all           every check below (default)
+  config        required config files and YAML syntax
+  k8s           service descriptors plus cluster health (scripts/lib/health.sh)
+  connectivity  HTTP reachability of every enabled service URL
+EOF
+}
+
 main() {
     local test_type="${1:-all}"
 
@@ -334,22 +227,18 @@ main() {
             check_kubernetes_manifests || true
             check_kubernetes_resources || true
             ;;
-        "docker")
-            check_docker_compose || true
-            ;;
         "connectivity")
             validate_service_connectivity || true
+            ;;
+        "help"|"-h"|"--help")
+            usage
+            exit 0
             ;;
         "all"|*)
             check_configuration_files || true
             run_yaml_syntax_check || true
             check_kubernetes_manifests || true
-            check_docker_compose || true
-            if kubectl cluster-info &> /dev/null; then
-                check_kubernetes_resources || true
-            else
-                log "Skipping Kubernetes checks (cluster not accessible)"
-            fi
+            check_kubernetes_resources || true
             validate_service_connectivity || true
             ;;
     esac

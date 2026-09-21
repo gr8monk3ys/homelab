@@ -1,0 +1,16 @@
+---
+# Pod Security: privileged, not restricted like the app namespaces. The
+# upgrade Jobs the controller creates run rancher/k3s-upgrade as privileged
+# pods with hostPath mounts (they replace the k3s binary on the node and
+# restart it), and the controller itself mounts the node's CA bundles from
+# hostPath. The upstream release manifest labels the namespace the same way.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: system-upgrade
+  labels:
+    name: system-upgrade
+    type: core
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

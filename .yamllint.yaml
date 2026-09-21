@@ -1,6 +1,10 @@
 extends: default
 
 ignore: |
+  # Vendored upstream CRDs are kept byte-identical to their release, so their
+  # long description fields are not ours to reflow.
+  **/services/*/crd.yaml
+  **/services/*/crds.yaml
   helm/**/templates/**
   **/helm/**/templates/**
   helm/**/_helpers.tpl

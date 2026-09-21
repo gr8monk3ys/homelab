@@ -6,11 +6,12 @@ kind: Kustomization
 #
 # Includes:
 # - Core apps (../core/applications.yaml)
-# - Optional stacks (this directory)
+# - Every opt-in / toggled-off service (../services/optional.yaml, generated)
 
 resources:
   - ../core/applications.yaml
-  - applications.yaml
+  - ../services/default.yaml
+  - ../services/optional.yaml
 
 configMapGenerator:
   - name: homelab-gitops-config

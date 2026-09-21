@@ -1,0 +1,15 @@
+---
+# Pod Security: privileged, not restricted like the app namespaces. kured
+# has to enter the host's mount namespace (hostPID + privileged, see
+# daemonset.yaml) to run the reboot command on the node; nothing else runs
+# here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kured
+  labels:
+    name: kured
+    type: core
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

@@ -1,0 +1,15 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: kured
+namespace: kured
+group: core
+optin: true
+description: Reboot daemon for /var/run/reboot-required (drain, reboot, uncordon; hostPID + privileged by design, see daemonset.yaml)
+steps:
+  - apply: rbac.yaml
+  - apply: daemonset.yaml
+    wait: name=kured
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: it drains through the Kubernetes API, which no template allows yet.
+networkPolicies: []

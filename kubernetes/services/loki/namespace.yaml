@@ -5,6 +5,18 @@ metadata:
   name: loki
   labels:
     name: loki
-    pod-security.kubernetes.io/enforce: baseline
+    # A log shipper must read /var/log/pods from the node, and a hostPath
+    # volume is forbidden by both the baseline and restricted standards. This
+    # namespace therefore enforces privileged, exactly as the other
+    # node-level services do (kured, the device plugins,
+    # system-upgrade-controller). It is the narrowest namespace that can hold
+    # Alloy: Loki itself and Alloy are the only workloads in it, and Alloy
+    # still drops every capability, refuses privilege escalation and mounts
+    # /var/log read-only. audit and warn stay at restricted so anything else
+    # landing here is still reported.
+    #
+    # Without this, INSTALL_ALLOY=true installs a DaemonSet whose pods are
+    # rejected at admission and logging silently never works.
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

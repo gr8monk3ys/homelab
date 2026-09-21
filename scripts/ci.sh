@@ -8,19 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$REPO_ROOT/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-  PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-  PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
-
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+source "$SCRIPT_DIR/lib/common.sh"
 
 warn() {
   log "WARNING: $*"
@@ -95,7 +83,6 @@ run_yamllint() {
     "$REPO_ROOT/ansible" \
     "$REPO_ROOT/config" \
     "$REPO_ROOT/kubernetes" \
-    "$REPO_ROOT/kustomize" \
     "$REPO_ROOT/helm"
 }
 
@@ -118,6 +105,7 @@ run_kubeconform() {
       ! -name "*-patch.yml" \
       ! -name "kustomization.yaml" \
       ! -name "kustomization.yml" \
+      ! -name "service.yaml" \
       -print | sort
   )
 
@@ -125,6 +113,74 @@ run_kubeconform() {
     warn "No Kubernetes YAML manifests found under kubernetes/ (unexpected)"
     return 0
   fi
+
+  kubeconform \
+    -strict \
+    -ignore-missing-schemas \
+    -schema-location default \
+    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    -summary \
+    "${files[@]}"
+}
+
+run_services_check() {
+  # The service catalogue is the installer's interface, so CI tests through it:
+  # every kubernetes/services/<name>/ has a valid service.yaml, and every service
+  # renders (with non-default placeholders) into manifests kubeconform accepts.
+  if ! require_cmd yq; then
+    return 0
+  fi
+
+  log "services check (descriptors)..."
+  "$REPO_ROOT/scripts/services.sh" check
+
+  log "argocd check (generated app-of-apps is current)..."
+  "$REPO_ROOT/scripts/services.sh" argocd --check
+
+  log "secrets check (producer vs ExternalSecret consumers)..."
+  "$REPO_ROOT/scripts/secrets-check.sh"
+
+  if ! require_cmd kubeconform; then
+    return 0
+  fi
+
+  log "services render + kubeconform (through install_service)..."
+  local render_dir
+  render_dir="$(mktemp -d "${TMPDIR:-/tmp}/homelab-render.XXXXXX")"
+  # shellcheck disable=SC2064  # expand now: the path is fixed
+  trap "rm -rf '$render_dir'" RETURN
+  DOMAIN="ci.example.test" \
+    ADMIN_EMAIL="ci@example.test" \
+    TIMEZONE="Europe/Amsterdam" \
+    CERT_MANAGER_CLUSTER_ISSUER="letsencrypt-staging" \
+    "$REPO_ROOT/scripts/services.sh" render "$render_dir" >/dev/null
+
+  # Infrastructure manifests go through the same seam (placeholders included).
+  log "infrastructure render (through render_stream)..."
+  local f rel
+  while IFS= read -r f; do
+    rel="${f#"$REPO_ROOT"/}"
+    mkdir -p "$render_dir/$(dirname "$rel")"
+    DOMAIN="ci.example.test" ADMIN_EMAIL="ci@example.test" TIMEZONE="Europe/Amsterdam" \
+      CERT_MANAGER_CLUSTER_ISSUER="letsencrypt-staging" \
+      "$REPO_ROOT/scripts/services.sh" render-file "$f" > "$render_dir/$rel"
+  done < <(
+    find "$REPO_ROOT/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) \
+      ! -path "$REPO_ROOT/kubernetes/services/*" \
+      ! -path "$REPO_ROOT/kubernetes/secrets/sops/*" \
+      ! -name "values.yaml" ! -name "*.values.yaml" ! -name "*-patch.yaml" \
+      ! -name "kustomization.yaml" -print | sort
+  )
+
+  if grep -rl "homelab\.local" "$render_dir" >/dev/null; then
+    grep -rl 'homelab\.local' "$render_dir" | sed "s|^$render_dir/|  |"
+    die "Rendered manifests above still contain the homelab.local placeholder"
+  fi
+
+  local files=()
+  while IFS= read -r f; do
+    files+=("$f")
+  done < <(find "$render_dir" -type f -name "*.yaml" -print | sort)
 
   kubeconform \
     -strict \
@@ -172,112 +228,31 @@ run_helm_remote_smoke() {
     return 0
   fi
 
-  # This repo uses several third-party Helm charts with pinned versions.
-  # Templating them in CI catches schema/template breakages early.
+  # Every third-party chart the installer pins (HELM_INFRA_RELEASES in
+  # scripts/lib/helm.sh) is templated in render mode, through the same
+  # helm_release the installer uses, so CI never keeps its own chart list.
   if [[ "${CI:-}" != "true" && "${HELM_REMOTE_SMOKE:-false}" != "true" ]]; then
     log "helm template smoke (remote charts) skipped (set HELM_REMOTE_SMOKE=true to run locally)"
     return 0
   fi
 
-  local versions_file="$REPO_ROOT/tools/versions.env"
-  if [[ ! -f "$versions_file" ]]; then
-    warn "Missing $versions_file; skipping helm template smoke"
-    return 0
-  fi
-  # shellcheck disable=SC1090
-  source "$versions_file"
+  log "helm template smoke (remote charts, through helm_release)..."
+  source "$SCRIPT_DIR/lib/render.sh"
+  source "$SCRIPT_DIR/lib/helm.sh"
 
-  local required_vars=(
-    TRAEFIK_CHART_VERSION
-    CERT_MANAGER_CHART_VERSION
-    EXTERNAL_SECRETS_CHART_VERSION
-    KUBE_PROMETHEUS_STACK_CHART_VERSION
-    METALLB_CHART_VERSION
-    KYVERNO_CHART_VERSION
-    VELERO_CHART_VERSION
-    EXTERNAL_DNS_CHART_VERSION
-    PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION
-  )
-  local missing=()
-  local v
-  for v in "${required_vars[@]}"; do
-    if [[ -z "${!v:-}" ]]; then
-      missing+=("$v")
-    fi
-  done
-  if [[ ${#missing[@]} -ne 0 ]]; then
+  local render_dir
+  render_dir="$(mktemp -d "${TMPDIR:-/tmp}/homelab-helm-smoke.XXXXXX")"
+  # shellcheck disable=SC2064  # expand now: the path is fixed
+  trap "rm -rf '$render_dir'" RETURN
+  homelab_load_config >/dev/null
+
+  # helm_template_all warns and skips a chart it cannot fetch; here that is a failure in CI.
+  if ! (HOMELAB_APPLY_MODE=render HOMELAB_RENDER_DIR="$render_dir" helm_template_all); then
     if [[ "${CI:-}" == "true" ]]; then
-      die "Missing required version vars in tools/versions.env: ${missing[*]}"
+      die "helm template failed for one or more charts (see warnings above)"
     fi
-    warn "Missing version vars (skipping helm template smoke): ${missing[*]}"
-    return 0
+    warn "helm template skipped one or more charts (chart repos unreachable?)"
   fi
-
-  log "helm template smoke (remote charts)..."
-
-  # Ensure repos exist (idempotent), then template pinned versions.
-  helm repo add traefik https://traefik.github.io/charts >/dev/null 2>&1 || true
-  helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
-  helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
-  helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ >/dev/null 2>&1 || true
-  helm repo add metallb https://metallb.github.io/metallb >/dev/null 2>&1 || true
-  helm repo add kyverno https://kyverno.github.io/kyverno/ >/dev/null 2>&1 || true
-  helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts >/dev/null 2>&1 || true
-  helm repo update >/dev/null
-
-  helm template traefik traefik/traefik \
-    --version "$TRAEFIK_CHART_VERSION" \
-    --namespace traefik-system \
-    --values "$REPO_ROOT/kubernetes/ingress/traefik/values.yaml" \
-    >/dev/null
-
-  helm template cert-manager jetstack/cert-manager \
-    --version "$CERT_MANAGER_CHART_VERSION" \
-    --namespace cert-manager \
-    --set installCRDs=true \
-    >/dev/null
-
-  helm template external-secrets external-secrets/external-secrets \
-    --version "$EXTERNAL_SECRETS_CHART_VERSION" \
-    --namespace external-secrets \
-    --set installCRDs=true \
-    >/dev/null
-
-  helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-    --version "$KUBE_PROMETHEUS_STACK_CHART_VERSION" \
-    --namespace monitoring \
-    --values "$REPO_ROOT/kubernetes/monitoring/prometheus/values.yaml" \
-    >/dev/null
-
-  helm template metallb metallb/metallb \
-    --version "$METALLB_CHART_VERSION" \
-    --namespace metallb-system \
-    >/dev/null
-
-  helm template kyverno kyverno/kyverno \
-    --version "$KYVERNO_CHART_VERSION" \
-    --namespace kyverno \
-    --values "$REPO_ROOT/kubernetes/policy/kyverno/values.yaml" \
-    >/dev/null
-
-  helm template velero vmware-tanzu/velero \
-    --version "$VELERO_CHART_VERSION" \
-    --namespace velero \
-    --values "$REPO_ROOT/kubernetes/backup/velero/values.yaml" \
-    >/dev/null
-
-  helm template external-dns external-dns/external-dns \
-    --version "$EXTERNAL_DNS_CHART_VERSION" \
-    --namespace external-dns \
-    --values "$REPO_ROOT/kubernetes/dns/external-dns/values.yaml" \
-    >/dev/null
-
-  helm template blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
-    --version "$PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION" \
-    --namespace monitoring \
-    --values "$REPO_ROOT/kubernetes/monitoring/blackbox-exporter/values.yaml" \
-    >/dev/null
 }
 
 run_kustomize_build() {
@@ -285,34 +260,18 @@ run_kustomize_build() {
     return 0
   fi
 
-  log "kustomize build (overlays)..."
-  if [[ ! -d "$REPO_ROOT/kustomize/overlays" ]]; then
-    warn "No kustomize overlays directory found (kustomize/overlays)"
-  else
-    local overlay
-    local found=false
-    for overlay in "$REPO_ROOT"/kustomize/overlays/*; do
-      if [[ -f "$overlay/kustomization.yaml" ]]; then
-        found=true
-        kustomize build --load-restrictor LoadRestrictionsNone "$overlay" >/dev/null
-      fi
-    done
-    if [[ "$found" != "true" ]]; then
-      warn "No overlays found under kustomize/overlays/*"
+  # The only kustomizations in the repo are the ArgoCD app-of-apps and the
+  # SOPS secret store (docs/adr/0003-no-kustomize-overlay.md). The SOPS one
+  # needs the KSOPS exec plugin and an age key, so it is not built here.
+  local dir
+  for dir in \
+    "$REPO_ROOT/kubernetes/gitops/argocd/apps/core" \
+    "$REPO_ROOT/kubernetes/gitops/argocd/apps/full"; do
+    if [[ -f "$dir/kustomization.yaml" ]]; then
+      log "kustomize build (${dir#"$REPO_ROOT"/})..."
+      kustomize build --load-restrictor LoadRestrictionsNone "$dir" >/dev/null
     fi
-  fi
-
-  # Validate additional kustomizations used directly by scripts and/or GitOps.
-  local argocd_apps_core="$REPO_ROOT/kubernetes/gitops/argocd/apps/core"
-  local argocd_apps_full="$REPO_ROOT/kubernetes/gitops/argocd/apps/full"
-  if [[ -f "$argocd_apps_core/kustomization.yaml" ]]; then
-    log "kustomize build (argocd apps: core)..."
-    kustomize build --load-restrictor LoadRestrictionsNone "$argocd_apps_core" >/dev/null
-  fi
-  if [[ -f "$argocd_apps_full/kustomization.yaml" ]]; then
-    log "kustomize build (argocd apps: full)..."
-    kustomize build --load-restrictor LoadRestrictionsNone "$argocd_apps_full" >/dev/null
-  fi
+  done
 }
 
 run_docs_check() {
@@ -337,6 +296,7 @@ main() {
   run_shellcheck
   run_yamllint
   run_kubeconform
+  run_services_check
   run_helm_lint
   run_helm_remote_smoke
   run_kustomize_build

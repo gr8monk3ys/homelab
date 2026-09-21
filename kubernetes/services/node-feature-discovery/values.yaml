@@ -1,0 +1,22 @@
+---
+# Node Feature Discovery Helm values (chart nfd/node-feature-discovery,
+# NFD_CHART_VERSION in tools/versions.env). Rendered like a manifest.
+#
+# Defaults are fine for one node: a master Deployment, a worker DaemonSet and
+# the garbage collector. NodeFeatureRule CRs (for example
+# kubernetes/services/intel-device-plugin/node-feature-rule.yaml) add vendor
+# labels on top of the built-in feature.node.kubernetes.io/* ones.
+master:
+  replicaCount: 1
+
+worker:
+  config:
+    core:
+      # How often the worker re-scans the node; hardware does not change often.
+      sleepInterval: 300s
+
+topologyUpdater:
+  enable: false
+
+gc:
+  enable: true

@@ -1,0 +1,13 @@
+---
+# Pod Security: privileged. The plugin mounts /dev/dri, /sys/class/drm and
+# /var/lib/kubelet/device-plugins from the host.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: intel-device-plugins
+  labels:
+    name: intel-device-plugins
+    type: core
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

@@ -1,0 +1,82 @@
+---
+# Renovate runtime settings. Edit this ConfigMap after install:
+#
+#   RENOVATE_REPOSITORIES is the placeholder `your-username/homelab`. The
+#   installer's render step replaces only the GitOps repo URL
+#   (https://github.com/your-username/homelab.git), NOT this bare owner/name,
+#   so the operator sets it by hand:
+#     kubectl -n renovate edit configmap renovate-config
+#   (or edit here and re-apply). Until then every run fails fast with a
+#   "repository not found" from GitHub, which is the safe default.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: renovate-config
+  namespace: renovate
+  labels:
+    app: renovate
+data:
+  RENOVATE_PLATFORM: "github"
+  RENOVATE_REPOSITORIES: "your-username/homelab"
+  # Renovate reads the repository config from the repository itself, so the
+  # key below is an EXAMPLE to copy to the repo root as renovate.json5 (the
+  # onboarding PR Renovate opens on its first run is the usual way in). It is
+  # not consumed by the CronJob and could not be validated here; the shape
+  # follows docs/usage/configuration-options.md in renovatebot/renovate
+  # (managerFilePatterns, customManagers[].customType: regex, kubernetes manager).
+  renovate.json5: |
+    {
+      // Copy to <repo>/renovate.json5. Comments are allowed in JSON5.
+      "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+      "extends": ["config:recommended", ":disableDependencyDashboard"],
+      "timezone": "UTC",
+      // Nothing merges by itself; every update is a PR to review.
+      "automerge": false,
+      "prConcurrentLimit": 5,
+      "labels": ["dependencies"],
+      // Every image tag in the manifests. The kubernetes manager has no
+      // default file pattern, so name the tree explicitly.
+      "kubernetes": {
+        "managerFilePatterns": ["/^kubernetes/.+\\.ya?ml$/"]
+      },
+      "customManagers": [
+        {
+          // Helm chart versions pinned in tools/versions.env, e.g.
+          //   TRAEFIK_CHART_VERSION=39.0.1
+          // The chart repo has to be named per variable; add a
+          // packageRules entry (below) for each *_CHART_VERSION.
+          "customType": "regex",
+          "managerFilePatterns": ["/^tools/versions\\.env$/"],
+          "matchStrings": [
+            "(?<depName>[A-Z0-9_]+)_CHART_VERSION=v?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\s"
+          ],
+          "datasourceTemplate": "helm",
+          "versioningTemplate": "semver"
+        }
+      ],
+      "packageRules": [
+        // Map the versions.env variable names onto chart repos.
+        { "matchDepNames": ["TRAEFIK"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://traefik.github.io/charts"], "packageNameTemplate": "traefik" },
+        { "matchDepNames": ["CERT_MANAGER"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://charts.jetstack.io"], "packageNameTemplate": "cert-manager" },
+        { "matchDepNames": ["EXTERNAL_SECRETS"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://charts.external-secrets.io"], "packageNameTemplate": "external-secrets" },
+        { "matchDepNames": ["KUBE_PROMETHEUS_STACK", "PROMETHEUS_BLACKBOX_EXPORTER"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://prometheus-community.github.io/helm-charts"] },
+        { "matchDepNames": ["METALLB"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://metallb.github.io/metallb"], "packageNameTemplate": "metallb" },
+        { "matchDepNames": ["VELERO"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://vmware-tanzu.github.io/helm-charts"], "packageNameTemplate": "velero" },
+        { "matchDepNames": ["EXTERNAL_DNS"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://kubernetes-sigs.github.io/external-dns/"], "packageNameTemplate": "external-dns" },
+        { "matchDepNames": ["KYVERNO"], "matchDatasources": ["helm"],
+          "registryUrls": ["https://kyverno.github.io/kyverno/"], "packageNameTemplate": "kyverno" },
+        // Databases move only with a human: no major bumps for Postgres/MySQL/Redis images.
+        { "matchDatasources": ["docker"], "matchPackageNames": ["postgres", "mysql", "redis", "mariadb"],
+          "matchUpdateTypes": ["major"], "enabled": false },
+        // Group all Docker image bumps of one service directory into one PR.
+        { "matchDatasources": ["docker"], "matchFileNames": ["kubernetes/services/**"],
+          "groupName": "service images" }
+      ]
+    }

@@ -1,0 +1,153 @@
+---
+# Stirling-PDF - PDF toolbox (merge, split, OCR, convert...)
+#
+# Image: the research doc cites docker.stirlingpdf.com/stirlingtools/stirling-pdf
+# without a tag, so the NOMAD-pinned ghcr.io/stirling-tools/s-pdf:2.13.1 is used.
+# The image entrypoint (scripts/init.sh) switches to stirlingpdfuser (uid 1000)
+# only when started as root; started as 1000 it just logs a warning and runs,
+# so the pod is non-root from the start. It writes to /configs, /logs and
+# TMPDIR=/tmp/stirling-pdf, and LibreOffice/Tesseract scribble under $HOME,
+# so the root filesystem stays writable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stirling-pdf
+  namespace: stirling-pdf
+  labels:
+    app: stirling-pdf
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: stirling-pdf
+  template:
+    metadata:
+      labels:
+        app: stirling-pdf
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: stirling-pdf
+        image: ghcr.io/stirling-tools/s-pdf:2.13.1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        env:
+        # No login/enterprise features; the UI sits behind Traefik on the LAN.
+        - name: DISABLE_ADDITIONAL_FEATURES
+          value: "true"
+        - name: SYSTEM_ENABLEANALYTICS
+          value: "false"
+        - name: LANGS
+          value: "en_GB"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: configs
+          mountPath: /configs
+        - name: logs
+          mountPath: /logs
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          # JVM plus LibreOffice for office conversions: bigger than the usual
+          # 64-512Mi envelope on purpose.
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        startupProbe:
+          httpGet:
+            path: /api/v1/info/status
+            port: 8080
+          periodSeconds: 10
+          failureThreshold: 30
+        livenessProbe:
+          httpGet:
+            path: /api/v1/info/status
+            port: 8080
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/info/status
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: configs
+        persistentVolumeClaim:
+          claimName: stirling-pdf-configs-pvc
+      - name: logs
+        emptyDir: {}
+      - name: tmp
+        emptyDir:
+          sizeLimit: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stirling-pdf-configs-pvc
+  namespace: stirling-pdf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stirling-pdf
+  namespace: stirling-pdf
+spec:
+  selector:
+    app: stirling-pdf
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stirling-pdf-ingress
+  namespace: stirling-pdf
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - pdf.homelab.local
+    secretName: stirling-pdf-tls
+  rules:
+  - host: pdf.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: stirling-pdf
+            port:
+              number: 8080

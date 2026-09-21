@@ -1,74 +1,10 @@
----
-# Default deny egress policies for sensitive namespaces
-# These policies block all outbound traffic by default, then allow specific destinations
-
-# =============================================================================
-# VAULTWARDEN - Password manager (highly sensitive, minimal egress needed)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: vaultwarden
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: vaultwarden
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-
-# =============================================================================
-# AUTHELIA - Authentication service (needs DNS only for internal auth)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: authelia
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: authelia
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+# Egress allow-lists that are finer than the per-namespace templates.
+#
+# Namespace-wide default-deny and allow-dns for every catalogued service
+# (Nextcloud included, via its kind: helm descriptor) come from its
+# service.yaml (networkPolicies:) via scripts/lib/netpol.sh. The per-pod rules
+# below (app -> its database, app -> internet) are additive on top of the
+# templates and stay as documentation of what each app actually needs.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -89,40 +25,6 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-
-# =============================================================================
-# NEXTCLOUD - File storage (needs external for federation, apps, updates)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: nextcloud
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: nextcloud
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -160,40 +62,6 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
-
-# =============================================================================
-# PAPERLESS-NGX - Document management (minimal external access)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: paperless-ngx
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: paperless-ngx
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -234,40 +102,6 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-
-# =============================================================================
-# IMMICH - Photo management (needs ML services internally)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: immich
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: immich
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -289,40 +123,6 @@ spec:
           port: 6379  # Redis
         - protocol: TCP
           port: 3003  # ML service
-
-# =============================================================================
-# GITEA - Git server (needs external for mirroring, webhooks)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: gitea
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: gitea
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -362,40 +162,6 @@ spec:
           port: 443
         - protocol: TCP
           port: 22  # SSH for git operations
-
-# =============================================================================
-# LINKWARDEN - Bookmark manager (needs external for fetching pages)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: linkwarden
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: linkwarden
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -435,40 +201,6 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
-
-# =============================================================================
-# N8N - Automation (needs external for webhooks and integrations)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: n8n
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: n8n
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

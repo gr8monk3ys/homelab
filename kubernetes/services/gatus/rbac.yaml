@@ -1,0 +1,43 @@
+---
+# RBAC for the gatus-sidecar container in deployment.yaml: read-only on the
+# resources it turns into endpoints (the "Minimum RBAC" block of its
+# README, trimmed to the controllers enabled: Ingress + IngressClass for
+# annotation inheritance, and Traefik IngressRoute). Gatus itself needs no
+# API access; it only shares the ServiceAccount because both containers
+# are one pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gatus-sidecar
+  namespace: gatus
+  labels:
+    app: gatus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gatus-sidecar
+  labels:
+    app: gatus
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "ingressclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gatus-sidecar
+  labels:
+    app: gatus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gatus-sidecar
+subjects:
+  - kind: ServiceAccount
+    name: gatus-sidecar
+    namespace: gatus

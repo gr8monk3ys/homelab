@@ -5,65 +5,48 @@ set -euo pipefail
 # Features: Secret management, Helm charts, Kustomize, health checks
 
 HOMELAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOGFILE="$HOMELAB_DIR/setup.log"
-CONFIG_FILE="${CONFIG_FILE:-$HOMELAB_DIR/config/homelab.yaml}"
+# DR (scripts/disaster-recovery.sh) sources this file and points LOGFILE at its own log.
+LOGFILE="${LOGFILE:-$HOMELAB_DIR/setup.log}"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
+# Shared preamble (tools PATH, versions.env, log family), the rendering seam,
+# and the service catalogue. See scripts/lib/*.sh.
+source "$HOMELAB_DIR/scripts/lib/common.sh"
+source "$HOMELAB_DIR/scripts/lib/render.sh"
+source "$HOMELAB_DIR/scripts/lib/helm.sh"
+source "$HOMELAB_DIR/scripts/lib/services.sh"
+source "$HOMELAB_DIR/scripts/lib/netpol.sh"
+source "$HOMELAB_DIR/scripts/lib/health.sh"
 
-VERSIONS_FILE="${VERSIONS_FILE:-$HOMELAB_DIR/tools/versions.env}"
-if [[ ! -f "$VERSIONS_FILE" ]]; then
-    echo "ERROR: Missing versions file: $VERSIONS_FILE" >&2
-    exit 1
-fi
-# shellcheck disable=SC1090
-source "$VERSIONS_FILE"
-
-# Capture explicit env overrides (if any). Config file fills defaults; env overrides win.
-ENVIRONMENT_OVERRIDE="${ENVIRONMENT-}"
-DOMAIN_OVERRIDE="${DOMAIN-}"
-TIMEZONE_OVERRIDE="${TIMEZONE-}"
-ADMIN_EMAIL_OVERRIDE="${ADMIN_EMAIL-}"
-CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE="${CERT_MANAGER_CLUSTER_ISSUER-}"
-GITOPS_REPO_URL_OVERRIDE="${GITOPS_REPO_URL-}"
-
-# Defaults (may be overridden by config)
-ENVIRONMENT="production"
-DOMAIN="homelab.local"
-TIMEZONE="UTC"
-ADMIN_EMAIL="admin@homelab.local"
-CERT_MANAGER_CLUSTER_ISSUER="homelab-ca"
-GITOPS_REPO_URL="https://github.com/your-username/homelab.git"
+# DOMAIN, TIMEZONE, ADMIN_EMAIL, CERT_MANAGER_CLUSTER_ISSUER, GITOPS_REPO_URL:
+# defaults <- config/homelab.yaml <- environment (see homelab_load_config).
 
 # Feature toggles (set env vars to "true"/"false")
 ENABLE_GITOPS="${ENABLE_GITOPS:-false}"
 # When true, apply `kubernetes/gitops/argocd/` after ArgoCD install. Those manifests contain placeholders by default.
 APPLY_GITOPS_MANIFESTS="${APPLY_GITOPS_MANIFESTS:-false}"
-ENABLE_DEV_SERVICES="${ENABLE_DEV_SERVICES:-false}"
-ENABLE_AI_SERVICES="${ENABLE_AI_SERVICES:-false}"
+# Every service group's toggle (ENABLE_MEDIA_SERVICES, ENABLE_AI_SERVICES,
+# INSTALL_MONITORING, INSTALL_LOGGING, ...) gets its effective value here,
+# from the environment or from the group's default column in SERVICE_GROUPS
+# (scripts/lib/services.sh). That table is the only place a group's default
+# is written: `./scripts/services.sh list` and the generated ArgoCD
+# app-of-apps read the same column.
+service_group_toggles_apply
 
-ENABLE_NETWORK_SERVICES="${ENABLE_NETWORK_SERVICES:-true}"
-ENABLE_CONTENT_SERVICES="${ENABLE_CONTENT_SERVICES:-true}"
-ENABLE_MEDIA_SERVICES="${ENABLE_MEDIA_SERVICES:-true}"
-ENABLE_PRODUCTIVITY_SERVICES="${ENABLE_PRODUCTIVITY_SERVICES:-true}"
+# Services marked `optin: true` in their service.yaml install only when named here
+# (space/comma separated) or when set to "all". `./scripts/services.sh list` shows them.
+OPTIN_SERVICES="${OPTIN_SERVICES:-}"
 
 INSTALL_METALLB="${INSTALL_METALLB:-true}"
 INSTALL_TRAEFIK="${INSTALL_TRAEFIK:-true}"
 INSTALL_CERT_MANAGER="${INSTALL_CERT_MANAGER:-true}"
 INSTALL_EXTERNAL_SECRETS="${INSTALL_EXTERNAL_SECRETS:-true}"
 INSTALL_EXTERNAL_DNS="${INSTALL_EXTERNAL_DNS:-false}"
-INSTALL_MONITORING="${INSTALL_MONITORING:-true}"
+# INSTALL_MONITORING and INSTALL_LOGGING are the monitoring and logging
+# *group* toggles as well, so service_group_toggles_apply above has already
+# set them; only what they switch on beyond a group is listed here.
 INSTALL_BLACKBOX_EXPORTER="${INSTALL_BLACKBOX_EXPORTER:-true}"
 CONFIGURE_ALERTING="${CONFIGURE_ALERTING:-false}"
-INSTALL_LOGGING="${INSTALL_LOGGING:-false}"
-INSTALL_PROMTAIL="${INSTALL_PROMTAIL:-false}"
+INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
 INSTALL_VELERO="${INSTALL_VELERO:-true}"
 
 # Optional: include an encrypted backup of secret values in backup_configuration()
@@ -81,43 +64,6 @@ KYVERNO_POLICY_MODE="${KYVERNO_POLICY_MODE:-audit}" # audit|enforce
 
 # When true and Pi-hole is enabled, configure wildcard DNS for *.$DOMAIN to Traefik's LoadBalancer.
 CONFIGURE_WILDCARD_DNS="${CONFIGURE_WILDCARD_DNS:-true}"
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
-
-success() {
-    log "✅ $*"
-}
-
-warning() {
-    log "⚠️  $*"
-}
-
-detect_arch() {
-    local arch
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64|amd64)  echo "amd64" ;;
-        aarch64|arm64) echo "arm64" ;;
-        *)             error "Unsupported architecture: $arch" ;;
-    esac
-}
-
-detect_os() {
-    local os
-    os=$(uname -s | tr '[:upper:]' '[:lower:]')
-    case "$os" in
-        linux)  echo "linux" ;;
-        darwin) echo "darwin" ;;
-        *)      error "Unsupported OS: $os" ;;
-    esac
-}
 
 check_requirements() {
     log "Checking system requirements..."
@@ -207,156 +153,17 @@ install_tools() {
         rm -rf "$tmpdir"
     fi
 
-    # Add Helm repositories
-    log "Adding Helm repositories..."
-    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || log "WARNING: prometheus-community repo may already exist"
-    helm repo add bitnami https://charts.bitnami.com/bitnami || log "WARNING: bitnami repo may already exist"
-    helm repo add jetstack https://charts.jetstack.io || log "WARNING: jetstack repo may already exist"
-    helm repo add traefik https://traefik.github.io/charts || log "WARNING: traefik repo may already exist"
-    helm repo add external-secrets https://charts.external-secrets.io || log "WARNING: external-secrets repo may already exist"
-    helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ || log "WARNING: external-dns repo may already exist"
-    helm repo add metallb https://metallb.github.io/metallb || log "WARNING: metallb repo may already exist"
-    helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || log "WARNING: vmware-tanzu repo may already exist"
-
-    if ! helm repo update; then
-        error "Failed to update Helm repositories"
-    fi
+    add_helm_repos
 
     success "Tools installation completed"
 }
 
-load_config() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        warning "Config file not found at $CONFIG_FILE; using defaults and env overrides."
-        return 0
-    fi
-
-    if ! command -v yq &> /dev/null; then
-        warning "yq is not installed; skipping config parsing. (setup-v2.sh installs yq in install_tools)"
-        return 0
-    fi
-
-    local cfg_domain cfg_timezone cfg_email cfg_issuer cfg_environment cfg_gitops_repo_url
-    cfg_domain="$(yq -r '.homelab.domain // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_timezone="$(yq -r '.homelab.timezone // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_email="$(yq -r '.homelab.email // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_environment="$(yq -r '.homelab.environment // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_issuer="$(yq -r '.ingress.cert_manager.cluster_issuer // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_gitops_repo_url="$(yq -r '.gitops.repo_url // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-
-    [[ -n "${cfg_domain:-}" ]] && DOMAIN="$cfg_domain"
-    [[ -n "${cfg_timezone:-}" ]] && TIMEZONE="$cfg_timezone"
-    [[ -n "${cfg_email:-}" ]] && ADMIN_EMAIL="$cfg_email"
-    [[ -n "${cfg_environment:-}" ]] && ENVIRONMENT="$cfg_environment"
-    [[ -n "${cfg_issuer:-}" ]] && CERT_MANAGER_CLUSTER_ISSUER="$cfg_issuer"
-    [[ -n "${cfg_gitops_repo_url:-}" ]] && GITOPS_REPO_URL="$cfg_gitops_repo_url"
-}
-
-apply_env_overrides() {
-    [[ -n "${DOMAIN_OVERRIDE:-}" ]] && DOMAIN="$DOMAIN_OVERRIDE"
-    [[ -n "${TIMEZONE_OVERRIDE:-}" ]] && TIMEZONE="$TIMEZONE_OVERRIDE"
-    [[ -n "${ADMIN_EMAIL_OVERRIDE:-}" ]] && ADMIN_EMAIL="$ADMIN_EMAIL_OVERRIDE"
-    [[ -n "${ENVIRONMENT_OVERRIDE:-}" ]] && ENVIRONMENT="$ENVIRONMENT_OVERRIDE"
-    [[ -n "${CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE:-}" ]] && CERT_MANAGER_CLUSTER_ISSUER="$CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE"
-    [[ -n "${GITOPS_REPO_URL_OVERRIDE:-}" ]] && GITOPS_REPO_URL="$GITOPS_REPO_URL_OVERRIDE"
-}
-
-escape_sed_replacement() {
-    # Escape replacement strings for sed (/, \, &).
-    printf '%s' "$1" | sed -e 's/[\\/&]/\\&/g'
-}
-
-render_stream() {
-    local admin_email_esc domain_esc timezone_esc issuer_esc gitops_repo_url_esc
-    admin_email_esc="$(escape_sed_replacement "$ADMIN_EMAIL")"
-    domain_esc="$(escape_sed_replacement "$DOMAIN")"
-    timezone_esc="$(escape_sed_replacement "$TIMEZONE")"
-    issuer_esc="$(escape_sed_replacement "$CERT_MANAGER_CLUSTER_ISSUER")"
-    gitops_repo_url_esc="$(escape_sed_replacement "$GITOPS_REPO_URL")"
-
-    # 1) Email replacement first (domain replacement would otherwise partially change it).
-    # 2) GitOps repo URL placeholder replacement.
-    # 3) Domain replacement across the repo defaults.
-    # 4) TZ defaults (most manifests use value: "UTC" for TZ).
-    # 5) cert-manager issuer selection for Ingress annotations.
-    sed \
-        -e "s/admin@homelab\\.local/${admin_email_esc}/g" \
-        -e "s/https:\\/\\/github\\.com\\/your-username\\/homelab\\.git/${gitops_repo_url_esc}/g" \
-        -e "s/homelab\\.local/${domain_esc}/g" \
-        -e "s/value: \\\"UTC\\\"/value: \\\"${timezone_esc}\\\"/g" \
-        -e "s/cert-manager\\.io\\/cluster-issuer: \\\"homelab-ca\\\"/cert-manager.io\\/cluster-issuer: \\\"${issuer_esc}\\\"/g"
-}
-
-render_file() {
-    local file="$1"
-    if [[ ! -f "$file" ]]; then
-        error "render_file: file not found: $file"
-    fi
-    render_stream < "$file"
-}
-
-crd_exists() {
-    local crd="$1"
-    kubectl get crd "$crd" >/dev/null 2>&1
-}
-
-kubectl_apply_rendered_file() {
-    local file="$1"
-    render_file "$file" | kubectl apply -f -
-}
-
-kubectl_apply_rendered_dir() {
-    local dir="$1"
-    if [[ ! -d "$dir" ]]; then
-        error "kubectl_apply_rendered_dir: directory not found: $dir"
-    fi
-
-    local files=()
-    local has_servicemonitor_crd="false"
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        has_servicemonitor_crd="true"
-    fi
-
-    while IFS= read -r file; do
-        local base
-        base="$(basename "$file")"
-        if [[ "$base" == "servicemonitor.yaml" || "$base" == "servicemonitor.yml" ]]; then
-            if [[ "$has_servicemonitor_crd" != "true" ]]; then
-                continue
-            fi
-        fi
-        files+=("$file")
-    done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort)
-
-    if [ ${#files[@]} -eq 0 ]; then
-        warning "No YAML files found under: $dir"
-        return 0
-    fi
-
-    # Apply all YAML in a deterministic order, ensuring namespaces are created first.
-    {
-        local f
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" == "namespace.yaml" ]]; then
-                render_file "$f"
-                echo ""
-            fi
-        done
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" != "namespace.yaml" ]]; then
-                render_file "$f"
-                echo ""
-            fi
-        done
-    } | kubectl apply -f -
-}
-
-render_to_tmpfile() {
-    local file="$1"
-    local tmp
-    tmp="$(mktemp "${TMPDIR:-/tmp}/homelab-render.XXXXXX.yaml")"
-    render_file "$file" > "$tmp"
-    echo "$tmp"
+# Chart repos are not fetched up front: helm_release (scripts/lib/helm.sh)
+# adds and updates the one repo a chart needs, so an unreachable repo fails
+# only that release and a run with every INSTALL_* Helm toggle off needs no
+# repo at all. Kept as a phase name for install_tools and disaster recovery.
+add_helm_repos() {
+    log "Helm repositories are added per chart at install time (HELM_REPOS in scripts/lib/helm.sh)."
 }
 
 setup_secrets() {
@@ -374,20 +181,7 @@ setup_secrets() {
     done
 
     if [[ "$INSTALL_EXTERNAL_SECRETS" == "true" ]]; then
-        if [[ -z "${EXTERNAL_SECRETS_CHART_VERSION:-}" ]]; then
-            error "Missing EXTERNAL_SECRETS_CHART_VERSION (set in tools/versions.env)"
-        fi
-        log "Installing External Secrets Operator (Helm)..."
-        helm upgrade --install external-secrets external-secrets/external-secrets \
-            --namespace external-secrets \
-            --create-namespace \
-            --version "$EXTERNAL_SECRETS_CHART_VERSION" \
-            --set installCRDs=true \
-            --wait
-
-        # Wait for External Secrets Operator to be ready
-        kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=external-secrets -n external-secrets --timeout=300s || \
-            warning "External Secrets pods not ready yet (continuing)"
+        helm_infra_release external-secrets
 
         # Deploy SecretStore RBAC + ClusterSecretStore (requires ESO CRDs)
         kubectl_apply_rendered_file kubernetes/secrets/secret-store-rbac.yaml
@@ -428,31 +222,13 @@ setup_ingress() {
     log "Setting up ingress controller and certificates..."
 
     if [[ "$INSTALL_TRAEFIK" == "true" ]]; then
-        if [[ -z "${TRAEFIK_CHART_VERSION:-}" ]]; then
-            error "Missing TRAEFIK_CHART_VERSION (set in tools/versions.env)"
-        fi
-        log "Installing Traefik (Helm)..."
-        helm upgrade --install traefik traefik/traefik \
-            --namespace traefik-system \
-            --create-namespace \
-            --version "$TRAEFIK_CHART_VERSION" \
-            --values kubernetes/ingress/traefik/values.yaml \
-            --wait
+        helm_infra_release traefik
     else
         warning "INSTALL_TRAEFIK=false; skipping Traefik install."
     fi
 
     if [[ "$INSTALL_CERT_MANAGER" == "true" ]]; then
-        if [[ -z "${CERT_MANAGER_CHART_VERSION:-}" ]]; then
-            error "Missing CERT_MANAGER_CHART_VERSION (set in tools/versions.env)"
-        fi
-        # Install cert-manager with Helm
-        helm upgrade --install cert-manager jetstack/cert-manager \
-            --namespace cert-manager \
-            --create-namespace \
-            --version "$CERT_MANAGER_CHART_VERSION" \
-            --set installCRDs=true \
-            --wait
+        helm_infra_release cert-manager
 
         # Apply certificate issuers (local CA + optional Let's Encrypt)
         kubectl_apply_rendered_dir kubernetes/ingress/cert-manager
@@ -469,9 +245,6 @@ setup_external_dns() {
     if [[ "$INSTALL_EXTERNAL_DNS" != "true" ]]; then
         warning "INSTALL_EXTERNAL_DNS=false; skipping ExternalDNS."
         return 0
-    fi
-    if [[ -z "${EXTERNAL_DNS_CHART_VERSION:-}" ]]; then
-        error "Missing EXTERNAL_DNS_CHART_VERSION (set in tools/versions.env)"
     fi
 
     # Namespace must exist for ExternalSecret resources.
@@ -502,15 +275,7 @@ setup_external_dns() {
         fi
     fi
 
-    local values_tmp
-    values_tmp="$(render_to_tmpfile kubernetes/dns/external-dns/values.yaml)"
-    helm upgrade --install external-dns external-dns/external-dns \
-        --namespace external-dns \
-        --create-namespace \
-        --version "$EXTERNAL_DNS_CHART_VERSION" \
-        --values "$values_tmp" \
-        --wait
-    rm -f "$values_tmp"
+    helm_infra_release external-dns
 
     success "ExternalDNS setup completed"
 }
@@ -526,18 +291,8 @@ setup_blackbox_exporter() {
         warning "INSTALL_TRAEFIK=false; skipping blackbox exporter probes (Traefik is not installed)."
         return 0
     fi
-    if [[ -z "${PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION:-}" ]]; then
-        error "Missing PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION (set in tools/versions.env)"
-    fi
 
-    local values_tmp
-    values_tmp="$(render_to_tmpfile kubernetes/monitoring/blackbox-exporter/values.yaml)"
-    helm upgrade --install blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
-        --namespace monitoring \
-        --version "$PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION" \
-        --values "$values_tmp" \
-        --wait
-    rm -f "$values_tmp"
+    helm_infra_release blackbox-exporter
 
     success "Blackbox exporter setup completed"
 }
@@ -598,19 +353,7 @@ setup_monitoring() {
     # Grafana admin creds are sourced from the central `secrets` namespace via ESO.
     kubectl_apply_rendered_file kubernetes/monitoring/prometheus/external-secrets.yaml
 
-    # Install Prometheus stack
-    if [[ -z "${KUBE_PROMETHEUS_STACK_CHART_VERSION:-}" ]]; then
-        error "Missing KUBE_PROMETHEUS_STACK_CHART_VERSION (set in tools/versions.env)"
-    fi
-    local prom_values_tmp
-    prom_values_tmp="$(render_to_tmpfile kubernetes/monitoring/prometheus/values.yaml)"
-    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
-        --create-namespace \
-        --version "$KUBE_PROMETHEUS_STACK_CHART_VERSION" \
-        --values "$prom_values_tmp" \
-        --wait
-    rm -f "$prom_values_tmp"
+    helm_infra_release kube-prometheus-stack
 
     # Apply additional PrometheusRules (custom alerts) after the chart CRDs are installed.
     kubectl_apply_rendered_dir kubernetes/monitoring/alerts
@@ -636,7 +379,13 @@ setup_logging() {
         return 0
     fi
 
-    kubectl_apply_rendered_dir kubernetes/services/loki
+    # Loki, and the Grafana Alloy log shipper when INSTALL_ALLOY=true
+    # (see kubernetes/services/loki/service.yaml).
+    install_service loki
+    if [[ "$INSTALL_ALLOY" != "true" ]]; then
+        warning "INSTALL_ALLOY=false; no default log shipper was installed."
+        warning "To enable later: INSTALL_LOGGING=true INSTALL_ALLOY=true ./setup-v2.sh"
+    fi
 
     # Provision a Loki datasource for Grafana (picked up by kube-prometheus-stack Grafana sidecar).
     if kubectl get namespace monitoring &>/dev/null; then
@@ -645,37 +394,15 @@ setup_logging() {
         warning "Monitoring namespace not found; skipping Grafana Loki datasource."
     fi
 
-    if [[ "$INSTALL_PROMTAIL" == "true" ]]; then
-        if [[ -f "kubernetes/services/loki/promtail-deployment.yaml" ]]; then
-            kubectl_apply_rendered_file kubernetes/services/loki/promtail-deployment.yaml
-        else
-            warning "Promtail manifest not found: kubernetes/services/loki/promtail-deployment.yaml (skipping)."
-        fi
-    else
-        warning "INSTALL_PROMTAIL=false; skipping Promtail (no default log shipper will be installed)."
-        warning "To enable later: INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh"
-    fi
-
     success "Logging setup completed"
 }
 
 setup_core_services() {
-    log "Setting up core services with Helm..."
+    log "Setting up core services..."
 
-    # Install NextCloud using our custom Helm chart
-    local nextcloud_values_tmp
-    nextcloud_values_tmp="$(render_to_tmpfile helm/nextcloud/values.yaml)"
-    helm upgrade --install nextcloud helm/nextcloud \
-        --namespace nextcloud \
-        --create-namespace \
-        --dependency-update \
-        --values "$nextcloud_values_tmp" \
-        --wait
-    rm -f "$nextcloud_values_tmp"
-
-    # Install other services
-    kubectl_apply_rendered_dir kubernetes/services/vaultwarden
-    kubectl_apply_rendered_dir kubernetes/services/gitea
+    # Authelia (first), Nextcloud (kind: helm), Vaultwarden, Gitea, Homepage
+    # (last), plus opt-ins such as Keycloak: all from their descriptors.
+    install_service_group core
 
     success "Core services setup completed"
 }
@@ -683,14 +410,10 @@ setup_core_services() {
 setup_network_services() {
     log "Setting up network services..."
 
+    install_service_group network
     if [[ "$ENABLE_NETWORK_SERVICES" != "true" ]]; then
-        warning "ENABLE_NETWORK_SERVICES=false; skipping network services."
         return 0
     fi
-
-    kubectl_apply_rendered_dir kubernetes/services/pihole
-    kubectl_apply_rendered_dir kubernetes/services/wireguard
-    kubectl_apply_rendered_dir kubernetes/services/dnsmasq-dhcp
 
     if [[ "$CONFIGURE_WILDCARD_DNS" == "true" ]]; then
         bash scripts/configure-wildcard-dns.sh || warning "Wildcard DNS configuration failed (continuing)."
@@ -705,33 +428,18 @@ setup_network_services() {
 setup_development_services() {
     log "Setting up development services..."
 
-    if [[ "$ENABLE_DEV_SERVICES" != "true" ]]; then
-        warning "ENABLE_DEV_SERVICES=false; skipping development services (Harbor, Drone, etc)."
-        return 0
+    install_service_group dev
+    if [[ "$ENABLE_DEV_SERVICES" == "true" ]]; then
+        warning "Drone was installed without a runner (secure default)."
+        warning "A Docker-socket runner manifest is preserved on the archive/legacy branch."
     fi
-
-    # Do not `kubectl apply -f` the whole directory: it contains Helm values files.
-    kubectl_apply_rendered_file kubernetes/services/harbor/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/harbor/install.yaml
-    kubectl_apply_rendered_dir kubernetes/services/drone
-    warning "Drone was installed without a runner (secure default)."
-    warning "If you accept the Docker socket risk, apply: extras/kubernetes/services/drone/drone-runner-docker.yaml"
 
     success "Development services setup completed"
 }
 
 setup_content_services() {
     log "Setting up content services..."
-
-    if [[ "$ENABLE_CONTENT_SERVICES" != "true" ]]; then
-        warning "ENABLE_CONTENT_SERVICES=false; skipping content services."
-        return 0
-    fi
-
-    kubectl_apply_rendered_dir kubernetes/services/searxng
-    kubectl_apply_rendered_dir kubernetes/services/calibre-web
-    kubectl_apply_rendered_dir kubernetes/services/yarr
-
+    install_service_group content
     success "Content services setup completed"
 }
 
@@ -742,29 +450,13 @@ setup_loadbalancer() {
         warning "INSTALL_METALLB=false; skipping MetalLB install."
         return 0
     fi
-    if [[ -z "${METALLB_CHART_VERSION:-}" ]]; then
-        error "Missing METALLB_CHART_VERSION (set in tools/versions.env)"
-    fi
 
     if grep -q "192\\.168\\.1\\.200-192\\.168\\.1\\.250" kubernetes/loadbalancing/metallb/ipaddresspool.yaml 2>/dev/null; then
         warning "MetalLB IP pool appears to be using the default example range (192.168.1.200-192.168.1.250)."
         warning "Review kubernetes/loadbalancing/metallb/ipaddresspool.yaml before exposing services on your LAN."
     fi
 
-    # Add MetalLB Helm repo
-    helm repo add metallb https://metallb.github.io/metallb || log "WARNING: metallb repo may already exist"
-    helm repo update
-
-    # Install MetalLB
-    helm upgrade --install metallb metallb/metallb \
-        --namespace metallb-system \
-        --create-namespace \
-        --version "$METALLB_CHART_VERSION" \
-        --wait
-
-    # Wait for MetalLB to be ready
-    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s || \
-        warning "MetalLB pods not ready yet (continuing)"
+    helm_infra_release metallb
 
     # Apply IP address pool and L2 advertisement
     kubectl_apply_rendered_file kubernetes/loadbalancing/metallb/ipaddresspool.yaml
@@ -780,13 +472,6 @@ setup_backup() {
         warning "INSTALL_VELERO=false; skipping Velero."
         return 0
     fi
-    if [[ -z "${VELERO_CHART_VERSION:-}" ]]; then
-        error "Missing VELERO_CHART_VERSION (set in tools/versions.env)"
-    fi
-
-    # Add Velero Helm repo
-    helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || log "WARNING: vmware-tanzu repo may already exist"
-    helm repo update
 
     # Create namespace
     kubectl_apply_rendered_file kubernetes/backup/velero/namespace.yaml
@@ -794,15 +479,7 @@ setup_backup() {
     # Credentials are sourced from the central `secrets` namespace via ESO.
     kubectl_apply_rendered_file kubernetes/backup/velero/external-secrets.yaml
 
-    # Install Velero with Helm
-    local velero_values_tmp
-    velero_values_tmp="$(render_to_tmpfile kubernetes/backup/velero/values.yaml)"
-    helm upgrade --install velero vmware-tanzu/velero \
-        --namespace velero \
-        --version "$VELERO_CHART_VERSION" \
-        --values "$velero_values_tmp" \
-        --wait
-    rm -f "$velero_values_tmp"
+    helm_infra_release velero
 
     # Apply backup schedules
     kubectl_apply_rendered_file kubernetes/backup/velero/schedules.yaml
@@ -831,20 +508,54 @@ setup_network_policies() {
 
     # Apply all network policies
     kubectl_apply_rendered_file kubernetes/security/network-policies/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/default-deny-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/egress-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/database-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/sensitive-services-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/infrastructure-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/media-services-policies.yaml
+    kubectl_apply_rendered_file kubernetes/security/network-policies/cross-namespace-policies.yaml
 
     success "Network policies setup completed"
+}
+
+# kubectl_apply_rendered_file_existing_ns <file>: like kubectl_apply_rendered_file,
+# but documents whose namespace does not exist yet are skipped with a warning
+# (a disabled Helm release or service group never created it). Render mode
+# applies everything.
+kubectl_apply_rendered_file_existing_ns() {
+    local file="$1"
+    if [[ "$HOMELAB_APPLY_MODE" == "render" ]]; then
+        kubectl_apply_rendered_file "$file"
+        return 0
+    fi
+    local existing ns present="" missing=()
+    existing=" $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}') "
+    for ns in $(render_file "$file" | yq -r '.metadata.namespace // ""' | sort -u); do
+        [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || continue   # drops yq's --- separators
+        if [[ "$existing" == *" $ns "* ]]; then
+            present+="${present:+|}$ns"
+        else
+            missing+=("$ns")
+        fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warning "$file: skipping documents for namespaces that do not exist: ${missing[*]}"
+        warning "Re-run ./setup-v2.sh after enabling the toggles that create them."
+    fi
+    if [[ -z "$present" ]]; then
+        warning "$file: nothing to apply yet"
+        return 0
+    fi
+    render_file "$file" | yq "select(.metadata.namespace | test(\"^($present)\$\"))" | \
+        apply_stream "$(_render_label "$file")"
 }
 
 setup_pod_disruption_budgets() {
     log "Setting up PodDisruptionBudgets for critical services..."
 
-    kubectl_apply_rendered_file kubernetes/security/pod-disruption-budgets.yaml
+    # Targets infrastructure and service namespaces; those a disabled toggle
+    # never created are skipped (see kubectl_apply_rendered_file_existing_ns).
+    kubectl_apply_rendered_file_existing_ns kubernetes/security/pod-disruption-budgets.yaml
 
     success "PodDisruptionBudgets setup completed"
 }
@@ -852,7 +563,7 @@ setup_pod_disruption_budgets() {
 setup_resource_quotas() {
     log "Setting up ResourceQuotas for namespace resource limits..."
 
-    kubectl_apply_rendered_file kubernetes/security/resource-quotas.yaml
+    kubectl_apply_rendered_file_existing_ns kubernetes/security/resource-quotas.yaml
 
     success "ResourceQuotas setup completed"
 }
@@ -887,19 +598,7 @@ setup_policy_as_code() {
         return 0
     fi
 
-    # Add Kyverno Helm repo
-    helm repo add kyverno https://kyverno.github.io/kyverno/ || log "WARNING: kyverno repo may already exist"
-    helm repo update
-
-    local kyverno_values_tmp
-    kyverno_values_tmp="$(render_to_tmpfile kubernetes/policy/kyverno/values.yaml)"
-    helm upgrade --install kyverno kyverno/kyverno \
-        --namespace kyverno \
-        --create-namespace \
-        --version "$KYVERNO_CHART_VERSION" \
-        --values "$kyverno_values_tmp" \
-        --wait
-    rm -f "$kyverno_values_tmp"
+    helm_infra_release kyverno
 
     case "$KYVERNO_POLICY_MODE" in
         audit)
@@ -916,131 +615,39 @@ setup_policy_as_code() {
     success "Kyverno policy engine setup completed"
 }
 
-setup_authentication() {
-    log "Setting up Authelia SSO/2FA..."
-
-    # Apply all Authelia manifests (includes PDB + ServiceMonitor).
-    kubectl_apply_rendered_dir kubernetes/services/authelia
-
-    # Wait for Redis
-    kubectl wait --for=condition=Ready pods -l app=authelia-redis -n authelia --timeout=300s || \
-        warning "Authelia Redis pods not ready yet (continuing)"
-
-    success "Authelia SSO setup completed"
-}
-
 setup_media_services() {
     log "Setting up media services..."
-
-    if [[ "$ENABLE_MEDIA_SERVICES" != "true" ]]; then
-        warning "ENABLE_MEDIA_SERVICES=false; skipping media services."
-        return 0
-    fi
-
-    # Jellyfin
-    kubectl_apply_rendered_dir kubernetes/services/jellyfin
-
-    # Arr Stack
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/shared-storage.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/sonarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/radarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/prowlarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/bazarr-deployment.yaml
-
-    # Audiobookshelf
-    kubectl_apply_rendered_file kubernetes/services/audiobookshelf/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/audiobookshelf/deployment.yaml
-
+    install_service_group media
     success "Media services setup completed"
 }
 
 setup_ai_services() {
     log "Setting up AI services..."
-
-    if [[ "$ENABLE_AI_SERVICES" != "true" ]]; then
-        warning "ENABLE_AI_SERVICES=false; skipping AI services (Immich ML, Ollama, etc)."
-        return 0
-    fi
-
-    # Immich (photos with ML)
-    kubectl_apply_rendered_file kubernetes/services/immich/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/postgres-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/redis-deployment.yaml
-
-    # Wait for Immich dependencies
-    kubectl wait --for=condition=Ready pods -l app=immich-postgres -n immich --timeout=300s || log "WARNING: Immich postgres may take longer"
-    kubectl wait --for=condition=Ready pods -l app=immich-redis -n immich --timeout=300s || log "WARNING: Immich redis may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/immich/server-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/microservices-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/machine-learning-deployment.yaml
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        kubectl_apply_rendered_file kubernetes/services/immich/servicemonitor.yaml
-    fi
-
-    # Ollama (local LLM)
-    kubectl_apply_rendered_dir kubernetes/services/ollama
-
-    # Open WebUI (chat UI for Ollama)
-    kubectl_apply_rendered_dir kubernetes/services/open-webui
-
+    install_service_group ai
     success "AI services setup completed"
 }
 
 setup_productivity_services() {
     log "Setting up productivity services..."
-
-    if [[ "$ENABLE_PRODUCTIVITY_SERVICES" != "true" ]]; then
-        warning "ENABLE_PRODUCTIVITY_SERVICES=false; skipping productivity services."
-        return 0
-    fi
-
-    # Paperless-ngx
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/postgres-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/redis-deployment.yaml
-
-    # Wait for Paperless dependencies
-    kubectl wait --for=condition=Ready pods -l app=paperless-postgres -n paperless-ngx --timeout=300s || log "WARNING: Paperless postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/deployment.yaml
-
-    # n8n
-    kubectl_apply_rendered_file kubernetes/services/n8n/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/n8n/postgres-deployment.yaml
-
-    kubectl wait --for=condition=Ready pods -l app=n8n-postgres -n n8n --timeout=300s || log "WARNING: n8n postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/n8n/deployment.yaml
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        kubectl_apply_rendered_file kubernetes/services/n8n/servicemonitor.yaml
-    fi
-
-    # Mealie
-    kubectl_apply_rendered_file kubernetes/services/mealie/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/mealie/deployment.yaml
-
-    # Linkwarden
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/postgres-deployment.yaml
-
-    kubectl wait --for=condition=Ready pods -l app=linkwarden-postgres -n linkwarden --timeout=300s || log "WARNING: Linkwarden postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/deployment.yaml
-
+    install_service_group productivity
     success "Productivity services setup completed"
 }
 
-setup_dashboard() {
-    log "Setting up Homepage dashboard..."
+setup_home_services() {
+    log "Setting up home automation services..."
+    install_service_group home
+    success "Home automation services setup completed"
+}
 
-    kubectl_apply_rendered_file kubernetes/services/homepage/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/rbac.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/configmap.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/deployment.yaml
+setup_communication_services() {
+    log "Setting up communication services..."
+    install_service_group communication
+    success "Communication services setup completed"
+}
 
-    success "Homepage dashboard setup completed"
+setup_monitoring_apps() {
+    # Opt-in services that live next to the monitoring stack (e.g. Gatus).
+    install_service_group monitoring
 }
 
 setup_gitops() {
@@ -1080,110 +687,26 @@ setup_gitops() {
 }
 
 run_health_checks() {
+    # One health interface for every caller (scripts/lib/health.sh): every
+    # enabled infrastructure piece and catalogue service, from the same lists
+    # the installer used.
     log "Running health checks..."
-
-    local failed_checks=()
-
-    # Check core platform components (best-effort)
-    if [[ "$INSTALL_TRAEFIK" == "true" ]]; then
-        if ! kubectl get pods -n traefik-system -l app.kubernetes.io/name=traefik -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("traefik")
-        fi
-    fi
-
-    if [[ "$INSTALL_EXTERNAL_SECRETS" == "true" ]]; then
-        if ! kubectl get pods -n external-secrets -l app.kubernetes.io/name=external-secrets -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("external-secrets")
-        fi
-    fi
-
-    if [[ "$INSTALL_CERT_MANAGER" == "true" ]]; then
-        if ! kubectl get pods -n cert-manager -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("cert-manager")
-        fi
-    fi
-
-    # Check namespaces
-    local namespaces_to_check=("nextcloud")
-    if [[ "$INSTALL_MONITORING" == "true" ]]; then
-        namespaces_to_check+=("monitoring")
-    fi
-    if [[ "$ENABLE_GITOPS" == "true" ]]; then
-        namespaces_to_check+=("argocd")
-    fi
-
-    for ns in "${namespaces_to_check[@]}"; do
-        if ! kubectl get ns "$ns" &> /dev/null; then
-            failed_checks+=("namespace-$ns")
-        fi
-    done
-
-    if [ ${#failed_checks[@]} -ne 0 ]; then
-        warning "Failed health checks: ${failed_checks[*]}"
-        warning "Some services may not be ready yet. Check logs with: kubectl logs -f deployment/<service>"
-    else
-        success "All health checks passed"
-    fi
+    services_report_failures || true
+    health_report --all --enabled-only || \
+        warning "Some pieces are not ready yet (see the table above); re-run ./scripts/validate-setup.sh later."
 }
 
 get_access_info() {
     log "Retrieving access information..."
-
     echo ""
     echo "🎉 Homelab setup completed successfully!"
     echo ""
-    echo "🔗 Service URLs:"
-    echo ""
-    if [[ "$CONFIGURE_WILDCARD_DNS" == "true" && "$ENABLE_NETWORK_SERVICES" == "true" ]]; then
-        echo "   DNS: Wildcard DNS via Pi-hole is enabled (no /etc/hosts)."
-        echo "   Pi-hole DNS service: kubectl -n pihole get svc pihole-dns"
-    else
-        echo "   DNS: Add /etc/hosts entries, or enable wildcard DNS via Pi-hole:"
-        echo "     CONFIGURE_WILDCARD_DNS=true ./setup-v2.sh"
-        echo "     or run: ./scripts/configure-wildcard-dns.sh"
-    fi
-    echo ""
-    echo "   Infrastructure:"
-    echo "   📊 Grafana: https://grafana.$DOMAIN"
-    echo "   ⚙️  ArgoCD: https://argocd.$DOMAIN"
-    echo "   🏠 Homepage: https://home.$DOMAIN"
-    echo ""
-    echo "   Media:"
-    echo "   🎬 Jellyfin: https://jellyfin.$DOMAIN"
-    echo "   📺 Sonarr: https://sonarr.$DOMAIN"
-    echo "   🎥 Radarr: https://radarr.$DOMAIN"
-    echo "   🔍 Prowlarr: https://prowlarr.$DOMAIN"
-    echo "   💬 Bazarr: https://bazarr.$DOMAIN"
-    echo "   🎧 Audiobookshelf: https://audiobooks.$DOMAIN"
-    echo ""
-    echo "   Productivity:"
-    echo "   📁 Nextcloud: https://nextcloud.$DOMAIN"
-    echo "   📄 Paperless: https://docs.$DOMAIN"
-    echo "   📸 Immich: https://photos.$DOMAIN"
-    echo "   🍲 Mealie: https://recipes.$DOMAIN"
-    echo "   🔖 Linkwarden: https://bookmarks.$DOMAIN"
-    echo "   🔄 n8n: https://automation.$DOMAIN"
-    echo ""
-    echo "   AI:"
-    echo "   🤖 Ollama API: https://ai.$DOMAIN"
-    echo "   💬 Open WebUI: https://chat.$DOMAIN"
-    echo ""
-    echo "   Security:"
-    echo "   🔐 Vaultwarden: https://vault.$DOMAIN"
-    echo "   🔒 Authelia: https://auth.$DOMAIN"
-    echo "   🛡️  Gitea: https://git.$DOMAIN"
-    echo ""
-    echo "🔐 Retrieve credentials securely (not logged):"
-    echo "   Grafana:     kubectl get secret grafana-admin -n monitoring -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   ArgoCD:      kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   Nextcloud:   kubectl get secret nextcloud-admin -n secrets -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   Paperless:   kubectl get secret paperless-admin -n secrets -o jsonpath='{.data.password}' | base64 -d && echo"
+    access_summary
     echo ""
     echo "🔧 Management commands:"
-    echo "   View logs: kubectl logs -f deployment/<service> -n <namespace>"
-    echo "   Scale service: kubectl scale deployment <service> --replicas=<count> -n <namespace>"
-    echo "   Update config: helm upgrade <release> <chart> --values <values-file>"
-    echo "   Backup status: velero schedule get && velero backup get"
+    echo "   Health:  ./scripts/validate-setup.sh"
+    echo "   Logs:    kubectl logs -f deployment/<service> -n <namespace>"
+    echo "   Backups: velero schedule get && velero backup get"
     echo "   CrowdSec decisions: kubectl exec -n crowdsec deploy/crowdsec-agent -- cscli decisions list"
     echo ""
     echo "📚 Documentation: $HOMELAB_DIR/docs/"
@@ -1216,7 +739,6 @@ backup_configuration() {
     # Backup important configs
     cp -r "$HOMELAB_DIR/config" "$backup_dir/"
     cp -r "$HOMELAB_DIR/helm" "$backup_dir/"
-    cp -r "$HOMELAB_DIR/kustomize" "$backup_dir/"
 
     # Secure backup directory permissions (dirs must stay traversable)
     find "$backup_dir" -mindepth 1 -type d -exec chmod 700 {} +
@@ -1233,10 +755,7 @@ main() {
     check_requirements
     install_tools
 
-    load_config
-    apply_env_overrides
-
-    export ENVIRONMENT DOMAIN TIMEZONE ADMIN_EMAIL CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL
+    homelab_load_config
 
     log "Effective configuration:"
     log "  Environment: $ENVIRONMENT"
@@ -1251,7 +770,9 @@ main() {
     log "  Kyverno (policy-as-code): $INSTALL_KYVERNO (mode: $KYVERNO_POLICY_MODE)"
     log "  Blackbox Exporter: $INSTALL_BLACKBOX_EXPORTER"
     log "  Alerting (AlertmanagerConfig): $CONFIGURE_ALERTING"
-    log "  Logging (Loki): $INSTALL_LOGGING (Promtail: $INSTALL_PROMTAIL)"
+    log "  Logging (Loki): $INSTALL_LOGGING (Alloy: $INSTALL_ALLOY)"
+    log "  Service groups: $(service_group_toggles_summary)"
+    log "  Opt-in services: ${OPTIN_SERVICES:-none}"
 
     # Base infrastructure (LB, ingress, secrets, storage)
     setup_loadbalancer
@@ -1264,23 +785,33 @@ main() {
     setup_backup
     setup_security
     setup_pod_security_standards
-    setup_network_policies
     setup_pod_disruption_budgets
     setup_resource_quotas
     setup_policy_as_code
     setup_monitoring
     setup_logging
 
-    # Core apps
+    # Applications: every kubernetes/services/<name>/service.yaml, by group.
+    # One phase per row of SERVICE_GROUPS (scripts/lib/services.sh), in that
+    # table's order, except the logging group: its one service (Loki) is
+    # installed by setup_logging above, which has to run before the groups
+    # that log into it. Each phase is a wrapper so disaster recovery can
+    # re-run one by name (scripts/disaster-recovery.sh).
     setup_core_services
-    setup_authentication
     setup_media_services
     setup_network_services
     setup_development_services
     setup_content_services
     setup_ai_services
     setup_productivity_services
-    setup_dashboard
+    setup_home_services
+    setup_communication_services
+    setup_monitoring_apps
+
+    # Static NetworkPolicies target service namespaces, so they come after the
+    # services that create those namespaces. Per-namespace isolation was
+    # already applied by install_service from each descriptor.
+    setup_network_policies
 
     setup_gitops
     run_health_checks

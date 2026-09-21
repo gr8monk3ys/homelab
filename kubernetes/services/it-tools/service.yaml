@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: it-tools
+namespace: it-tools
+group: productivity
+optin: true
+url: tools
+description: Collection of handy developer utilities
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Static files only; everything runs in the browser.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

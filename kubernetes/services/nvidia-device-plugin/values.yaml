@@ -1,0 +1,36 @@
+---
+# NVIDIA device plugin Helm values (chart nvdp/nvidia-device-plugin,
+# NVIDIA_DEVICE_PLUGIN_CHART_VERSION in tools/versions.env). Rendered like a
+# manifest.
+#
+# Host prerequisites (docs/runbooks/storage-and-hardware.md): the NVIDIA
+# driver and nvidia-container-toolkit. K3s detects the toolkit at start-up,
+# writes the nvidia runtime into its containerd config and creates a
+# RuntimeClass named "nvidia". The plugin pod itself must run under that
+# RuntimeClass to see the GPU, hence runtimeClassName below; workloads that
+# request nvidia.com/gpu set runtimeClassName: nvidia too.
+runtimeClassName: nvidia
+
+# One GPU, one node: no MIG, no time-slicing config.
+migStrategy: none
+failOnInitError: true
+
+devicePlugin:
+  enabled: true
+
+# GPU Feature Discovery labels the node with nvidia.com/gpu.* details; it
+# needs NFD (kubernetes/services/node-feature-discovery). Turn on when NFD is
+# installed. The chart can install its own NFD (nfd.enabled) but ours is the
+# one to use.
+gfd:
+  enabled: false
+nfd:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

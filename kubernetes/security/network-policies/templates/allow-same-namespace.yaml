@@ -1,0 +1,21 @@
+---
+# Policy template: allow-same-namespace
+# Lets pods within the namespace talk to each other freely (app <-> its
+# database and cache). Cross-namespace traffic stays denied.
+# The namespace is filled in by scripts/lib/netpol.sh at install time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: PLACEHOLDER_NAMESPACE
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}

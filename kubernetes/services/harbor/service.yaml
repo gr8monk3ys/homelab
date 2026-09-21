@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: harbor
+namespace: harbor
+group: dev
+url: registry
+description: Container registry (in-cluster Helm job)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: in-cluster Helm job that needs the Kubernetes API.
+networkPolicies: []

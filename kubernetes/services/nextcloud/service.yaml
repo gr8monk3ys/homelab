@@ -1,0 +1,21 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# Nextcloud is Helm-chart-managed (helm/nextcloud/), so this descriptor names
+# the chart instead of listing manifest steps; install_service renders the
+# values file and calls helm_release (scripts/lib/helm.sh).
+name: nextcloud
+namespace: nextcloud
+group: core
+project: homelab-productivity
+priority: 40
+url: nextcloud
+description: Files, calendar and contacts (Helm chart with a separate MySQL StatefulSet)
+kind: helm
+chart: helm/nextcloud
+release: nextcloud
+values: helm/nextcloud/values.yaml
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: Nextcloud fetches apps, updates and federation peers from the internet.
+# The Nextcloud pod -> MySQL rule stays in kubernetes/security/network-policies/ (per-pod, not a template).
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

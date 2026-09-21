@@ -1,16 +1,43 @@
 # Homelab
 
-**Status: not yet proven end-to-end on a live cluster.** The manifests are
-consistent and CI-validated (yamllint, shellcheck, kubeconform, helm lint,
-kustomize build), and subsets have run on KinD, but nobody has deployed the
-whole stack to a real K3s node and watched it stay up. Deploy a subset,
-verify, then grow.
+**Status: verified against a live Kubernetes API, not yet on a real node.**
+Every check in `scripts/ci.sh` passes, every service in the catalogue has been
+applied through the installer's own code path to a real `kube-apiserver`
+(with the External Secrets, Traefik, cert-manager and Prometheus Operator CRDs
+loaded) and the installer has run end to end against it with the Helm-based
+infrastructure disabled. What has not happened yet: pods scheduling on a real
+K3s node and staying up. Deploy a subset, verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
 the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
-MinIO, Velero, kube-prometheus-stack) and 23 of the 43 application directories
-under `kubernetes/services/`; the other 20 are maintained manifests you apply
-by hand.
+MinIO, Velero, kube-prometheus-stack) and the **service catalogue**: every
+directory under `kubernetes/services/` carries a `service.yaml` descriptor
+(group, opt-in, ordered install steps, network isolation), and one code path,
+`install_service`, installs any of them. There are 64: 18 install under the
+default toggles, 37 more are opt-in by name, and the rest wait on a group
+toggle. `./scripts/services.sh list` prints the catalogue.
+
+Running 64 services on one node is not the intent and would not fit; the
+catalogue is a menu, not a target. Pick the handful you actually want.
+
+## How it fits together
+
+- **Catalogue.** `kubernetes/services/<name>/service.yaml` is the interface;
+  `scripts/lib/services.sh` is the implementation. The installer, disaster
+  recovery, the KinD harness, the validator, CI and the generated ArgoCD
+  app-of-apps all read the same catalogue, so a service cannot be half-wired.
+- **Render seam.** Manifests carry placeholders (`homelab.local`,
+  `admin@homelab.local`, `UTC`, the `homelab-ca` issuer). Everything that
+  reaches a cluster goes through `scripts/lib/render.sh`; nothing is applied
+  raw.
+- **Isolation.** Each descriptor lists the NetworkPolicy templates it wants
+  (or `[]` with a reason). Cross-namespace rules live in
+  `kubernetes/security/network-policies/`.
+- **Secrets.** One table in `scripts/lib/secrets.sh` feeds two adapters: live
+  Kubernetes Secrets (`generate-secrets.sh`) or SOPS-encrypted files for
+  GitOps (`sops-bootstrap.sh`). `scripts/secrets-check.sh` fails CI when an
+  `ExternalSecret` asks for a secret nobody produces, or vice versa.
+- **Decisions** are in `docs/adr/`; the vocabulary is in `CONTEXT.md`.
 
 ## Secrets design
 
@@ -41,15 +68,16 @@ passwords as one of its checks. `docs/credentials.md` lists every secret name.
 | Storage | local-path provisioner, MinIO (S3-compatible) | on |
 | Backups | Velero (daily/weekly/monthly + 6-hourly critical schedules) | on |
 | Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager), blackbox-exporter, Uptime Kuma | on |
-| Logging | Loki (+ optional Promtail) | off |
+| Logging | Loki (+ optional Grafana Alloy log shipper) | off |
 | Security | CrowdSec agent, NetworkPolicies, Pod Security Admission (audit), optional Kyverno | mixed, see below |
 | GitOps | ArgoCD (+ optional KSOPS for encrypted secrets in git) | off |
 
 Security posture, honestly stated: pod security contexts, drop-ALL
 capabilities, and resource limits are enforced in the manifests themselves;
 Pod Security Admission defaults to `audit` (warns, does not block), Kyverno is
-opt-in, NetworkPolicies cover the sensitive namespaces rather than every
-namespace, and the CrowdSec Traefik bouncer is enforced on the `websecure`
+opt-in, NetworkPolicies default-deny the 28 service namespaces whose
+descriptor declares `networkPolicies:` (Homepage and Home Assistant are left
+open because they need the kube API and the LAN), and the CrowdSec Traefik bouncer is enforced on the `websecure`
 entrypoint (Traefik writes access logs the agent reads; decisions are applied
 via bouncer middleware). See `docs/runbooks/hardening.md` to tighten the rest.
 
@@ -104,13 +132,16 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | `ENABLE_PRODUCTIVITY_SERVICES` | `true` | Paperless-ngx, Mealie, Linkwarden, n8n |
 | `ENABLE_AI_SERVICES` | `false` | Ollama, Open WebUI, Immich |
 | `ENABLE_DEV_SERVICES` | `false` | Drone CI, Harbor registry |
+| `ENABLE_HOME_SERVICES` | `false` | Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT |
+| `ENABLE_COMMUNICATION_SERVICES` | `false` | Matrix (Synapse + Element), Mattermost |
+| `OPTIN_SERVICES` | empty | Space-separated names of `optin: true` services to add (or `all`); see `docs/services.md` |
 | `ENABLE_GITOPS` | `false` | ArgoCD (`APPLY_GITOPS_MANIFESTS` for the app-of-apps) |
 | `INSTALL_TRAEFIK` | `true` | Traefik ingress controller |
 | `INSTALL_CERT_MANAGER` | `true` | cert-manager + TLS issuers |
 | `INSTALL_EXTERNAL_SECRETS` | `true` | External Secrets Operator |
 | `INSTALL_MONITORING` | `true` | kube-prometheus-stack + Uptime Kuma |
 | `INSTALL_BLACKBOX_EXPORTER` | `true` | Synthetic HTTPS probes via blackbox-exporter |
-| `INSTALL_LOGGING` | `false` | Loki (`INSTALL_PROMTAIL` for shipping) |
+| `INSTALL_LOGGING` | `false` | Loki (`INSTALL_ALLOY` for shipping) |
 | `INSTALL_VELERO` / `INSTALL_METALLB` | `true` | Backups / LoadBalancer IPs |
 | `INSTALL_EXTERNAL_DNS` | `false` | Cloudflare DNS automation (needs API token) |
 | `INSTALL_KYVERNO` | `false` | Policy engine (`KYVERNO_POLICY_MODE=audit\|enforce`) |
@@ -123,9 +154,18 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 Installed by default: Homepage, Grafana, Uptime Kuma, Nextcloud, Vaultwarden,
 Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
 Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
-WireGuard. Opt-in via the toggles: Immich, Ollama, Open WebUI, Drone, Harbor,
-ArgoCD. The full catalog with URLs, plus the 20 manifest-only directories, is
-in `docs/services.md`.
+WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
+Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
+(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, cloudflared,
+code-server, CyberChef, Frigate, Gatus, Heimdall, Homebox, Hoppscotch,
+Intel and NVIDIA device plugins, IT-Tools, Jellyseerr, Keycloak, Kiwix,
+kured, LocalAI, Longhorn, Metabase, Miniflux, Navidrome, NocoDB,
+node-feature-discovery, ntfy, Outline, qBittorrent, Reloader, Renovate,
+RomM, snapshot-controller, Stirling-PDF, system-upgrade-controller,
+Tailscale operator, Tautulli, Umami, VolSync, Whisper. The full catalogue
+with URLs is in `docs/services.md`, or run `./scripts/services.sh list`.
+Host prerequisites for the storage, remote-access and hardware pieces are
+in `docs/runbooks/storage-and-hardware.md`.
 
 ## DNS
 
@@ -147,6 +187,13 @@ kubectl -n pihole get svc pihole-dns
 - Verify: `./scripts/verify-backups.sh`. Restore procedures:
   `docs/runbooks/backup-restore.md`.
 
+> **The default backup target is not a backup.** Velero writes to the
+> in-cluster MinIO, which on a single node with `local-path` lives on that
+> node's own disk: one disk failure loses the data and its backups together.
+> `verify-backups.sh` says so on every run until you point Velero at a NAS,
+> an external S3 bucket or another machine. See
+> `docs/runbooks/backup-restore.md`.
+
 ## GitOps (optional)
 
 `ENABLE_GITOPS=true` installs ArgoCD. To manage encrypted secrets in git:
@@ -164,10 +211,39 @@ Details: `docs/runbooks/gitops-secrets.md`. Set `gitops.repo_url` in
 ```bash
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
 pre-commit install               # fast local checks on commit
-./scripts/ci.sh                  # the full lint/validate gate CI runs
+./scripts/ci.sh                  # the full gate CI runs (see below)
+./scripts/services.sh list       # the catalogue; check / render / install / argocd
+./scripts/secrets-check.sh       # secret producer vs consumer drift
 just                             # task shortcuts (just validate, just ci, just kind-smoke, ...)
 cd test && ./setup-kind.sh       # throwaway KinD cluster for testing
 ```
+
+`scripts/ci.sh` runs, in order: `bash -n`, shellcheck, yamllint, kubeconform
+on the raw manifests, the catalogue check (every directory has a valid
+descriptor with an isolation decision), the ArgoCD freshness check (generated
+app-of-apps matches the catalogue), the secret drift check, a render of every
+service and every infrastructure manifest with non-default domain, email,
+timezone and issuer validated by kubeconform, helm lint, and the ArgoCD
+kustomize builds.
+
+## Adding a service
+
+Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
+manifests and a `service.yaml` (see `docs/services.md`). If it needs a
+credential, add one line to the table in `scripts/lib/secrets.sh` and an
+`ExternalSecret` in the directory. Run `./scripts/services.sh argocd` to
+regenerate the GitOps files, then `./scripts/ci.sh`. Nothing in the installer
+changes.
+
+## What to add next
+
+`docs/research/homelab-additions.md` compares this repo with Project NOMAD
+and four well-known Kubernetes homelabs and ranks fifteen additions with
+sources: Renovate, Reloader (now in the catalogue), Kiwix (in), Gatus with
+gatus-sidecar, ntfy (in), Cloudflare Tunnel or Tailscale, system-upgrade-
+controller and kured, Longhorn, VolSync, Home Assistant with Frigate, GPU
+device plugins, Stirling-PDF and IT-Tools (in), Homebox (in), Miniflux, and
+the NOMAD knowledge stack (Kolibri, PMTiles maps).
 
 Tool and chart versions are pinned in `tools/versions.env`; Dependabot
 bumps the GitHub Actions. CI is one workflow (`.github/workflows/ci.yml`)
@@ -178,21 +254,20 @@ Actions minutes are capped and nothing runs on a schedule.
 
 ```
 setup-v2.sh                  # installer (idempotent; safe to re-run)
-config/homelab.yaml          # domain/email/timezone/issuer defaults
+config/homelab.yaml          # domain/email/timezone/issuer/GitOps URL (env vars override)
 kubernetes/
   ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
   secrets/                   # ExternalSecrets + SOPS store
-  security/                  # CrowdSec + NetworkPolicies (applied by installer)
-  network-policies/          # standalone policy toolkit (manual, not installed)
+  security/                  # CrowdSec + NetworkPolicies (static rules + per-namespace templates)
   policy/kyverno/            # optional policy-as-code (audit + enforce sets)
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps
-helm/nextcloud/              # the one Helm-chart-managed app
-kustomize/overlays/production/  # the single overlay (one node, one environment)
-scripts/                     # secrets, backup/restore, validation, DR
-ansible/                     # host provisioning (base system, security, backups)
-docs/                        # credentials reference + day-2 runbooks
-test/                        # KinD configs, Compose stack, validation suite
+helm/nextcloud/              # the one Helm chart; installed like any service via kubernetes/services/nextcloud/service.yaml (kind: helm)
+scripts/                     # installer libraries (scripts/lib/: common, render, services, netpol, helm, secrets, tools), backup/restore, validation, DR
+docs/adr/                    # decisions; docs/research/ holds research notes; CONTEXT.md is the glossary
+ansible/                     # host prep for K3s nodes: packages, hardening, host backups (just ansible-prep)
+docs/                        # credentials reference, day-2 runbooks, ADRs, research
+test/                        # KinD harness configs and the validation suite
 ```
 
 ## Troubleshooting

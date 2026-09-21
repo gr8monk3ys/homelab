@@ -1,0 +1,16 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: paperless-ngx
+namespace: paperless-ngx
+group: productivity
+url: docs
+description: Document management
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=paperless-postgres
+  - apply: redis-deployment.yaml
+    wait: app=paperless-redis
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: this service fetches from the internet.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

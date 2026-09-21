@@ -1,0 +1,185 @@
+---
+# Kiwix - offline reader for ZIM archives (Wikipedia, Stack Exchange, medical, DIY...)
+#
+# kiwix-serve needs at least one *.zim file under /data or it exits and the
+# pod restarts until one appears. Nothing here downloads content by default:
+# ZIMs are gigabytes. Fetch what you want once, e.g. from a shell in the
+# cluster (busybox `wget -c` resumes an interrupted download):
+#
+#   kubectl -n kiwix run zim-fetch --rm -it --restart=Never --image=busybox:1.37.0 \
+#     --overrides='{"spec":{"securityContext":{"runAsUser":1001,"runAsNonRoot":true,"fsGroup":1001},
+#       "containers":[{"name":"f","image":"busybox:1.37.0","command":["sh","-c",
+#       "cd /data && wget -c https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_2024-01.zim"],
+#       "volumeMounts":[{"name":"data","mountPath":"/data"}]}],
+#       "volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"kiwix-data-pvc"}}]}}'
+#
+# or keep this one-shot Job template around and apply it with the URL you want
+# (the catalogue of files is at https://download.kiwix.org/zim/, and the
+# always-current "latest" links at https://library.kiwix.org/). Restart the
+# kiwix Deployment afterwards so the new file is picked up.
+#
+# ---
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: kiwix-fetch-wikipedia
+#   namespace: kiwix
+# spec:
+#   backoffLimit: 3
+#   ttlSecondsAfterFinished: 3600
+#   template:
+#     spec:
+#       restartPolicy: OnFailure
+#       securityContext:
+#         runAsNonRoot: true
+#         runAsUser: 1001
+#         runAsGroup: 1001
+#         fsGroup: 1001
+#         seccompProfile:
+#           type: RuntimeDefault
+#       containers:
+#       - name: fetch
+#         image: busybox:1.37.0
+#         command: ["sh", "-c", "cd /data && wget -c https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_2024-01.zim"]
+#         securityContext:
+#           allowPrivilegeEscalation: false
+#           readOnlyRootFilesystem: true
+#           capabilities:
+#             drop: [ALL]
+#         resources:
+#           requests: {memory: "32Mi", cpu: "50m"}
+#           limits: {memory: "128Mi", cpu: "500m"}
+#         volumeMounts:
+#         - name: data
+#           mountPath: /data
+#       volumes:
+#       - name: data
+#         persistentVolumeClaim:
+#           claimName: kiwix-data-pvc
+#
+# (A Job needs egress to download.kiwix.org: add allow-external-https to
+# service.yaml while it runs, or fetch from a workstation and copy the file in.)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kiwix
+  namespace: kiwix
+  labels:
+    app: kiwix
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kiwix
+  template:
+    metadata:
+      labels:
+        app: kiwix
+    spec:
+      # The image creates and switches to user 1001 (docker/server/Dockerfile).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: kiwix
+        image: ghcr.io/kiwix/kiwix-serve:3.8.1
+        # The image entrypoint (start.sh) runs `kiwix-serve --port=$PORT <args>`
+        # unquoted from WORKDIR /data, so the glob serves every ZIM in the volume.
+        args: ["*.zim"]
+        env:
+        - name: PORT
+          value: "8080"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: kiwix-data-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kiwix-data-pvc
+  namespace: kiwix
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kiwix
+  namespace: kiwix
+spec:
+  selector:
+    app: kiwix
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiwix-ingress
+  namespace: kiwix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - library.homelab.local
+    secretName: kiwix-tls
+  rules:
+  - host: library.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kiwix
+            port:
+              number: 8080

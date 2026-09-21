@@ -1,0 +1,235 @@
+---
+# Grafana Alloy - log collector for Loki.
+#
+# Replaces Promtail, which Grafana declared end-of-life on 2 March 2026 and no
+# longer receives updates or security fixes. Alloy is Grafana's supported
+# successor (an OpenTelemetry Collector distribution) and speaks the same
+# Loki push API.
+#
+# Configuration syntax: grafana.com/docs/alloy (discovery.kubernetes,
+# discovery.relabel, local.file_match, loki.source.file, loki.process,
+# loki.write).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: alloy
+  namespace: loki
+  labels:
+    app: alloy
+spec:
+  selector:
+    matchLabels:
+      app: alloy
+  template:
+    metadata:
+      labels:
+        app: alloy
+      annotations:
+        kubectl.kubernetes.io/default-container: alloy
+    spec:
+      serviceAccountName: alloy
+      securityContext:
+        # runAsNonRoot is deliberately NOT set. Container log files under
+        # /var/log/pods are owned by root and mode 0600 on K3s, and the
+        # grafana/alloy image ships no default user (upstream documents
+        # non-root as experimental and unsupported). Reading node logs as an
+        # unprivileged UID would require adding DAC_READ_SEARCH back to the
+        # capability set, which is strictly weaker than running as root with
+        # every capability dropped. Everything else follows the repo rules:
+        # no privilege escalation, all capabilities dropped, read-only root
+        # filesystem, seccomp RuntimeDefault, and the host mounts are
+        # read-only.
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.19.2
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/tmp/alloy
+            - --server.http.listen-addr=0.0.0.0:12345
+            - --disable-reporting
+          env:
+            # discovery.kubernetes reads HOSTNAME to scope discovery to this node.
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 12345
+              name: http-metrics
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: data
+              mountPath: /tmp/alloy
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /-/ready
+              port: 12345
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 12345
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+      volumes:
+        - name: config
+          configMap:
+            name: alloy-config
+        # /var/log/pods (symlinked into /var/log/containers) is the only place
+        # a node's container logs exist, so a hostPath mount is unavoidable.
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: loki
+data:
+  config.alloy: |
+    // Discover the pods scheduled on this node only; each DaemonSet pod
+    // reads the logs of its own node.
+    discovery.kubernetes "pods" {
+      role = "pod"
+
+      selectors {
+        role  = "pod"
+        field = "spec.nodeName=" + coalesce(sys.env("HOSTNAME"), constants.hostname)
+      }
+    }
+
+    // Turn pod metadata into Loki labels and into the on-disk log path.
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        action        = "replace"
+        target_label  = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        action        = "replace"
+        target_label  = "pod"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        action        = "replace"
+        target_label  = "container"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        action        = "replace"
+        target_label  = "node"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name", "__meta_kubernetes_pod_label_app"]
+        regex         = "^;*([^;]+)(;.*)?$"
+        action        = "replace"
+        target_label  = "app"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+        action        = "replace"
+        target_label  = "job"
+        separator     = "/"
+        replacement   = "$1"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        action        = "replace"
+        target_label  = "__path__"
+        separator     = "/"
+        replacement   = "/var/log/pods/*$1/*.log"
+      }
+    }
+
+    // Expand the __path__ globs into the actual log files.
+    local.file_match "pod_logs" {
+      path_targets = discovery.relabel.pod_logs.output
+    }
+
+    loki.source.file "pod_logs" {
+      targets    = local.file_match.pod_logs.targets
+      forward_to = [loki.process.pod_logs.receiver]
+    }
+
+    // Node logs are written in the CRI format: "<ts> <stream> <flags> <line>".
+    loki.process "pod_logs" {
+      stage.cri {}
+
+      forward_to = [loki.write.default.receiver]
+    }
+
+    loki.write "default" {
+      endpoint {
+        url = "http://loki.loki.svc.cluster.local:3100/loki/api/v1/push"
+      }
+    }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy
+  namespace: loki
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+      - namespaces
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy
+subjects:
+  - kind: ServiceAccount
+    name: alloy
+    namespace: loki
+roleRef:
+  kind: ClusterRole
+  name: alloy
+  apiGroup: rbac.authorization.k8s.io

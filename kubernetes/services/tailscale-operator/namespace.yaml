@@ -1,0 +1,47 @@
+---
+# Pod Security: privileged, not restricted like the app namespaces. The proxy
+# pods the operator creates here need NET_ADMIN (and, for subnet routing,
+# /dev/net/tun) to set up WireGuard.
+#
+# The ExternalSecret rides along in this file because a kind: helm service
+# applies exactly one manifest before its chart (namespace.yaml), and the
+# operator pod reads operator-oauth at start-up. Under ArgoCD (chart only)
+# create this ExternalSecret yourself.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+  labels:
+    name: tailscale
+    type: network
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+# operator-oauth: the Secret the chart mounts when oauth.clientId is unset
+# (cmd/k8s-operator/deploy/chart/values.yaml). Source: the user-supplied
+# tailscale-oauth secret in the secrets namespace, keys client-id and
+# client-secret (an OAuth client with the Devices Core and Auth Keys write
+# scopes and the tag:k8s-operator tag; see docs/runbooks/storage-and-hardware.md).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: operator-oauth
+  namespace: tailscale
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: operator-oauth
+    creationPolicy: Owner
+  data:
+  - secretKey: client_id
+    remoteRef:
+      key: tailscale-oauth
+      property: client-id
+  - secretKey: client_secret
+    remoteRef:
+      key: tailscale-oauth
+      property: client-secret

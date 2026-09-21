@@ -1,0 +1,15 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: authelia
+namespace: authelia
+group: core
+project: homelab-security
+priority: 10
+url: auth
+description: SSO and 2FA (Traefik ForwardAuth)
+steps:
+  - apply: redis-deployment.yaml
+    wait: app=authelia-redis
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

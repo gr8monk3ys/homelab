@@ -1,0 +1,16 @@
+---
+# Policy template: default-deny
+# Denies all ingress and egress in the namespace. Every other template is an
+# allow that layers on top of this one, so a descriptor that lists
+# default-deny must also list allow-dns at minimum.
+# The namespace is filled in by scripts/lib/netpol.sh at install time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: PLACEHOLDER_NAMESPACE
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

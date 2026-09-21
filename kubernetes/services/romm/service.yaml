@@ -1,0 +1,14 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: romm
+namespace: romm
+group: media
+optin: true
+url: games
+description: ROM manager and web emulator
+steps:
+  - apply: mariadb-deployment.yaml
+    wait: app=romm-mariadb
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

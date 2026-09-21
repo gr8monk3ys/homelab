@@ -1,0 +1,31 @@
+---
+# Tailscale operator Helm values (chart tailscale/tailscale-operator,
+# TAILSCALE_OPERATOR_CHART_VERSION in tools/versions.env). Rendered like a
+# manifest.
+#
+# oauth.clientId / oauth.clientSecret stay EMPTY on purpose: with them unset
+# the chart mounts the pre-created Secret operator-oauth (keys client_id,
+# client_secret), which the ExternalSecret in namespace.yaml fills from the
+# user-supplied tailscale-oauth secret. Never put the credentials here.
+oauth:
+  clientId: ""
+  clientSecret: ""
+
+operatorConfig:
+  hostname: "homelab-k8s-operator"
+  logging: "info"
+
+# Makes `ingressClassName: tailscale` and the tailscale.com/expose annotation
+# work (docs/runbooks/storage-and-hardware.md).
+ingressClass:
+  enabled: true
+
+# Proxy pods (one per exposed Service/Ingress) are created in this namespace.
+proxyConfig:
+  defaultTags: "tag:k8s"
+  firewallMode: auto
+
+# Leave the Kubernetes API server off the tailnet unless you want kubectl over
+# Tailscale; "noauth" or "true" enables it (needs the tag:k8s-operator ACL grant).
+apiServerProxyConfig:
+  mode: "false"

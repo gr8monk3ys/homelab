@@ -1,0 +1,13 @@
+---
+# Pod Security: privileged. The plugin DaemonSet mounts
+# /var/lib/kubelet/device-plugins and the NVIDIA devices from the host.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvidia-device-plugin
+  labels:
+    name: nvidia-device-plugin
+    type: core
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

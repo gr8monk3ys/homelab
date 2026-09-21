@@ -1,0 +1,22 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# Manifests vendored from kubernetes-csi/external-snapshotter v8.6.0
+# (client/config/crd/*.yaml and deploy/kubernetes/snapshot-controller/*.yaml),
+# with the namespace changed from kube-system to snapshot-controller and a
+# restricted-profile securityContext added; nothing else edited.
+name: snapshot-controller
+namespace: snapshot-controller
+group: core
+optin: true
+priority: 20
+description: CSI VolumeSnapshot CRDs and controller (prerequisite for Longhorn/VolSync snapshots)
+steps:
+  - apply: crds.yaml
+  - apply: rbac.yaml
+  - apply: deployment.yaml
+    wait: app.kubernetes.io/name=snapshot-controller
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the controller only watches and patches through the
+# Kubernetes API server, which no template allows yet (same as reloader).
+networkPolicies: []

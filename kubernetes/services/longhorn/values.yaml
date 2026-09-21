@@ -1,0 +1,69 @@
+---
+# Longhorn Helm values (chart longhorn/longhorn, LONGHORN_CHART_VERSION in
+# tools/versions.env). Rendered like a manifest: homelab.local -> DOMAIN,
+# homelab-ca -> the cert-manager ClusterIssuer.
+#
+# Single node: one replica per volume (there is nowhere else to put a second
+# one). local-path stays the default StorageClass; Longhorn is opt-in per PVC
+# with storageClassName: longhorn. docs/runbooks/storage-and-hardware.md says
+# how to flip the default.
+
+persistence:
+  createStorageClass: true
+  defaultClass: false
+  defaultClassReplicaCount: 1
+  reclaimPolicy: Delete
+
+defaultSettings:
+  # Replicas for volumes created from the UI; the StorageClass above sets it for PVCs.
+  defaultReplicaCount: 1
+  # Volumes and replicas for Longhorn's data directory on the host.
+  defaultDataPath: /var/lib/longhorn/
+  # One node: schedule replicas on the node the pod runs on, and allow a
+  # replica on the same node as the volume's engine.
+  replicaSoftAntiAffinity: true
+  storageMinimalAvailablePercentage: 10
+  # Prevents `helm uninstall` from destroying volumes by accident.
+  deletingConfirmationFlag: false
+  # Longhorn's own upgrade check phones home; not needed.
+  upgradeChecker: false
+
+# Backups go to the in-cluster MinIO (kubernetes/storage/minio), the same
+# instance Velero uses, into its own bucket. The bucket must exist first
+# (runbook). The credential Secret is created from velero-minio-credentials
+# by the ExternalSecret in namespace.yaml.
+defaultBackupStore:
+  backupTarget: s3://longhorn-backups@us-east-1/
+  backupTargetCredentialSecret: longhorn-minio-credentials
+  pollInterval: 300
+
+# The UI, behind Traefik and the Authelia ForwardAuth middleware like the other
+# sensitive dashboards (see kubernetes/services/open-webui). The chart's own
+# Ingress is used because a kind: helm service ships no manifests of its own.
+ingress:
+  enabled: true
+  ingressClassName: ~
+  host: longhorn.homelab.local
+  tls: true
+  tlsSecret: longhorn-tls
+  path: /
+  pathType: Prefix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
+    cert-manager.io/cluster-issuer: "homelab-ca"
+
+longhornUI:
+  replicas: 1
+
+# The pre-upgrade hook Job needs the chart repo reachable at upgrade time only.
+preUpgradeChecker:
+  jobEnabled: true
+  upgradeVersionCheck: true
+
+# ServiceMonitor only when the Prometheus Operator CRD is present; leave off
+# by default so a cluster without monitoring can still install the chart.
+metrics:
+  serviceMonitor:
+    enabled: false

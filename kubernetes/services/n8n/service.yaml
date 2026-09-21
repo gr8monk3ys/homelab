@@ -1,0 +1,14 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: n8n
+namespace: n8n
+group: productivity
+url: automation
+description: Workflow automation
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=n8n-postgres
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: this service fetches from the internet.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

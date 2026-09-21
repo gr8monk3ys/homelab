@@ -1,0 +1,16 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: gatus
+namespace: gatus
+group: monitoring
+optin: true
+url: status
+description: Health dashboard and status page (gatus-sidecar adds an endpoint per Ingress/IngressRoute automatically)
+steps:
+  - apply: rbac.yaml
+  - apply: deployment.yaml
+    wait: app=gatus
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: probes every other namespace and the LAN; no template expresses that yet.
+networkPolicies: []

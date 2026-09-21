@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: renovate
+namespace: renovate
+group: dev
+optin: true
+description: Self-hosted Renovate CronJob (dependency-update PRs; replaces the renovate.json removed in PR 28 without spending capped Actions minutes)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# No allow-ingress: nothing connects to it. allow-external-https: it reaches GitHub and the image/chart registries.
+networkPolicies: [default-deny, allow-dns, allow-monitoring, allow-same-namespace, allow-external-https]

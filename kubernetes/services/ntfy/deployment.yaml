@@ -1,0 +1,158 @@
+---
+# ntfy - push notifications over HTTP (PUT/POST a topic, subscribe from the
+# app or the web UI). Alertmanager, Gatus and Home Assistant can all target it.
+#
+# Image tag: the research doc cites no ntfy tag; v2.28.0 is the newest tag on
+# Docker Hub at the time of writing (verified against the registry).
+# The image has no USER and listens on :80 by default; the binary runs fine as
+# any uid, so it listens on 8080 as user 1000 and writes only to the cache PVC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+  namespace: ntfy
+  labels:
+    app: ntfy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ntfy
+  template:
+    metadata:
+      labels:
+        app: ntfy
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: ntfy
+        image: binwiederhier/ntfy:v2.28.0
+        args: ["serve"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: NTFY_BASE_URL
+          value: "https://ntfy.homelab.local"
+        - name: NTFY_LISTEN_HTTP
+          value: ":8080"
+        - name: NTFY_BEHIND_PROXY
+          value: "true"
+        - name: NTFY_CACHE_FILE
+          value: "/var/cache/ntfy/cache.db"
+        - name: NTFY_CACHE_DURATION
+          value: "12h"
+        - name: NTFY_ATTACHMENT_CACHE_DIR
+          value: "/var/cache/ntfy/attachments"
+        - name: NTFY_ATTACHMENT_TOTAL_SIZE_LIMIT
+          value: "500M"
+        # read-write: anyone who can reach the LAN host can publish and
+        # subscribe to any topic (topic names are the only secret, as on
+        # ntfy.sh). deny-all would be tighter but requires user accounts
+        # (`ntfy user add`, NTFY_AUTH_FILE) before Alertmanager or Gatus can
+        # publish; switch when credentials are wired in.
+        - name: NTFY_AUTH_DEFAULT_ACCESS
+          value: "read-write"
+        - name: NTFY_ENABLE_LOGIN
+          value: "false"
+        - name: NTFY_ENABLE_SIGNUP
+          value: "false"
+        # Forwards a poll request to ntfy.sh so iOS devices get instant
+        # delivery. Off by default; needs allow-external-https (declared).
+        # - name: NTFY_UPSTREAM_BASE_URL
+        #   value: "https://ntfy.sh"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: cache
+          mountPath: /var/cache/ntfy
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /v1/health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /v1/health
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: ntfy-cache-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ntfy-cache-pvc
+  namespace: ntfy
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  selector:
+    app: ntfy
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ntfy-ingress
+  namespace: ntfy
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - ntfy.homelab.local
+    secretName: ntfy-tls
+  rules:
+  - host: ntfy.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ntfy
+            port:
+              number: 8080

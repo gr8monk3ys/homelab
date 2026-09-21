@@ -33,6 +33,34 @@ Notes:
 - Restoring secrets overwrites resources in the cluster. Use on a fresh/rebuilt cluster unless you know what you are doing.
 - If you lose `.secrets/agekey.txt`, you cannot decrypt old backups. Store it safely offline.
 
+## Where the backups land (read this first)
+
+Velero's default `BackupStorageLocation` points at the MinIO running inside
+this cluster (`http://minio.minio.svc.cluster.local:9000`). MinIO stores its
+data on a `local-path` PersistentVolume, which is a directory on the node's
+own disk.
+
+On a single-node homelab that means **the backups sit on the same physical
+disk as the volumes they back up**. That covers exactly one failure mode, a
+bad `kubectl delete`, and none of the ones people actually lose data to: a
+dead disk, a dead node, a filesystem that will not mount.
+
+`./scripts/verify-backups.sh` warns about this on every run while the target
+is in-cluster and the node count is one.
+
+To fix it, point the BackupStorageLocation somewhere off this machine:
+
+- **A NAS over S3 or NFS.** Point `s3Url` at the NAS's S3 endpoint, or mount
+  an NFS export and use Velero's filesystem backup.
+- **An external S3 bucket** (Backblaze B2, Wasabi, AWS). Change `s3Url`,
+  `region` and `bucket` in `kubernetes/backup/velero/values.yaml`, and put
+  the credentials in the secret table (`scripts/lib/secrets.sh`) instead of
+  reusing the MinIO ones.
+- **A second machine** running MinIO, if you already have one.
+
+Whatever you choose, prove a restore once. A backup nobody has restored from
+is a hypothesis.
+
 ## 2) Velero Backups (Cluster + PVs)
 
 Velero is installed when `INSTALL_VELERO=true` (default) in `./setup-v2.sh`.
@@ -89,7 +117,16 @@ Use the interactive helper when you need to restore from Velero backups:
 ./scripts/disaster-recovery.sh
 ```
 
-To include a secrets restore as part of the run (optional):
+Its reinstall options (`infrastructure`, `monitoring`, `services`, and steps of
+`full`) run the installer's own phases from `setup-v2.sh` (`setup_storage`,
+`setup_secrets`, `setup_ingress`, `setup_backup`, `setup_monitoring`,
+`setup_logging`, `setup_core_services`), so a recovery cannot diverge from a
+fresh install; the same `INSTALL_*`/`ENABLE_*` toggles apply. MetalLB is not
+reinstalled by DR. `CRITICAL_SERVICES` (default `vaultwarden nextcloud gitea
+home-assistant`) picks the services step 4 brings back.
+
+To include a secrets restore as part of the run (optional; it runs before the
+installer generates secrets, so restored values are kept):
 
 ```bash
 SECRETS_BACKUP_FILE=backups/secrets-secrets-<timestamp>.yaml.age ./scripts/disaster-recovery.sh

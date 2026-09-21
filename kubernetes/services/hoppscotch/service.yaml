@@ -1,0 +1,14 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: hoppscotch
+namespace: hoppscotch
+group: dev
+optin: true
+url: hoppscotch
+description: API client
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=hoppscotch-postgres
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]
