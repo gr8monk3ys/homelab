@@ -467,32 +467,15 @@ full_recovery() {
 # Verify cluster health
 verify_health() {
     log "Verifying cluster health..."
-
-    echo ""
-    echo "Cluster Status:"
-    echo "==============="
-
-    # Nodes
     echo ""
     echo "Nodes:"
     kubectl get nodes
-
-    # Namespaces
     echo ""
-    echo "Namespaces:"
-    kubectl get namespaces
-
-    # Pods not running
-    echo ""
-    echo "Pods not in Running state:"
-    kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded 2>/dev/null || echo "All pods are healthy"
-
-    # PVC status
+    # Same interface the installer and validators use (scripts/lib/health.sh).
+    health_report --all || true
     echo ""
     echo "PVC Status:"
     kubectl get pvc -A 2>/dev/null || echo "No PVCs found"
-
-    echo ""
 }
 
 # Print menu

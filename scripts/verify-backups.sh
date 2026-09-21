@@ -1,58 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
-# Homelab Backup Verification Script
-# Validates backup configurations and tests restore capabilities
+# Homelab backup verification: Velero and MinIO health come from
+# scripts/lib/health.sh; this script keeps the backup logic (storage location,
+# backups, schedules, snapshot locations, pod-volume annotations, the optional
+# backup/restore round trip) and takes the namespaces it inspects from the
+# service catalogue instead of a hand-kept list.
+#
+# Every line also goes to REPORT_FILE (common.sh's LOGFILE).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
-
-source "$SCRIPT_DIR/lib/common.sh"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
 
 # Configuration
 BACKUP_NAMESPACE="${BACKUP_NAMESPACE:-velero}"
-MINIO_NAMESPACE="${MINIO_NAMESPACE:-minio-system}"
 TEST_NAMESPACE="backup-test-$(date +%s)"
-REPORT_FILE="${HOMELAB_DIR}/backup-verification-$(date +%Y%m%d-%H%M%S).log"
+REPORT_FILE="${REPORT_FILE:-$(dirname "$SCRIPT_DIR")/backup-verification-$(date +%Y%m%d-%H%M%S).log}"
+LOGFILE="$REPORT_FILE"   # common.sh appends every log line here
+export LOGFILE
+LOG_COLOR="${LOG_COLOR:-true}"
 
-log() {
-    local msg
-    msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-    echo -e "${BLUE}${msg}${NC}"
-    echo "$msg" >> "$REPORT_FILE"
-}
-
-success() {
-    local msg="$*"
-    echo -e "${GREEN}[PASS]${NC} $msg"
-    echo "[PASS] $msg" >> "$REPORT_FILE"
-}
-
-warning() {
-    local msg="$*"
-    echo -e "${YELLOW}[WARN]${NC} $msg"
-    echo "[WARN] $msg" >> "$REPORT_FILE"
-}
-
-error() {
-    local msg="$*"
-    echo -e "${RED}[FAIL]${NC} $msg"
-    echo "[FAIL] $msg" >> "$REPORT_FILE"
-}
-
-info() {
-    local msg="$*"
-    echo -e "${CYAN}[INFO]${NC} $msg"
-    echo "[INFO] $msg" >> "$REPORT_FILE"
-}
+source "$SCRIPT_DIR/lib/health.sh"
 
 # Initialize report
 init_report() {
@@ -65,7 +32,7 @@ Generated: $(date)
 EOF
 }
 
-# Check if Velero is installed and running
+# Velero CLI locally, Velero workloads in the cluster (scripts/lib/health.sh).
 check_velero_installation() {
     log "Checking Velero installation..."
 
@@ -76,27 +43,13 @@ check_velero_installation() {
         success "Velero CLI is installed ($(velero version --client-only 2>/dev/null | head -1 || echo 'unknown version'))"
     fi
 
-    if ! kubectl get namespace "$BACKUP_NAMESPACE" &> /dev/null; then
-        error "Velero namespace ($BACKUP_NAMESPACE) does not exist"
-        info "Velero may not be installed in the cluster"
-        return 1
-    fi
-
-    local velero_pods
-    velero_pods=$(kubectl get pods -n "$BACKUP_NAMESPACE" -l app.kubernetes.io/name=velero --no-headers 2>/dev/null | wc -l | tr -d ' ')
-
-    if [ "$velero_pods" -eq 0 ]; then
-        error "No Velero pods found in $BACKUP_NAMESPACE namespace"
-        return 1
-    fi
-
-    if kubectl get pods -n "$BACKUP_NAMESPACE" -l app.kubernetes.io/name=velero | grep -q Running; then
-        success "Velero is running"
-    else
-        error "Velero pods are not in Running state"
-        kubectl get pods -n "$BACKUP_NAMESPACE" -l app.kubernetes.io/name=velero
-        return 1
-    fi
+    local line rc=0
+    line="$(infra_healthy velero)" || rc=$?
+    case "$rc" in
+        0) success "$line" ;;
+        2) warning "$line"; return 2 ;;
+        *) warning "$line"; return 1 ;;
+    esac
 }
 
 # Check backup storage location
@@ -104,10 +57,10 @@ check_backup_storage() {
     log "Checking backup storage location..."
 
     local bsl_count
-    bsl_count=$(kubectl get backupstoragelocation -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    bsl_count=$(kubectl get backupstoragelocation -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
 
     if [ "$bsl_count" -eq 0 ]; then
-        error "No BackupStorageLocation configured"
+        warning "No BackupStorageLocation configured"
         return 1
     fi
 
@@ -115,16 +68,19 @@ check_backup_storage() {
     available_bsl=$(kubectl get backupstoragelocation -n "$BACKUP_NAMESPACE" -o jsonpath='{.items[?(@.status.phase=="Available")].metadata.name}' 2>/dev/null)
 
     if [ -z "$available_bsl" ]; then
-        error "No BackupStorageLocation is in Available phase"
+        warning "No BackupStorageLocation is in Available phase"
         kubectl get backupstoragelocation -n "$BACKUP_NAMESPACE"
         return 1
     fi
 
     success "Backup storage is available: $available_bsl"
 
-    # Check MinIO if it's the storage backend
-    if kubectl get pods -n "$MINIO_NAMESPACE" -l app=minio 2>/dev/null | grep -q Running; then
-        success "MinIO storage backend is running"
+    # MinIO, when it is the storage backend.
+    local line
+    if line="$(infra_healthy minio)"; then
+        success "$line (storage backend)"
+    else
+        warning "$line"
     fi
 }
 
@@ -133,7 +89,7 @@ list_backups() {
     log "Listing existing backups..."
 
     local backup_count
-    backup_count=$(kubectl get backup -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    backup_count=$(kubectl get backup -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
 
     if [ "$backup_count" -eq 0 ]; then
         warning "No backups found"
@@ -182,7 +138,7 @@ check_scheduled_backups() {
     log "Checking backup schedules..."
 
     local schedule_count
-    schedule_count=$(kubectl get schedule -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    schedule_count=$(kubectl get schedule -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
 
     if [ "$schedule_count" -eq 0 ]; then
         warning "No backup schedules configured"
@@ -199,7 +155,7 @@ check_volume_snapshots() {
     log "Checking volume snapshot support..."
 
     local vsl_count
-    vsl_count=$(kubectl get volumesnapshotlocation -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    vsl_count=$(kubectl get volumesnapshotlocation -n "$BACKUP_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
 
     if [ "$vsl_count" -eq 0 ]; then
         warning "No VolumeSnapshotLocation configured (PV backups may use kopia file-level backups via the node agent)"
@@ -222,10 +178,10 @@ check_pvc_backup_config() {
     log "Checking pod volume backup configuration..."
 
     local pods_with_backup
-    pods_with_backup=$(kubectl get pods -A -o jsonpath='{.items[?(@.metadata.annotations.backup\.velero\.io/backup-volumes)].metadata.name}' 2>/dev/null | wc -w | tr -d ' ')
+    pods_with_backup=$(kubectl get pods -A -o jsonpath='{.items[?(@.metadata.annotations.backup\.velero\.io/backup-volumes)].metadata.name}' 2>/dev/null | wc -w | tr -d ' ' || true)
 
     local total_pvcs
-    total_pvcs=$(kubectl get pvc -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    total_pvcs=$(kubectl get pvc -A --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
 
     if [ "$total_pvcs" -gt 0 ]; then
         info "Pods with explicit backup-volumes annotation: $pods_with_backup (PVCs in cluster: $total_pvcs)"
@@ -278,7 +234,7 @@ test_backup_restore() {
         if [ "$backup_status" = "Completed" ]; then
             success "Test backup completed successfully"
         else
-            error "Test backup failed with status: $backup_status"
+            warning "Test backup failed with status: $backup_status"
             cleanup_test
             return 1
         fi
@@ -303,7 +259,7 @@ test_backup_restore() {
                 --labels homelab-backup-test=true \
                 --wait \
                 2>/dev/null || {
-                error "Restore creation failed"
+                warning "Restore creation failed"
                 cleanup_test
                 return 1
             }
@@ -314,7 +270,7 @@ test_backup_restore() {
             if [ "$restored_value" = "$original_value" ]; then
                 success "Restore verified (configmap value matches)"
             else
-                error "Restore verification failed (expected '$original_value', got '$restored_value')"
+                warning "Restore verification failed (expected '$original_value', got '$restored_value')"
                 cleanup_test
                 return 1
             fi
@@ -336,26 +292,21 @@ cleanup_test() {
     fi
 }
 
-# Check critical services backup status
-check_critical_services() {
-    log "Checking critical services backup status..."
+# PVCs per service namespace, from the catalogue: what a backup has to cover.
+check_service_volumes() {
+    log "Checking service volumes (catalogue namespaces present in the cluster)..."
 
-    local critical_namespaces=(
-        "vaultwarden"
-        "nextcloud"
-        "gitea"
-        "paperless-ngx"
-        "immich"
-        "home-assistant"
-    )
-
-    for ns in "${critical_namespaces[@]}"; do
-        if kubectl get namespace "$ns" &> /dev/null; then
-            local pvcs
-            pvcs=$(kubectl get pvc -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-            info "  $ns: $pvcs PVCs"
-        fi
+    local name ns pvcs total=0 with_pvcs=0
+    for name in $(services_all); do
+        ns="$(service_field "$name" '.namespace')"
+        kubectl get namespace "$ns" &> /dev/null || continue
+        pvcs=$(kubectl get pvc -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ' || true)
+        [ "$pvcs" -gt 0 ] || continue
+        info "  $name ($ns): $pvcs PVCs"
+        total=$((total + pvcs))
+        with_pvcs=$((with_pvcs + 1))
     done
+    info "$with_pvcs service namespace(s) hold $total PVC(s)"
 }
 
 # Generate recommendations
@@ -405,7 +356,12 @@ main() {
 
     local failed=0
 
-    check_velero_installation || failed=$((failed+1))
+    local rc=0
+    check_velero_installation || rc=$?
+    if [ "$rc" -eq 2 ]; then
+        error "No cluster access; nothing to verify (report: $REPORT_FILE)"
+    fi
+    [ "$rc" -eq 0 ] || failed=$((failed+1))
     echo ""
 
     check_backup_storage || failed=$((failed+1))
@@ -423,7 +379,7 @@ main() {
     check_pvc_backup_config
     echo ""
 
-    check_critical_services
+    check_service_volumes
     echo ""
 
     if [ "${RUN_RESTORE_TEST:-false}" = "true" ]; then
@@ -436,7 +392,6 @@ main() {
 
     if [ "$failed" -gt 0 ]; then
         error "Verification completed with $failed failure(s)"
-        exit 1
     fi
 
     success "Backup verification completed successfully"
@@ -454,7 +409,7 @@ Options:
 
 Environment Variables:
   BACKUP_NAMESPACE   Velero namespace (default: velero)
-  MINIO_NAMESPACE    MinIO namespace (default: minio-system)
+  REPORT_FILE        Where the report is written (default: backup-verification-<stamp>.log in the repo root)
   RUN_RESTORE_TEST   Run full backup/restore test (default: false)
 
 Examples:

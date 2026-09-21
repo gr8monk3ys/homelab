@@ -15,6 +15,7 @@ source "$HOMELAB_DIR/scripts/lib/render.sh"
 source "$HOMELAB_DIR/scripts/lib/helm.sh"
 source "$HOMELAB_DIR/scripts/lib/services.sh"
 source "$HOMELAB_DIR/scripts/lib/netpol.sh"
+source "$HOMELAB_DIR/scripts/lib/health.sh"
 
 # DOMAIN, TIMEZONE, ADMIN_EMAIL, CERT_MANAGER_CLUSTER_ISSUER, GITOPS_REPO_URL:
 # defaults <- config/homelab.yaml <- environment (see homelab_load_config).
@@ -685,110 +686,25 @@ setup_gitops() {
 }
 
 run_health_checks() {
+    # One health interface for every caller (scripts/lib/health.sh): every
+    # enabled infrastructure piece and catalogue service, from the same lists
+    # the installer used.
     log "Running health checks..."
-
-    local failed_checks=()
-
-    # Check core platform components (best-effort)
-    if [[ "$INSTALL_TRAEFIK" == "true" ]]; then
-        if ! kubectl get pods -n traefik-system -l app.kubernetes.io/name=traefik -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("traefik")
-        fi
-    fi
-
-    if [[ "$INSTALL_EXTERNAL_SECRETS" == "true" ]]; then
-        if ! kubectl get pods -n external-secrets -l app.kubernetes.io/name=external-secrets -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("external-secrets")
-        fi
-    fi
-
-    if [[ "$INSTALL_CERT_MANAGER" == "true" ]]; then
-        if ! kubectl get pods -n cert-manager -o jsonpath='{.items[*].status.phase}' 2>/dev/null | grep -q Running; then
-            failed_checks+=("cert-manager")
-        fi
-    fi
-
-    # Check namespaces
-    local namespaces_to_check=("nextcloud")
-    if [[ "$INSTALL_MONITORING" == "true" ]]; then
-        namespaces_to_check+=("monitoring")
-    fi
-    if [[ "$ENABLE_GITOPS" == "true" ]]; then
-        namespaces_to_check+=("argocd")
-    fi
-
-    for ns in "${namespaces_to_check[@]}"; do
-        if ! kubectl get ns "$ns" &> /dev/null; then
-            failed_checks+=("namespace-$ns")
-        fi
-    done
-
-    if [ ${#failed_checks[@]} -ne 0 ]; then
-        warning "Failed health checks: ${failed_checks[*]}"
-        warning "Some services may not be ready yet. Check logs with: kubectl logs -f deployment/<service>"
-    else
-        success "All health checks passed"
-    fi
+    health_report --all --enabled-only || \
+        warning "Some pieces are not ready yet (see the table above); re-run ./scripts/validate-setup.sh later."
 }
 
 get_access_info() {
     log "Retrieving access information..."
-
     echo ""
     echo "🎉 Homelab setup completed successfully!"
     echo ""
-    echo "🔗 Service URLs:"
-    echo ""
-    if [[ "$CONFIGURE_WILDCARD_DNS" == "true" && "$ENABLE_NETWORK_SERVICES" == "true" ]]; then
-        echo "   DNS: Wildcard DNS via Pi-hole is enabled (no /etc/hosts)."
-        echo "   Pi-hole DNS service: kubectl -n pihole get svc pihole-dns"
-    else
-        echo "   DNS: Add /etc/hosts entries, or enable wildcard DNS via Pi-hole:"
-        echo "     CONFIGURE_WILDCARD_DNS=true ./setup-v2.sh"
-        echo "     or run: ./scripts/configure-wildcard-dns.sh"
-    fi
-    echo ""
-    echo "   Infrastructure:"
-    echo "   📊 Grafana: https://grafana.$DOMAIN"
-    echo "   ⚙️  ArgoCD: https://argocd.$DOMAIN"
-    echo "   🏠 Homepage: https://home.$DOMAIN"
-    echo ""
-    echo "   Media:"
-    echo "   🎬 Jellyfin: https://jellyfin.$DOMAIN"
-    echo "   📺 Sonarr: https://sonarr.$DOMAIN"
-    echo "   🎥 Radarr: https://radarr.$DOMAIN"
-    echo "   🔍 Prowlarr: https://prowlarr.$DOMAIN"
-    echo "   💬 Bazarr: https://bazarr.$DOMAIN"
-    echo "   🎧 Audiobookshelf: https://audiobooks.$DOMAIN"
-    echo ""
-    echo "   Productivity:"
-    echo "   📁 Nextcloud: https://nextcloud.$DOMAIN"
-    echo "   📄 Paperless: https://docs.$DOMAIN"
-    echo "   📸 Immich: https://photos.$DOMAIN"
-    echo "   🍲 Mealie: https://recipes.$DOMAIN"
-    echo "   🔖 Linkwarden: https://bookmarks.$DOMAIN"
-    echo "   🔄 n8n: https://automation.$DOMAIN"
-    echo ""
-    echo "   AI:"
-    echo "   🤖 Ollama API: https://ai.$DOMAIN"
-    echo "   💬 Open WebUI: https://chat.$DOMAIN"
-    echo ""
-    echo "   Security:"
-    echo "   🔐 Vaultwarden: https://vault.$DOMAIN"
-    echo "   🔒 Authelia: https://auth.$DOMAIN"
-    echo "   🛡️  Gitea: https://git.$DOMAIN"
-    echo ""
-    echo "🔐 Retrieve credentials securely (not logged):"
-    echo "   Grafana:     kubectl get secret grafana-admin -n monitoring -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   ArgoCD:      kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   Nextcloud:   kubectl get secret nextcloud-admin -n secrets -o jsonpath='{.data.password}' | base64 -d && echo"
-    echo "   Paperless:   kubectl get secret paperless-admin -n secrets -o jsonpath='{.data.password}' | base64 -d && echo"
+    access_summary
     echo ""
     echo "🔧 Management commands:"
-    echo "   View logs: kubectl logs -f deployment/<service> -n <namespace>"
-    echo "   Scale service: kubectl scale deployment <service> --replicas=<count> -n <namespace>"
-    echo "   Update config: helm upgrade <release> <chart> --values <values-file>"
-    echo "   Backup status: velero schedule get && velero backup get"
+    echo "   Health:  ./scripts/validate-setup.sh"
+    echo "   Logs:    kubectl logs -f deployment/<service> -n <namespace>"
+    echo "   Backups: velero schedule get && velero backup get"
     echo "   CrowdSec decisions: kubectl exec -n crowdsec deploy/crowdsec-agent -- cscli decisions list"
     echo ""
     echo "📚 Documentation: $HOMELAB_DIR/docs/"

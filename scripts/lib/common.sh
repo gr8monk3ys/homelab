@@ -11,11 +11,15 @@
 #   HOMELAB_DIR / REPO_ROOT   repo root
 #   PATH                      repo-local toolchain (.tools/bin, .tools/venv/bin) first
 #   tools/versions.env        sourced (HELM_VERSION, *_CHART_VERSION, ...)
-#   log / success / warning / info / error   one log family; LOGFILE, if set, is tee'd
+#   log / success / warning / info / error   one log family:
+#       LOGFILE=<path>   if set, every line is also appended there, uncoloured
+#       LOG_COLOR=true   colour the terminal line (default: plain; the file
+#                        copy is never coloured)
 #   detect_os / detect_arch   normalised uname
 #
-# A script that needs different semantics (a non-exiting error(), colours)
-# defines its own function after sourcing; the later definition wins.
+# A script that needs different semantics (a non-exiting error()) defines
+# its own function after sourcing; the later definition wins. Colour and a
+# per-script report file are not reasons to redefine: set the two variables.
 
 if [[ -n "${HOMELAB_COMMON_SOURCED:-}" ]]; then
     return 0
@@ -46,22 +50,29 @@ fi
 # shellcheck disable=SC1090
 source "$VERSIONS_FILE"
 
-log() {
-    local line
+# _log_line <ansi-colour> <text>: the one place a log line is written.
+_log_line() {
+    local colour="$1" line
+    shift
     line="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     if [[ -n "${LOGFILE:-}" ]]; then
         echo "$line" >> "$LOGFILE"
     fi
-    echo "$line"
+    if [[ "${LOG_COLOR:-false}" == "true" && -n "$colour" ]]; then
+        printf '\033[%sm%s\033[0m\n' "$colour" "$line"
+    else
+        echo "$line"
+    fi
 }
 
-success() { log "✅ $*"; }
-warning() { log "⚠️  $*"; }
-info()    { log "$*"; }
+log()     { _log_line "0;34" "$*"; }
+success() { _log_line "0;32" "✅ $*"; }
+warning() { _log_line "1;33" "⚠️  $*"; }
+info()    { _log_line "0;36" "$*"; }
 
 error() {
     # To stderr, so a caller that silences stdout (CI, >/dev/null) still sees why.
-    log "ERROR: $*" >&2
+    _log_line "0;31" "ERROR: $*" >&2
     exit 1
 }
 
