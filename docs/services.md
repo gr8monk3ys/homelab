@@ -6,21 +6,29 @@ What `setup-v2.sh` installs and what each piece is for. URLs are
 Applications are a **catalogue**: every `kubernetes/services/<name>/` carries a
 `service.yaml` descriptor (namespace, group, opt-in flag, ordered install
 steps). `./scripts/services.sh list` prints it; `./scripts/services.sh check`
-is what CI runs. A service's `group` maps to a toggle:
+is what CI runs. A service's `group` is one row of `SERVICE_GROUPS` in
+`scripts/lib/services.sh` -- the one place a group's toggle, its default and
+its ArgoCD AppProject are written, in install order. The installer seeds its
+toggles from it and the generated app-of-apps reads the same defaults, so this
+table is a copy for readers; change the rows, not this:
 
-| Group | Toggle (default) |
-|---|---|
-| `core` | always |
-| `media` | `ENABLE_MEDIA_SERVICES` (true) |
-| `network` | `ENABLE_NETWORK_SERVICES` (true) |
-| `content` | `ENABLE_CONTENT_SERVICES` (true) |
-| `productivity` | `ENABLE_PRODUCTIVITY_SERVICES` (true) |
-| `ai` | `ENABLE_AI_SERVICES` (false) |
-| `dev` | `ENABLE_DEV_SERVICES` (false) |
-| `home` | `ENABLE_HOME_SERVICES` (false) |
-| `communication` | `ENABLE_COMMUNICATION_SERVICES` (false) |
-| `monitoring` | `INSTALL_MONITORING` (true) |
-| `logging` | `INSTALL_LOGGING` (false) |
+| Group | Toggle (default) | ArgoCD project |
+|---|---|---|
+| `core` | always | `homelab-infrastructure` |
+| `media` | `ENABLE_MEDIA_SERVICES` (true) | `homelab-media` |
+| `network` | `ENABLE_NETWORK_SERVICES` (true) | `homelab-infrastructure` |
+| `dev` | `ENABLE_DEV_SERVICES` (false) | `homelab-infrastructure` |
+| `content` | `ENABLE_CONTENT_SERVICES` (true) | `homelab-productivity` |
+| `ai` | `ENABLE_AI_SERVICES` (false) | `homelab-ai` |
+| `productivity` | `ENABLE_PRODUCTIVITY_SERVICES` (true) | `homelab-productivity` |
+| `home` | `ENABLE_HOME_SERVICES` (false) | `homelab-infrastructure` |
+| `communication` | `ENABLE_COMMUNICATION_SERVICES` (false) | `homelab-productivity` |
+| `monitoring` | `INSTALL_MONITORING` (true) | `homelab-infrastructure` |
+| `logging` | `INSTALL_LOGGING` (false) | `homelab-infrastructure` |
+
+A descriptor's own `project:` wins over its group's (Authelia, Keycloak and
+Vaultwarden are in `homelab-security`). A group's default is also what
+"installed by default" means in the generated app-of-apps.
 
 The same catalogue generates the ArgoCD app-of-apps
 (`kubernetes/gitops/argocd/apps/services/`, see `kubernetes/gitops/argocd/README.md`),
@@ -51,6 +59,12 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 | NetworkPolicies | always | Per-namespace isolation is declared in each service's `service.yaml` (`networkPolicies:`, rendered from `kubernetes/security/network-policies/templates/` by `scripts/lib/netpol.sh`); infrastructure namespaces, Nextcloud and the finer per-pod DB/egress rules stay in `kubernetes/security/network-policies/*.yaml` |
 | Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
 | Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
+
+Every Helm-installed piece above is one row of `HELM_INFRA_RELEASES` in
+`scripts/lib/helm.sh` (chart, namespace, version variable, values, toggle and
+the pod selector its health check looks for), and
+`./scripts/validate-setup.sh --infra` checks exactly those rows plus
+local-path, MinIO, CrowdSec and ArgoCD. See ADR-0006.
 
 ## Monitoring (installed by default)
 

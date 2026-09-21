@@ -24,15 +24,14 @@ source "$HOMELAB_DIR/scripts/lib/health.sh"
 ENABLE_GITOPS="${ENABLE_GITOPS:-false}"
 # When true, apply `kubernetes/gitops/argocd/` after ArgoCD install. Those manifests contain placeholders by default.
 APPLY_GITOPS_MANIFESTS="${APPLY_GITOPS_MANIFESTS:-false}"
-ENABLE_DEV_SERVICES="${ENABLE_DEV_SERVICES:-false}"
-ENABLE_AI_SERVICES="${ENABLE_AI_SERVICES:-false}"
+# Every service group's toggle (ENABLE_MEDIA_SERVICES, ENABLE_AI_SERVICES,
+# INSTALL_MONITORING, INSTALL_LOGGING, ...) gets its effective value here,
+# from the environment or from the group's default column in SERVICE_GROUPS
+# (scripts/lib/services.sh). That table is the only place a group's default
+# is written: `./scripts/services.sh list` and the generated ArgoCD
+# app-of-apps read the same column.
+service_group_toggles_apply
 
-ENABLE_NETWORK_SERVICES="${ENABLE_NETWORK_SERVICES:-true}"
-ENABLE_CONTENT_SERVICES="${ENABLE_CONTENT_SERVICES:-true}"
-ENABLE_MEDIA_SERVICES="${ENABLE_MEDIA_SERVICES:-true}"
-ENABLE_PRODUCTIVITY_SERVICES="${ENABLE_PRODUCTIVITY_SERVICES:-true}"
-ENABLE_HOME_SERVICES="${ENABLE_HOME_SERVICES:-false}"
-ENABLE_COMMUNICATION_SERVICES="${ENABLE_COMMUNICATION_SERVICES:-false}"
 # Services marked `optin: true` in their service.yaml install only when named here
 # (space/comma separated) or when set to "all". `./scripts/services.sh list` shows them.
 OPTIN_SERVICES="${OPTIN_SERVICES:-}"
@@ -42,10 +41,11 @@ INSTALL_TRAEFIK="${INSTALL_TRAEFIK:-true}"
 INSTALL_CERT_MANAGER="${INSTALL_CERT_MANAGER:-true}"
 INSTALL_EXTERNAL_SECRETS="${INSTALL_EXTERNAL_SECRETS:-true}"
 INSTALL_EXTERNAL_DNS="${INSTALL_EXTERNAL_DNS:-false}"
-INSTALL_MONITORING="${INSTALL_MONITORING:-true}"
+# INSTALL_MONITORING and INSTALL_LOGGING are the monitoring and logging
+# *group* toggles as well, so service_group_toggles_apply above has already
+# set them; only what they switch on beyond a group is listed here.
 INSTALL_BLACKBOX_EXPORTER="${INSTALL_BLACKBOX_EXPORTER:-true}"
 CONFIGURE_ALERTING="${CONFIGURE_ALERTING:-false}"
-INSTALL_LOGGING="${INSTALL_LOGGING:-false}"
 INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
 INSTALL_VELERO="${INSTALL_VELERO:-true}"
 
@@ -771,7 +771,7 @@ main() {
     log "  Blackbox Exporter: $INSTALL_BLACKBOX_EXPORTER"
     log "  Alerting (AlertmanagerConfig): $CONFIGURE_ALERTING"
     log "  Logging (Loki): $INSTALL_LOGGING (Alloy: $INSTALL_ALLOY)"
-    log "  Service groups: media=$ENABLE_MEDIA_SERVICES network=$ENABLE_NETWORK_SERVICES dev=$ENABLE_DEV_SERVICES content=$ENABLE_CONTENT_SERVICES ai=$ENABLE_AI_SERVICES productivity=$ENABLE_PRODUCTIVITY_SERVICES home=$ENABLE_HOME_SERVICES communication=$ENABLE_COMMUNICATION_SERVICES"
+    log "  Service groups: $(service_group_toggles_summary)"
     log "  Opt-in services: ${OPTIN_SERVICES:-none}"
 
     # Base infrastructure (LB, ingress, secrets, storage)
@@ -792,6 +792,11 @@ main() {
     setup_logging
 
     # Applications: every kubernetes/services/<name>/service.yaml, by group.
+    # One phase per row of SERVICE_GROUPS (scripts/lib/services.sh), in that
+    # table's order, except the logging group: its one service (Loki) is
+    # installed by setup_logging above, which has to run before the groups
+    # that log into it. Each phase is a wrapper so disaster recovery can
+    # re-run one by name (scripts/disaster-recovery.sh).
     setup_core_services
     setup_media_services
     setup_network_services

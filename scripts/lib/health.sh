@@ -5,7 +5,8 @@
 # (the installer's health checks and access summary, disaster recovery,
 # scripts/validate-setup.sh, scripts/verify-backups.sh, test/validate.sh).
 # Services come from the catalogue (their descriptor's namespace: and url:);
-# infrastructure is the fixed set the installer knows.
+# infrastructure comes from the installer's own table of Helm releases plus
+# the four pieces that are not Helm releases.
 #
 #   service_healthy <name>     namespace exists, every Deployment/StatefulSet in
 #                              it is fully ready, its ExternalSecrets are Ready,
@@ -16,6 +17,11 @@
 #   infra_healthy <piece>      one of HEALTH_INFRA (below): namespace exists,
 #                              the installer's pod selector is Running, and every
 #                              workload in the namespace is ready. Same one line.
+#                              The Helm-installed pieces are the rows of
+#                              HELM_INFRA_RELEASES (scripts/lib/helm.sh), which
+#                              carry the namespace, the toggle and the health
+#                              selector; only the four pieces that are not Helm
+#                              releases are described here (ADR-0006).
 #   health_report [--services|--infra|--all] [--enabled-only]
 #                              a table plus a summary line; --enabled-only keeps
 #                              services service_enabled says install and infra
@@ -53,36 +59,53 @@ if [[ -z "${HOMELAB_SERVICES_SOURCED:-}" ]]; then
     source "$HOMELAB_LIB_DIR/services.sh"
 fi
 
-# The infrastructure the installer brings up, in the order it does.
-HEALTH_INFRA=(local-path metallb traefik cert-manager external-secrets minio monitoring velero crowdsec argocd)
-
-# piece -> "<namespace>[,<fallback namespace>] <pod selector or -> <toggle variable>"
-_health_infra_spec() {
+# The four infrastructure pieces that are not Helm releases, as
+# "<namespace>[,<fallback namespace>] <pod selector or -> <toggle>[=<default>]".
+# Every other piece is a row of HELM_INFRA_RELEASES (scripts/lib/helm.sh) and
+# is read from there, so a piece cannot be installed and go unchecked.
+_health_infra_local_spec() {
     case "$1" in
-        local-path)       echo "local-path-storage app=local-path-provisioner INSTALL_LOCAL_PATH" ;;
-        metallb)          echo "metallb-system app.kubernetes.io/name=metallb INSTALL_METALLB" ;;
-        traefik)          echo "traefik-system,kube-system app.kubernetes.io/name=traefik INSTALL_TRAEFIK" ;;
-        cert-manager)     echo "cert-manager - INSTALL_CERT_MANAGER" ;;
-        external-secrets) echo "external-secrets app.kubernetes.io/name=external-secrets INSTALL_EXTERNAL_SECRETS" ;;
-        minio)            echo "minio-system app=minio INSTALL_MINIO" ;;
-        monitoring)       echo "monitoring - INSTALL_MONITORING" ;;
-        velero)           echo "velero app.kubernetes.io/name=velero INSTALL_VELERO" ;;
-        crowdsec)         echo "crowdsec app=crowdsec INSTALL_CROWDSEC" ;;
-        argocd)           echo "argocd - ENABLE_GITOPS" ;;
-        *)                return 1 ;;
+        local-path) echo "local-path-storage app=local-path-provisioner INSTALL_LOCAL_PATH" ;;
+        minio)      echo "minio-system app=minio INSTALL_MINIO" ;;
+        crowdsec)   echo "crowdsec app=crowdsec INSTALL_CROWDSEC" ;;
+        argocd)     echo "argocd - ENABLE_GITOPS=false" ;;
+        *)          return 1 ;;
     esac
 }
 
-# infra_enabled <piece>: the installer's toggle for it (unset means the
-# installer's default: on, except GitOps).
+# The infrastructure the installer brings up: storage first, then every Helm
+# release in the order the table installs them, then CrowdSec and ArgoCD.
+HEALTH_INFRA=(local-path minio)
+while IFS= read -r _health_piece; do
+    HEALTH_INFRA+=("$_health_piece")
+done < <(helm_infra_release_names)
+HEALTH_INFRA+=(crowdsec argocd)
+unset _health_piece
+
+# _health_infra_spec <piece> -> "<namespace>[,<fallback>] <selector or -> <toggle>[=<default>]"
+_health_infra_spec() {
+    local piece="$1" namespaces selector
+    _health_infra_local_spec "$piece" && return 0
+    helm_infra_field "$piece" chart >/dev/null || return 1
+    namespaces="$(helm_infra_field "$piece" health-in)"
+    [[ -n "$namespaces" ]] || namespaces="$(helm_infra_field "$piece" namespace)"
+    selector="$(helm_infra_field "$piece" health-label)"
+    echo "$namespaces ${selector:--} $(helm_infra_field "$piece" toggle)"
+}
+
+# infra_enabled <piece>: the piece's toggle, defaulting the way the installer
+# defaults it (on, unless the table's toggle column says otherwise).
 infra_enabled() {
-    local spec toggle
+    local spec toggle default
     spec="$(_health_infra_spec "$1")" || return 1
     toggle="${spec##* }"
-    case "$toggle" in
-        ENABLE_GITOPS) [[ "${ENABLE_GITOPS:-false}" == "true" ]] ;;
-        *)             [[ "${!toggle:-true}" == "true" ]] ;;
-    esac
+    [[ -n "$toggle" ]] || return 0   # a piece with no toggle is always on
+    default="true"
+    if [[ "$toggle" == *=* ]]; then
+        default="${toggle#*=}"
+        toggle="${toggle%%=*}"
+    fi
+    [[ "${!toggle:-$default}" == "true" ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -311,7 +334,7 @@ health_report() {
     fi
 
     local ok=0 failed=0 skipped=0 rc name
-    printf '%-4s %-16s %-18s %s\n' STATE KIND NAME DETAIL
+    printf '%-4s %-16s %-21s %s\n' STATE KIND NAME DETAIL
     if [[ "$scope" != "services" ]]; then
         for name in "${HEALTH_INFRA[@]}"; do
             if [[ "$enabled_only" == "true" ]] && ! infra_enabled "$name"; then
@@ -341,7 +364,7 @@ health_report() {
 _health_row() {
     local state="FAIL"
     [[ "$1" -eq 0 ]] && state="OK"
-    printf '%-4s %-16s %-18s %s\n' "$state" "$2" "$3" "$HEALTH_REASON"
+    printf '%-4s %-16s %-21s %s\n' "$state" "$2" "$3" "$HEALTH_REASON"
 }
 
 # access_summary [--all]: where everything is, from the catalogue.
@@ -363,7 +386,7 @@ access_summary() {
     [[ "${INSTALL_MONITORING:-true}" == "true" ]] && echo "    grafana             https://grafana.$DOMAIN"
     [[ "${ENABLE_GITOPS:-false}" == "true" ]]    && echo "    argocd              https://argocd.$DOMAIN"
     echo "    minio               https://minio.$DOMAIN"
-    for group in "${SERVICE_GROUPS[@]}"; do
+    for group in $(service_group_names); do
         line=""
         for name in $(services_in_group "$group"); do
             url="$(service_url "$name")"

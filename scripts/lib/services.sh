@@ -63,27 +63,102 @@ source "$HOMELAB_LIB_DIR/helm.sh"
 
 SERVICES_DIR="${SERVICES_DIR:-$HOMELAB_DIR/kubernetes/services}"
 
-# Group -> toggle. Order here is the install order.
-SERVICE_GROUPS=(core media network dev content ai productivity home communication monitoring logging)
+# The service groups: one row per group, and the only place a group is
+# defined. Columns:
+#
+#   <group> <toggle variable|-> <default true|false> <ArgoCD AppProject>
+#
+# The toggle variable is the environment variable that switches the group on
+# or off; "-" means the group has none and is always on (core). The default
+# applies when that variable is unset: it is what setup-v2.sh seeds its
+# ENABLE_*/INSTALL_* group toggles with, and what `service_is_default`
+# (scripts/lib/argocd.sh) means by "installed by default". The project is the
+# AppProject a service of this group lands in unless its descriptor names one.
+#
+# Row order is the install order: setup-v2.sh's group phases run top to bottom.
+SERVICE_GROUPS=(
+    "core          -                             true  homelab-infrastructure"
+    "media         ENABLE_MEDIA_SERVICES         true  homelab-media"
+    "network       ENABLE_NETWORK_SERVICES       true  homelab-infrastructure"
+    "dev           ENABLE_DEV_SERVICES           false homelab-infrastructure"
+    "content       ENABLE_CONTENT_SERVICES       true  homelab-productivity"
+    "ai            ENABLE_AI_SERVICES            false homelab-ai"
+    "productivity  ENABLE_PRODUCTIVITY_SERVICES  true  homelab-productivity"
+    "home          ENABLE_HOME_SERVICES          false homelab-infrastructure"
+    "communication ENABLE_COMMUNICATION_SERVICES false homelab-productivity"
+    "monitoring    INSTALL_MONITORING            true  homelab-infrastructure"
+    "logging       INSTALL_LOGGING               false homelab-infrastructure"
+)
 
 # Services with optin: true install only when named here (space or comma separated), or "all".
 OPTIN_SERVICES="${OPTIN_SERVICES:-}"
 
-service_group_toggle() {
-    case "$1" in
-        core)          echo "true" ;;
-        media)         echo "${ENABLE_MEDIA_SERVICES:-true}" ;;
-        network)       echo "${ENABLE_NETWORK_SERVICES:-true}" ;;
-        dev)           echo "${ENABLE_DEV_SERVICES:-false}" ;;
-        content)       echo "${ENABLE_CONTENT_SERVICES:-true}" ;;
-        ai)            echo "${ENABLE_AI_SERVICES:-false}" ;;
-        productivity)  echo "${ENABLE_PRODUCTIVITY_SERVICES:-true}" ;;
-        home)          echo "${ENABLE_HOME_SERVICES:-false}" ;;
-        communication) echo "${ENABLE_COMMUNICATION_SERVICES:-false}" ;;
-        monitoring)    echo "${INSTALL_MONITORING:-true}" ;;
-        logging)       echo "${INSTALL_LOGGING:-false}" ;;
-        *)             echo "unknown" ;;
+# _service_group_row <group>: the row, or rc 1 for a group with no row.
+_service_group_row() {
+    local group="$1" row
+    for row in "${SERVICE_GROUPS[@]}"; do
+        if [[ "${row%% *}" == "$group" ]]; then
+            echo "$row"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# service_group_names: every group, in install order, one per line.
+service_group_names() {
+    local row
+    for row in "${SERVICE_GROUPS[@]}"; do
+        echo "${row%% *}"
+    done
+}
+
+# service_group_field <group> <toggle|default|project>: one column, empty for
+# a group with no row.
+service_group_field() {
+    local row toggle default project
+    row="$(_service_group_row "$1")" || return 0
+    read -r _ toggle default project <<< "$row"
+    case "$2" in
+        toggle)  echo "$toggle" ;;
+        default) echo "$default" ;;
+        project) echo "$project" ;;
+        *)       error "service_group_field: unknown column '$2'" ;;
     esac
+}
+
+# service_group_toggle <group>: "true"/"false" as the environment and the
+# table's default say, or "unknown" for a group with no row.
+service_group_toggle() {
+    local row var default
+    row="$(_service_group_row "$1")" || { echo "unknown"; return 0; }
+    read -r _ var default _ <<< "$row"
+    if [[ "$var" == "-" ]]; then
+        echo "$default"
+    else
+        echo "${!var:-$default}"
+    fi
+}
+
+# service_group_toggles_apply: give every group's toggle variable its
+# effective value, so a caller can read $ENABLE_MEDIA_SERVICES directly
+# instead of restating the default. setup-v2.sh calls this at startup.
+service_group_toggles_apply() {
+    local row group var
+    for row in "${SERVICE_GROUPS[@]}"; do
+        read -r group var _ _ <<< "$row"
+        [[ "$var" == "-" ]] && continue
+        printf -v "$var" '%s' "$(service_group_toggle "$group")"
+    done
+}
+
+# service_group_toggles_summary: "<group>=<true|false> ..." for a log line.
+service_group_toggles_summary() {
+    local group out=""
+    for group in $(service_group_names); do
+        out+="${out:+ }$group=$(service_group_toggle "$group")"
+    done
+    echo "$out"
 }
 
 service_dir() {
@@ -293,9 +368,24 @@ services_report_failures() {
     return 1
 }
 
+# service_groups_check: every group a descriptor names has a row in
+# SERVICE_GROUPS. Prints one line per offender and returns the count, so a
+# group added to a descriptor but not to the table cannot pass CI.
+service_groups_check() {
+    local name group failures=0
+    for name in $(services_all); do
+        group="$(service_field "$name" '.group')"
+        if ! _service_group_row "$group" >/dev/null; then
+            echo "BAD group '$group' in $(service_descriptor "$name") (known: $(service_group_names | tr '\n' ' ' | sed 's/ *$//'))"
+            failures=$((failures + 1))
+        fi
+    done
+    return "$failures"
+}
+
 # services_check: every directory has a valid descriptor, every step file exists.
 services_check() {
-    local d name group desc failures=0 count i file when kind chart values
+    local d name desc failures=0 count i file when kind chart values
     for d in "$SERVICES_DIR"/*/; do
         name="$(basename "$d")"
         desc="$d/service.yaml"
@@ -310,11 +400,6 @@ services_check() {
         fi
         if [[ -z "$(service_field "$name" '.namespace')" ]]; then
             echo "BAD namespace in $desc"
-            failures=$((failures + 1))
-        fi
-        group="$(service_field "$name" '.group')"
-        if [[ "$(service_group_toggle "$group")" == "unknown" ]]; then
-            echo "BAD group '$group' in $desc (known: ${SERVICE_GROUPS[*]})"
             failures=$((failures + 1))
         fi
         kind="$(service_field "$name" '.kind' manifests)"
@@ -366,6 +451,9 @@ services_check() {
             failures=$((failures + 1))
         fi
     done
+    local group_failures=0
+    service_groups_check || group_failures=$?
+    failures=$((failures + group_failures))
     if [[ "$failures" -ne 0 ]]; then
         echo "services_check: $failures problem(s)"
         return 1

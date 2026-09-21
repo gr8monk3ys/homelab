@@ -28,6 +28,11 @@
 #   helm_infra_release <release> [options]
 #       helm_release with the arguments HELM_INFRA_RELEASES lists for that release,
 #       plus any options given here. Infrastructure phases call this.
+#   helm_infra_field <release> <column>
+#       one column of a row: chart, namespace, toggle, health-label, health-in.
+#       The last three describe the piece, not the chart install, and are what
+#       scripts/lib/health.sh checks it with; helm_release never sees them.
+#   helm_infra_release_names     every release in the table, in install order
 #   helm_template_all             render mode: every HELM_INFRA_RELEASES row;
 #                                 returns 1 if any was skipped (CI decides how strict to be)
 #
@@ -62,22 +67,43 @@ HELM_REPOS=(
     "nvdp=https://nvidia.github.io/k8s-device-plugin"
 )
 
-# Infrastructure releases: "<release> <chart> <namespace> [helm_release options]".
+# Infrastructure releases: "<release> <chart> <namespace> [options]".
 # One row per third-party chart the installer installs; the phase adds only
 # what is special to it (preconditions, post-install waits). CI templates
 # every row (helm_template_all), so a chart, version variable or values file
 # is written here once.
+#
+# Three of the options describe the piece rather than the `helm upgrade`, and
+# helm_release never sees them (helm_infra_release strips them; read them with
+# helm_infra_field):
+#
+#   --toggle <VAR>[=<default>]  the installer toggle that switches the piece on.
+#                               The default is what setup-v2.sh seeds VAR with
+#                               and is only written here when it is false, so
+#                               "unset" means on, as the installer means it.
+#   --health-label <selector>   the pods scripts/lib/health.sh expects to find
+#                               Running; defaults to --wait-label, which is the
+#                               same selector wherever the install waits on it.
+#                               Absent and no --wait-label: no pod check.
+#   --health-in <ns>[,<ns>]     where health looks for the piece, when that is
+#                               not (only) the namespace it is installed into.
+#
+# Adding a row therefore gives the piece a health check for free; ADR-0006.
 HELM_INFRA_RELEASES=(
-    "metallb metallb/metallb metallb-system --version-var METALLB_CHART_VERSION --wait-label app.kubernetes.io/name=metallb"
-    "traefik traefik/traefik traefik-system --version-var TRAEFIK_CHART_VERSION --values kubernetes/ingress/traefik/values.yaml"
-    "cert-manager jetstack/cert-manager cert-manager --version-var CERT_MANAGER_CHART_VERSION --set installCRDs=true"
-    "external-secrets external-secrets/external-secrets external-secrets --version-var EXTERNAL_SECRETS_CHART_VERSION --set installCRDs=true --wait-label app.kubernetes.io/name=external-secrets"
-    "external-dns external-dns/external-dns external-dns --version-var EXTERNAL_DNS_CHART_VERSION --values kubernetes/dns/external-dns/values.yaml"
-    "velero vmware-tanzu/velero velero --version-var VELERO_CHART_VERSION --values kubernetes/backup/velero/values.yaml"
-    "kyverno kyverno/kyverno kyverno --version-var KYVERNO_CHART_VERSION --values kubernetes/policy/kyverno/values.yaml"
-    "kube-prometheus-stack prometheus-community/kube-prometheus-stack monitoring --version-var KUBE_PROMETHEUS_STACK_CHART_VERSION --values kubernetes/monitoring/prometheus/values.yaml"
-    "blackbox-exporter prometheus-community/prometheus-blackbox-exporter monitoring --version-var PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION --values kubernetes/monitoring/blackbox-exporter/values.yaml"
+    "metallb metallb/metallb metallb-system --toggle INSTALL_METALLB --version-var METALLB_CHART_VERSION --wait-label app.kubernetes.io/name=metallb"
+    "traefik traefik/traefik traefik-system --toggle INSTALL_TRAEFIK --health-label app.kubernetes.io/name=traefik --health-in traefik-system,kube-system --version-var TRAEFIK_CHART_VERSION --values kubernetes/ingress/traefik/values.yaml"
+    "cert-manager jetstack/cert-manager cert-manager --toggle INSTALL_CERT_MANAGER --version-var CERT_MANAGER_CHART_VERSION --set installCRDs=true"
+    "external-secrets external-secrets/external-secrets external-secrets --toggle INSTALL_EXTERNAL_SECRETS --version-var EXTERNAL_SECRETS_CHART_VERSION --set installCRDs=true --wait-label app.kubernetes.io/name=external-secrets"
+    "external-dns external-dns/external-dns external-dns --toggle INSTALL_EXTERNAL_DNS=false --health-label app.kubernetes.io/name=external-dns --version-var EXTERNAL_DNS_CHART_VERSION --values kubernetes/dns/external-dns/values.yaml"
+    "velero vmware-tanzu/velero velero --toggle INSTALL_VELERO --health-label app.kubernetes.io/name=velero --version-var VELERO_CHART_VERSION --values kubernetes/backup/velero/values.yaml"
+    "kyverno kyverno/kyverno kyverno --toggle INSTALL_KYVERNO=false --health-label app.kubernetes.io/part-of=kyverno --version-var KYVERNO_CHART_VERSION --values kubernetes/policy/kyverno/values.yaml"
+    "kube-prometheus-stack prometheus-community/kube-prometheus-stack monitoring --toggle INSTALL_MONITORING --version-var KUBE_PROMETHEUS_STACK_CHART_VERSION --values kubernetes/monitoring/prometheus/values.yaml"
+    "blackbox-exporter prometheus-community/prometheus-blackbox-exporter monitoring --toggle INSTALL_BLACKBOX_EXPORTER --health-label app.kubernetes.io/name=prometheus-blackbox-exporter --version-var PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION --values kubernetes/monitoring/blackbox-exporter/values.yaml"
 )
+
+# The row options helm_release must never see: they describe the piece, not
+# the chart install (see HELM_INFRA_RELEASES above). Each takes one value.
+_HELM_INFRA_META_OPTS=" --toggle --health-label --health-in "
 
 # Releases helm_release could not template in render mode (see helm_template_all).
 HELM_RENDER_SKIPPED=()
@@ -256,8 +282,9 @@ _helm_render() {
     return 0
 }
 
-# helm_infra_release_args <release>: the row's arguments (chart namespace options...).
-helm_infra_release_args() {
+# _helm_infra_row <release>: the row's columns after the release name
+# ("chart namespace options..."), or rc 1 when there is no such row.
+_helm_infra_row() {
     local release="$1" row
     for row in "${HELM_INFRA_RELEASES[@]}"; do
         if [[ "${row%% *}" == "$release" ]]; then
@@ -266,6 +293,45 @@ helm_infra_release_args() {
         fi
     done
     return 1
+}
+
+# helm_infra_release_args <release>: the row's helm_release arguments
+# (chart namespace options...), with the piece's own columns removed.
+helm_infra_release_args() {
+    local release="$1" line args=() kept=() i
+    line="$(_helm_infra_row "$release")" || return 1
+    read -r -a args <<< "$line"
+    for ((i = 0; i < ${#args[@]}; i++)); do
+        if [[ "$_HELM_INFRA_META_OPTS" == *" ${args[i]} "* ]]; then
+            i=$((i + 1))   # skip the option and its value
+            continue
+        fi
+        kept+=("${args[i]}")
+    done
+    echo "${kept[*]}"
+}
+
+# helm_infra_field <release> <chart|namespace|toggle|health-label|health-in>
+# One column of a row, empty when the row does not set it. This is how
+# scripts/lib/health.sh learns where a piece lives, which pods prove it is up
+# and which toggle decides whether it should be there at all.
+helm_infra_field() {
+    local release="$1" field="$2" line args=() i want="--$2"
+    line="$(_helm_infra_row "$release")" || return 1
+    read -r -a args <<< "$line"
+    case "$field" in
+        chart)     echo "${args[0]}"; return 0 ;;
+        namespace) echo "${args[1]}"; return 0 ;;
+    esac
+    for ((i = 2; i < ${#args[@]} - 1; i++)); do
+        if [[ "${args[i]}" == "$want" ]]; then
+            echo "${args[i + 1]}"
+            return 0
+        fi
+    done
+    # A piece's pods are the ones the install waits for, unless it says otherwise.
+    [[ "$field" == "health-label" ]] && helm_infra_field "$release" wait-label
+    return 0
 }
 
 helm_infra_release_names() {

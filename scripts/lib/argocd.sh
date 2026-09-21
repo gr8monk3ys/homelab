@@ -31,8 +31,10 @@
 # Seam and depth: the seam sits at the two write/check verbs, so a caller
 # never learns the Application or AppProject schema, the sync-wave rule, or
 # which files exist. The dependency on the catalogue is strictly one-way --
-# this module calls service_field, services_all, service_descriptor,
-# _helm_chart_is_local and helm_repo_url; nothing in the install path in
+# this module calls service_field, service_group_field, services_all,
+# service_descriptor, _helm_chart_is_local and helm_repo_url; the group's
+# defaults and AppProject are columns of SERVICE_GROUPS, not a second list
+# kept in step by hand; nothing in the install path in
 # scripts/lib/services.sh calls back into here. That is why the installer,
 # disaster recovery and the KinD harness never source this file: only
 # scripts/services.sh does. Splitting it out keeps the locality of the
@@ -53,32 +55,29 @@ if [[ -z "${HOMELAB_SERVICES_SOURCED:-}" ]]; then
     exit 1
 fi
 
-# Group -> ArgoCD AppProject.
+# The service's AppProject: its descriptor's `project:` when it names one,
+# otherwise its group's project column (SERVICE_GROUPS in
+# scripts/lib/services.sh). A group with no row falls back to the
+# infrastructure project, as an unclassified service always has.
 service_argocd_project() {
-    local name="$1" group explicit
+    local name="$1" explicit project
     explicit="$(service_field "$name" '.project')"
     if [[ -n "$explicit" ]]; then
         echo "$explicit"
         return
     fi
-    group="$(service_field "$name" '.group')"
-    case "$group" in
-        media)                              echo "homelab-media" ;;
-        ai)                                 echo "homelab-ai" ;;
-        productivity|content|communication) echo "homelab-productivity" ;;
-        *)                                  echo "homelab-infrastructure" ;;
-    esac
+    project="$(service_group_field "$(service_field "$name" '.group')" project)"
+    echo "${project:-homelab-infrastructure}"
 }
 
-# Installed by default: group on by default and not opt-in.
+# Installed by default: the group's default is true (SERVICE_GROUPS in
+# scripts/lib/services.sh) and the service is not opt-in. This is the same
+# default the installer applies when the group's toggle is unset, so the
+# generated app-of-apps and a toggle-free ./setup-v2.sh install the same set.
 service_is_default() {
-    local name="$1" group
-    group="$(service_field "$name" '.group')"
+    local name="$1"
     [[ "$(service_field "$name" '.optin' false)" != "true" ]] || return 1
-    case "$group" in
-        core|media|network|content|productivity|monitoring) return 0 ;;
-        *) return 1 ;;
-    esac
+    [[ "$(service_group_field "$(service_field "$name" '.group')" default)" == "true" ]]
 }
 
 # services_argocd_applications <default|optional>: Application manifests to stdout.

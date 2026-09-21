@@ -19,11 +19,11 @@ The `service.yaml` in a service directory: the only thing the installer needs to
 _Avoid_: manifest (a descriptor is not applied to the cluster), config
 
 **Group**:
-The category a service belongs to (core, media, network, content, productivity, ai, dev, home, communication, monitoring, logging). Each group has one toggle.
+The category a service belongs to (core, media, network, content, productivity, ai, dev, home, communication, monitoring, logging). One row of `SERVICE_GROUPS` in `scripts/lib/services.sh`: its toggle, its default and its ArgoCD project, in install order. A group with no row is a descriptor error.
 _Avoid_: category, stack, tier
 
 **Toggle**:
-An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off.
+An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece. Nothing restates a default.
 _Avoid_: flag, feature flag, option
 
 **Opt-in service**:
@@ -51,7 +51,7 @@ One `setup_*` function in the installer that brings up one piece of infrastructu
 _Avoid_: stage, section
 
 **Infrastructure**:
-The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, MinIO, Velero, the monitoring stack, network policies.
+The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, MinIO, Velero, the monitoring stack, network policies. Each Helm-installed piece is one row of `HELM_INFRA_RELEASES`, which carries its chart, namespace, toggle and health check; the four that are not Helm releases are listed in `scripts/lib/health.sh`.
 _Avoid_: platform, system services
 
 **Policy template**:

@@ -11,6 +11,9 @@ KIND_ENABLE_STORAGE="${KIND_ENABLE_STORAGE:-true}"
 KIND_ENABLE_MONITORING="${KIND_ENABLE_MONITORING:-true}"
 KIND_ENABLE_NEXTCLOUD="${KIND_ENABLE_NEXTCLOUD:-true}"
 KIND_SERVICES="${KIND_SERVICES:-}"
+# A deliberate subset of the groups, not the installer's defaults: three
+# groups that fit in a KinD smoke test. Names must be rows of SERVICE_GROUPS
+# (scripts/lib/services.sh); their own toggles do not apply here.
 KIND_SERVICE_GROUPS="${KIND_SERVICE_GROUPS:-core network content}"
 LOGFILE="$SCRIPT_DIR/kind-setup.log"
 export LOGFILE
