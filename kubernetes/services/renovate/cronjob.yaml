@@ -1,0 +1,104 @@
+---
+# Renovate, self-hosted as a nightly CronJob. It opens dependency-update PRs
+# against the repository named in the renovate-config ConfigMap using a
+# GitHub token the operator creates by hand (secrets/renovate-token, see
+# docs/credentials.md). Runs here, not in Actions, so it costs no Actions
+# minutes on this capped private repo.
+#
+# Tag 44.106.0 is the newest release tag on ghcr.io/renovatebot/renovate at
+# the time of writing (ghcr.io/v2 tag list). The image runs as uid 12021
+# (its Dockerfile) and writes git config under its home plus a work tree
+# under RENOVATE_BASE_DIR, so the root filesystem is not read-only.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: renovate
+  namespace: renovate
+  labels:
+    app: renovate
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: renovate
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 12021
+            runAsGroup: 12021
+            fsGroup: 12021
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: renovate
+            image: ghcr.io/renovatebot/renovate:44.106.0
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+            envFrom:
+            - configMapRef:
+                name: renovate-config
+            env:
+            - name: RENOVATE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: renovate-token
+                  key: token
+            - name: RENOVATE_BASE_DIR
+              value: /tmp/renovate
+            - name: RENOVATE_GIT_AUTHOR
+              value: "Renovate Bot <renovate@homelab.local>"
+            # The first run opens an onboarding PR that adds renovate.json5
+            # (see configmap.yaml for a starting point); nothing else happens
+            # until that PR is merged.
+            - name: RENOVATE_ONBOARDING
+              value: "true"
+            - name: LOG_LEVEL
+              value: info
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "2Gi"
+                cpu: "2000m"
+          volumes:
+          - name: tmp
+            emptyDir:
+              sizeLimit: 2Gi
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: renovate-token
+  namespace: renovate
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: renovate-token
+    creationPolicy: Owner
+  data:
+  - secretKey: token
+    remoteRef:
+      key: renovate-token
+      property: token

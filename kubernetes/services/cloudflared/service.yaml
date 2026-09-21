@@ -1,0 +1,13 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: cloudflared
+namespace: cloudflared
+group: network
+optin: true
+description: Cloudflare Tunnel connector (publishes services outbound-only; needs the user-supplied cloudflare-tunnel-token secret)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the tunnel dials the Cloudflare edge on 7844 (QUIC/TCP) as well as 443, which
+# allow-external-https does not cover, and it must reach every in-cluster Service it publishes.
+# Nothing connects inbound.
+networkPolicies: []

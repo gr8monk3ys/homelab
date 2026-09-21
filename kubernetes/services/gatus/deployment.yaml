@@ -1,5 +1,15 @@
 ---
-# Gatus - Health dashboard and status page
+# Gatus - Health dashboard and status page.
+#
+# Two containers share an emptyDir at /config: gatus reads the whole
+# directory (GATUS_CONFIG_PATH=/config merges every *.yaml in it), the
+# static config below is mounted into it as config.yaml, and gatus-sidecar
+# writes /config/gatus-sidecar.yaml with one endpoint per Ingress and
+# Traefik IngressRoute in the cluster (https://github.com/home-operations/gatus-sidecar
+# README: "Deployment"). Gatus hot-reloads the file, so a new service shows
+# up on the status page as soon as its Ingress exists. Opt a resource out
+# with the annotation gatus.home-operations.com/enabled: "false".
+# Sidecar tag 0.5.2 is the newest release tag on ghcr.io at the time of writing.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,6 +27,8 @@ spec:
       labels:
         app: gatus
     spec:
+      serviceAccountName: gatus-sidecar
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -32,12 +44,19 @@ spec:
             drop:
               - ALL
           readOnlyRootFilesystem: true
+        env:
+        - name: GATUS_CONFIG_PATH
+          value: /config
         ports:
         - containerPort: 8080
           name: http
         volumeMounts:
         - name: config
           mountPath: /config
+        - name: static-config
+          mountPath: /config/config.yaml
+          subPath: config.yaml
+          readOnly: true
         - name: data
           mountPath: /data
         resources:
@@ -59,8 +78,39 @@ spec:
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
+      - name: gatus-sidecar
+        image: ghcr.io/home-operations/gatus-sidecar:0.5.2
+        args:
+        # Every Ingress and Traefik IngressRoute, prefixed per kind so an
+        # Ingress and an IngressRoute of the same name cannot collide.
+        # Services/HTTPRoutes stay annotation-only (not enabled).
+        - --auto-ingress
+        - --auto-ingressroute
+        - --prefix-ingress=ingress/
+        - --prefix-ingressroute=ingressroute/
+        - --output=/config/gatus-sidecar.yaml
+        - --default-interval=1m
+        - --log-level=info
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
       volumes:
       - name: config
+        emptyDir: {}
+      - name: static-config
         configMap:
           name: gatus-config
       - name: data

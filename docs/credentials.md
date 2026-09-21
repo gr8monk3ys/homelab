@@ -63,6 +63,8 @@ These are the secrets the table creates in the `secrets` namespace
 - Authelia admin (plaintext for recovery): `authelia-admin` (`username`, `password`) — only the Argon2 hash in `authelia-users` reaches the cluster; read the plaintext with `kubectl get secret -n secrets authelia-admin -o jsonpath='{.data.password}' | base64 -d`
 - Authelia users database: `authelia-users` (`users_database.yml`)
 - Open WebUI: `open-webui-config` (`secret-key`)
+- Miniflux admin: `miniflux-admin` (`username`, `password`) — created on first start via `CREATE_ADMIN=1`
+- Miniflux DB password: `miniflux-db-password` (`password`)
 
 ## User-supplied (not generated)
 
@@ -74,6 +76,8 @@ what lets CI tell an intentionally hand-made secret from a missing one.
 
 - Alertmanager webhook (for notifications): `alertmanager-webhook` (`url`) — see `docs/runbooks/alerting.md`
 - Cloudflare API token (for ExternalDNS): `cloudflare-api-token` (`token`) — see `docs/runbooks/external-dns.md`
+- Cloudflare Tunnel token (for the opt-in `cloudflared` service): `cloudflare-tunnel-token` (`token`). In the Cloudflare dashboard open Zero Trust → Networks → Tunnels → Create a tunnel, pick the Cloudflared connector, name it, and on the "Install and run a connector" step copy the token from the shown `cloudflared ... --token <token>` command (nothing else on that page needs running); under Public Hostname add one entry per service you want published (hostname → `http://<service>.<namespace>.svc.cluster.local:<port>`, or `https://traefik.traefik-system.svc.cluster.local` with "No TLS verify" to go through Traefik). Then `kubectl -n secrets create secret generic cloudflare-tunnel-token --from-literal=token=<token>`. The tunnel shows Healthy in the dashboard once the pod's `/ready` probe passes.
+- Renovate GitHub token (for the opt-in `renovate` CronJob): `renovate-token` (`token`). A fine-grained personal access token scoped to the homelab repository with Contents, Pull requests, Workflows and Metadata read/write (or a classic token with `repo`), created under GitHub → Settings → Developer settings; then `kubectl -n secrets create secret generic renovate-token --from-literal=token=<token>`. The repository to run against is set in the `renovate-config` ConfigMap (`kubectl -n renovate edit configmap renovate-config`), not here.
 
 One optional secret lives outside the `secrets` namespace entirely: the
 Home Assistant ServiceMonitor reads a long-lived access token from

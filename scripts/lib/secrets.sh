@@ -78,6 +78,7 @@ secrets_catalogue() {
     secret paperless-db-password    password=password
     secret n8n-db-password          password=password
     secret linkwarden-db-password   password=password
+    secret miniflux-db-password     password=password
     secret synapse-db-password      password=password
     secret mattermost-db-password   password=password
     secret outline-db-password      password=password
@@ -96,6 +97,7 @@ secrets_catalogue() {
     secret harbor-admin             username=literal:admin password=password
     secret vaultwarden-admin        admin-token=hex:64
     secret paperless-admin          username=literal:admin password=password secret-key=hex:64
+    secret miniflux-admin           username=literal:admin password=password
     secret keycloak-admin-password  password=password
     secret code-server-password     password=password
     secret node-red-password        password=password

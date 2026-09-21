@@ -1,0 +1,15 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: miniflux
+namespace: miniflux
+group: content
+optin: true
+url: reader
+description: Minimalist feed reader (Postgres-backed; overlaps yarr)
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=miniflux-postgres
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: it fetches feeds from the internet.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

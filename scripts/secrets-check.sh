@@ -32,6 +32,8 @@ SCRIPT_DOC_PATHS=("$HOMELAB_DIR/scripts" "$HOMELAB_DIR/docs" "$HOMELAB_DIR/test"
 USER_SUPPLIED=(
     alertmanager-webhook   # docs/runbooks/alerting.md
     cloudflare-api-token   # docs/runbooks/external-dns.md
+    cloudflare-tunnel-token  # docs/credentials.md (cloudflared)
+    renovate-token         # docs/credentials.md (renovate)
 )
 
 NAME='[A-Za-z0-9._-]+'

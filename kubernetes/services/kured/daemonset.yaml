@@ -1,0 +1,108 @@
+---
+# kured (KUbernetes REboot Daemon) - reboots a node when the OS's unattended
+# upgrades leave /var/run/reboot-required behind, after cordoning and
+# draining it, one node at a time via a lock on this DaemonSet. Pairs with
+# the Ansible unattended-upgrades setup.
+#
+# DEVIATION from the CLAUDE.md container rules, on purpose: this is a
+# node-maintenance daemon, not an app. As in the upstream manifest it needs
+#   hostPID: true       - to nsenter the host's mount namespace (/proc/1/ns/mnt)
+#   privileged: true    - to run the reboot command there
+# and hence runs as root. A privileged container holds every capability, so
+# capabilities.drop: [ALL] would be a no-op and is left out rather than
+# pretend; readOnlyRootFilesystem stays on. The namespace is labelled
+# pod-security privileged (namespace.yaml).
+#
+# Tag 1.23.0 is the newest release on ghcr.io/kubereboot/kured (the Docker
+# Hub repo no longer exists). Manifest shape follows
+# https://github.com/kubereboot/kured/releases/download/1.23.0/kured-1.23.0-combined.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kured # must match --ds-name
+  namespace: kured # must match --ds-namespace
+  labels:
+    app: kured
+spec:
+  selector:
+    matchLabels:
+      name: kured
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: kured
+        app: kured
+    spec:
+      serviceAccountName: kured
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      hostPID: true # facilitate entering the host mount namespace via init
+      restartPolicy: Always
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: sentinel
+          hostPath:
+            path: /var/run
+            type: Directory
+      containers:
+        - name: kured
+          image: ghcr.io/kubereboot/kured:1.23.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true # give permission to nsenter /proc/1/ns/mnt
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8080
+              name: metrics
+          env:
+            # Name of the node this pod is on, for drain/uncordon and the lock.
+            - name: KURED_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - mountPath: /sentinel
+              name: sentinel
+              readOnly: true
+          command:
+            - /usr/bin/kured
+            # /var/run on the host is mounted at /sentinel, so this is the
+            # node's /var/run/reboot-required.
+            - --reboot-sentinel=/sentinel/reboot-required
+            - --ds-namespace=kured
+            - --ds-name=kured
+            - --period=1h
+            # Upstream defaults otherwise. A single node has nowhere to drain
+            # to, so a reboot means a short full outage; narrow the window
+            # with e.g.
+            #   --reboot-days=sat,sun
+            #   --start-time=03:00
+            #   --end-time=05:00
+            #   --time-zone=UTC
+            # or gate on alerts with --prometheus-url / --alert-filter-regexp.
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30

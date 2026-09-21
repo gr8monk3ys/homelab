@@ -1,0 +1,65 @@
+---
+# k3s upgrade Plans, the shape from the SUC README / examples/k3s-upgrade.yaml.
+# Both follow the "stable" channel (https://update.k3s.io/v1-release/channels/stable),
+# so the target is whatever the channel resolves to, e.g. v1.34.1+k3s1;
+# replace `channel:` with `version: v1.34.1+k3s1` to pin instead.
+#
+# Nothing upgrades until a node carries the label k3s-upgrade=true
+# (`kubectl label node <name> k3s-upgrade=true`): the nodeSelector below is
+# the opt-in switch, as in upstream. On this single node the server plan is
+# the one that fires; the agent plan is here for a second node.
+#
+# Ordering: the installer applies service.yaml steps (crd.yaml, then
+# controller.yaml) before the sorted remainder that holds this file, so
+# the Plan CRD exists by the time these are applied. If the API server has
+# not finished establishing the CRD yet, re-run
+#   ./scripts/services.sh install system-upgrade-controller
+# and the Plans apply on the second pass.
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-server
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: server
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/stable
+  nodeSelector:
+    matchExpressions:
+      - {key: k3s-upgrade, operator: Exists}
+      - {key: k3s-upgrade, operator: NotIn, values: ["disabled", "false"]}
+      - {key: k3os.io/mode, operator: DoesNotExist}
+      - {key: node-role.kubernetes.io/control-plane, operator: Exists}
+  serviceAccountName: system-upgrade
+  cordon: true
+  upgrade:
+    image: rancher/k3s-upgrade
+---
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-agent
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: agent
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/stable
+  nodeSelector:
+    matchExpressions:
+      - {key: k3s-upgrade, operator: Exists}
+      - {key: k3s-upgrade, operator: NotIn, values: ["disabled", "false"]}
+      - {key: k3os.io/mode, operator: DoesNotExist}
+      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+  serviceAccountName: system-upgrade
+  cordon: true
+  prepare:
+    # Same resolved tag as the upgrade container; waits for the server plan first.
+    image: rancher/k3s-upgrade
+    args: ["prepare", "k3s-server"]
+  drain:
+    force: true
+    skipWaitForDeleteTimeout: 60
+  upgrade:
+    image: rancher/k3s-upgrade

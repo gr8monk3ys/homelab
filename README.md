@@ -152,10 +152,11 @@ Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
 Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
 WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
 Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
-(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, code-server, CyberChef,
-Gatus, Heimdall, Homebox, Hoppscotch, IT-Tools, Jellyseerr, Keycloak,
-Kiwix, LocalAI, Metabase, Navidrome, NocoDB, ntfy, Outline, qBittorrent,
-Reloader, RomM, Stirling-PDF, Tautulli, Umami, Whisper. The full
+(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, cloudflared,
+code-server, CyberChef, Gatus, Heimdall, Homebox, Hoppscotch, IT-Tools,
+Jellyseerr, Keycloak, Kiwix, kured, LocalAI, Metabase, Miniflux, Navidrome,
+NocoDB, ntfy, Outline, qBittorrent, Reloader, Renovate, RomM, Stirling-PDF,
+system-upgrade-controller, Tautulli, Umami, Whisper. The full
 catalogue with URLs is in `docs/services.md`, or run
 `./scripts/services.sh list`.
 

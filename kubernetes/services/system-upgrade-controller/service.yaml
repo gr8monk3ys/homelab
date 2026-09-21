@@ -1,0 +1,17 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: system-upgrade-controller
+namespace: system-upgrade
+group: core
+optin: true
+description: Rancher system-upgrade-controller with k3s server/agent Plans on the stable channel (opt in per node with the k3s-upgrade label)
+steps:
+  - apply: crd.yaml
+  - apply: controller.yaml
+    wait: upgrade.cattle.io/controller=system-upgrade-controller
+# plans.yaml is applied afterwards in the sorted remainder, once the CRD exists.
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the controller talks to the Kubernetes API and the upgrade Jobs fetch
+# the k3s release from update.k3s.io/github.com; no template expresses either.
+networkPolicies: []

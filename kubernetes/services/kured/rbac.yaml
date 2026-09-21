@@ -1,0 +1,79 @@
+---
+# RBAC from the upstream release manifest
+# (https://github.com/kubereboot/kured/releases/download/1.23.0/kured-1.23.0-combined.yaml),
+# with the ServiceAccount moved from kube-system into this namespace; the
+# DaemonSet passes --ds-namespace=kured to match.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kured
+  namespace: kured
+  labels:
+    app: kured
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kured
+  labels:
+    app: kured
+rules:
+  # Allow kured to read spec.unschedulable and kubectl to drain/uncordon.
+  # These permissions are tightly coupled to the bundled version of kubectl.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "delete", "get"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kured
+  labels:
+    app: kured
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kured
+subjects:
+  - kind: ServiceAccount
+    name: kured
+    namespace: kured
+---
+# Allow kured to lock/unlock itself (the reboot lock is an annotation on its own DaemonSet).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kured
+  namespace: kured
+  labels:
+    app: kured
+rules:
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    resourceNames: ["kured"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kured
+  namespace: kured
+  labels:
+    app: kured
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kured
+subjects:
+  - kind: ServiceAccount
+    name: kured
+    namespace: kured

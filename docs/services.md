@@ -116,6 +116,7 @@ secrets are already generated. Add them by name:
 | Service | URL | Group |
 |---|---|---|
 | Actual Budget | `budget.` | productivity |
+| Cloudflare Tunnel (`cloudflared`; no URL, publishes services outbound-only; needs the user-supplied `cloudflare-tunnel-token` secret) | — | network |
 | code-server | `code.` | dev |
 | CyberChef | `cyberchef.` | productivity |
 | Gatus | `status.` | monitoring |
@@ -126,16 +127,20 @@ secrets are already generated. Add them by name:
 | Jellyseerr | `requests.` | media |
 | Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
 | Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
+| kured (no URL; reboots the node when `/var/run/reboot-required` appears; hostPID + privileged by design) | — | core |
 | LocalAI | `localai.` | ai |
 | Metabase | `metabase.` | productivity |
+| Miniflux (feed reader, Postgres-backed; overlaps yarr) | `reader.` | content |
 | Navidrome | `music.` | media |
 | NocoDB | `nocodb.` | productivity |
 | ntfy | `ntfy.` | productivity |
 | Outline | `wiki.` | productivity |
 | qBittorrent | `torrent.` | media |
 | Reloader (no URL; workloads opt in with the `reloader.stakater.com/auto: "true"` annotation) | — | core |
+| Renovate (no URL; nightly CronJob opening dependency PRs, needs the user-supplied `renovate-token` secret and the repo name in its ConfigMap) | — | dev |
 | RomM | `games.` | media |
 | Stirling-PDF | `pdf.` | productivity |
+| system-upgrade-controller (no URL; k3s server/agent upgrade Plans on the stable channel, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
 | Tautulli | `stats.` | media |
 | Umami | `analytics.` | productivity |
 | Whisper | `whisper.` | ai |
