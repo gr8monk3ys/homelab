@@ -34,6 +34,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: cloudflared
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: network
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/cloudflared
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cloudflared
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: code-server
   namespace: argocd
   labels:
@@ -426,6 +454,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: kured
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/kured
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kured
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: localai
   namespace: argocd
   labels:
@@ -556,6 +612,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: metabase
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: miniflux
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: content
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/miniflux
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: miniflux
   syncPolicy:
     automated:
       prune: true
@@ -790,6 +874,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: renovate
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: dev
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/renovate
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: renovate
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: romm
   namespace: argocd
   labels:
@@ -836,6 +948,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: stirling-pdf
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: system-upgrade-controller
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/system-upgrade-controller
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: system-upgrade
   syncPolicy:
     automated:
       prune: true
