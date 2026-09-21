@@ -690,6 +690,7 @@ run_health_checks() {
     # enabled infrastructure piece and catalogue service, from the same lists
     # the installer used.
     log "Running health checks..."
+    services_report_failures || true
     health_report --all --enabled-only || \
         warning "Some pieces are not ready yet (see the table above); re-run ./scripts/validate-setup.sh later."
 }

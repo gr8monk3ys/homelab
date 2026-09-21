@@ -263,11 +263,30 @@ install_service_group() {
     fi
     for name in $(services_in_group "$group"); do
         if service_enabled "$name"; then
-            install_service "$name"
+            # One service per subshell: install_service calls error() on a bad
+            # descriptor, an unreachable chart repo or a rejected manifest, and
+            # a single service must not take the rest of the catalogue with it.
+            # Failures are collected and reported by services_report_failures.
+            if ! (install_service "$name"); then
+                warning "Service $name failed to install; continuing with the rest."
+                SERVICE_INSTALL_FAILURES+=("$name")
+            fi
         else
             log "Skipping opt-in service $name (add it to OPTIN_SERVICES to install)"
         fi
     done
+}
+
+# Services that install_service_group could not install, in order.
+SERVICE_INSTALL_FAILURES=()
+
+# services_report_failures: name what failed, once, at the end of a run.
+# Returns 1 when anything failed, so a caller can make it fatal if it wants.
+services_report_failures() {
+    [[ ${#SERVICE_INSTALL_FAILURES[@]} -eq 0 ]] && return 0
+    warning "These services did not install: ${SERVICE_INSTALL_FAILURES[*]}"
+    warning "Re-run ./scripts/services.sh install <name> after fixing the cause, or set its toggle to false."
+    return 1
 }
 
 # services_check: every directory has a valid descriptor, every step file exists.
