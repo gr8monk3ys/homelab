@@ -6,3 +6,7 @@ group: core
 priority: 90
 url: home
 description: Dashboard with Kubernetes-aware widgets
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: cluster-mode widgets need the Kubernetes API and every namespace.
+networkPolicies: []

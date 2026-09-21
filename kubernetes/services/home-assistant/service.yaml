@@ -8,3 +8,7 @@ description: Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT
 steps:
   - apply: mosquitto-deployment.yaml
     wait: app=mosquitto
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: talks to LAN devices on private ranges, which allow-external-https excludes.
+networkPolicies: []

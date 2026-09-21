@@ -3,9 +3,13 @@
 name: keycloak
 namespace: keycloak
 group: core
+project: homelab-security
 optin: true
 url: keycloak
 description: Identity provider (OIDC/SAML)
 steps:
   - apply: postgres-deployment.yaml
     wait: app=keycloak-postgres
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

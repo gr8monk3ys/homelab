@@ -6,7 +6,7 @@ date: 2026-09-21
 # The service descriptor is the install interface
 
 Every application directory under `kubernetes/services/` carries a
-`service.yaml` descriptor (namespace, group, opt-in flag, ordered steps with
+`service.yaml` descriptor (namespace, group, opt-in key, ordered steps with
 waits), and `install_service` in `scripts/lib/services.sh` is the only code
 that installs one. We chose this over two alternatives: keeping per-service
 blocks in `setup-v2.sh` (which had left 20 of 43 directories uninstallable

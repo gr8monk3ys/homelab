@@ -3,6 +3,7 @@
 name: authelia
 namespace: authelia
 group: core
+project: homelab-security
 priority: 10
 url: auth
 description: SSO and 2FA (Traefik ForwardAuth)

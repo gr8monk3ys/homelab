@@ -3,6 +3,7 @@
 name: vaultwarden
 namespace: vaultwarden
 group: core
+project: homelab-security
 url: vault
 description: Bitwarden-compatible password manager
 

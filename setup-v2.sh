@@ -625,6 +625,7 @@ setup_network_policies() {
     kubectl_apply_rendered_file kubernetes/security/network-policies/sensitive-services-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/infrastructure-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/media-services-policies.yaml
+    kubectl_apply_rendered_file kubernetes/security/network-policies/cross-namespace-policies.yaml
 
     success "Network policies setup completed"
 }
@@ -735,7 +736,7 @@ setup_communication_services() {
 }
 
 setup_monitoring_apps() {
-    # Opt-in apps that live next to the monitoring stack (e.g. Gatus).
+    # Opt-in services that live next to the monitoring stack (e.g. Gatus).
     install_service_group monitoring
 }
 
@@ -959,7 +960,6 @@ main() {
     setup_backup
     setup_security
     setup_pod_security_standards
-    setup_network_policies
     setup_pod_disruption_budgets
     setup_resource_quotas
     setup_policy_as_code
@@ -977,6 +977,11 @@ main() {
     setup_home_services
     setup_communication_services
     setup_monitoring_apps
+
+    # Static NetworkPolicies target service namespaces, so they come after the
+    # services that create those namespaces. Per-namespace isolation was
+    # already applied by install_service from each descriptor.
+    setup_network_policies
 
     setup_gitops
     run_health_checks

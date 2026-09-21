@@ -6,3 +6,7 @@ group: media
 optin: true
 url: stats
 description: Media server statistics
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: talks to Jellyfin in another namespace.
+networkPolicies: []

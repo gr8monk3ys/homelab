@@ -148,6 +148,8 @@ run_services_check() {
   log "services render + kubeconform (through install_service)..."
   local render_dir
   render_dir="$(mktemp -d "${TMPDIR:-/tmp}/homelab-render.XXXXXX")"
+  # shellcheck disable=SC2064  # expand now: the path is fixed
+  trap "rm -rf '$render_dir'" RETURN
   DOMAIN="ci.example.test" \
     ADMIN_EMAIL="ci@example.test" \
     TIMEZONE="Europe/Amsterdam" \
@@ -172,7 +174,8 @@ run_services_check() {
   )
 
   if grep -rl "homelab\.local" "$render_dir" >/dev/null; then
-    die "Rendered manifests still contain the homelab.local placeholder:\n$(grep -rl 'homelab\.local' "$render_dir")"
+    grep -rl 'homelab\.local' "$render_dir" | sed "s|^$render_dir/|  |"
+    die "Rendered manifests above still contain the homelab.local placeholder"
   fi
 
   local files=()
@@ -187,7 +190,6 @@ run_services_check() {
     -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
     -summary \
     "${files[@]}"
-  rm -rf "$render_dir"
 }
 
 run_helm_lint() {

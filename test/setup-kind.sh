@@ -115,7 +115,7 @@ setup_external_secrets() {
     log "Setting up External Secrets Operator..."
 
     # Create the central secrets namespace first.
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/secrets-namespace.yaml"
+    kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/secrets/secrets-namespace.yaml"
 
     # Wait for kube-root-ca ConfigMap (used by ClusterSecretStore caProvider).
     for _ in $(seq 1 30); do
@@ -135,8 +135,8 @@ setup_external_secrets() {
         --set installCRDs=true \
         --wait
 
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/secret-store-rbac.yaml"
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/secret-store.yaml"
+    kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/secrets/secret-store-rbac.yaml"
+    kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/secrets/secret-store.yaml"
 
     # Generate (or create-missing) all source-of-truth secrets.
     bash "$HOMELAB_DIR/scripts/generate-secrets.sh"
@@ -193,7 +193,7 @@ deploy_core_services() {
     for service in "${services[@]}"; do
         if [ -d "$HOMELAB_DIR/kubernetes/services/$service" ]; then
             # Same code path as setup-v2.sh: rendered, ordered, waited on.
-            if ! install_service "$service"; then
+            if ! (install_service "$service"); then
                 log "WARNING: Failed to deploy $service"
                 failed_services+=("$service")
             fi
@@ -220,7 +220,7 @@ setup_monitoring() {
 
     # Ensure Grafana admin secret exists in monitoring (via ExternalSecret) before installing the chart.
     kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/monitoring/prometheus/external-secrets.yaml" || \
+    kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/monitoring/prometheus/external-secrets.yaml" || \
         log "WARNING: Failed to apply Grafana ExternalSecret (ESO must be running)"
 
     helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -230,12 +230,12 @@ setup_monitoring() {
         --values "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml" \
         --wait || log "WARNING: kube-prometheus-stack Helm install failed"
 
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/monitoring/uptime-kuma/" || \
+    kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/monitoring/uptime-kuma" || \
         log "WARNING: Failed to deploy uptime-kuma"
 
     # Optional: MinIO ServiceMonitor (requires Prometheus Operator CRDs from kube-prometheus-stack)
     if kubectl get namespace minio-system &>/dev/null; then
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/monitoring/servicemonitors/minio.yaml" 2>/dev/null || true
+        kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/monitoring/servicemonitors/minio.yaml" 2>/dev/null || true
     fi
 
     log "Monitoring setup completed"

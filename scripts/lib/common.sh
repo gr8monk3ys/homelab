@@ -50,10 +50,9 @@ log() {
     local line
     line="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     if [[ -n "${LOGFILE:-}" ]]; then
-        echo "$line" | tee -a "$LOGFILE"
-    else
-        echo "$line"
+        echo "$line" >> "$LOGFILE"
     fi
+    echo "$line"
 }
 
 success() { log "✅ $*"; }
@@ -61,7 +60,8 @@ warning() { log "⚠️  $*"; }
 info()    { log "$*"; }
 
 error() {
-    log "ERROR: $*"
+    # To stderr, so a caller that silences stdout (CI, >/dev/null) still sees why.
+    log "ERROR: $*" >&2
     exit 1
 }
 

@@ -16,9 +16,8 @@ if [ -z "$SYNOLOGY_IP" ]; then
     exit 1
 fi
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
 
 log "Setting up Synology NAS for Homelab at $SYNOLOGY_IP"
 
@@ -57,7 +56,6 @@ ssh_cmd "mkdir -p /volume1/homelab/data/{nextcloud,jellyfin,vaultwarden,promethe
 log "Setting up Docker Compose environment..."
 # Use the version-controlled docker-compose file instead of inline heredoc
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 scp_cmd "${HOMELAB_DIR}/config/synology-docker-compose.yml" "$SYNOLOGY_USER@$SYNOLOGY_IP:/volume1/homelab/docker-compose.yml"
 
 log "Starting Portainer for container management..."

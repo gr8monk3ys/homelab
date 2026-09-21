@@ -6,3 +6,6 @@ group: productivity
 optin: true
 url: budget
 description: Personal finance
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

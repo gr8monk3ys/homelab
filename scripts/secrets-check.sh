@@ -45,8 +45,11 @@ sops_script_secrets() {
     grep -oE "kubectl create secret generic +${NAME}" "$SOPS_GENERATOR" | awk '{print $NF}' | sort -u
 }
 sops_file_secrets() {
-    find "$SOPS_DIR" -maxdepth 1 -name '*.sops.yaml' -printf '%f\n' 2>/dev/null \
-        | sed 's/\.sops\.yaml$//' | sort -u
+    local f
+    for f in "$SOPS_DIR"/*.sops.yaml; do
+        [[ -f "$f" ]] || continue
+        basename "$f" .sops.yaml
+    done | sort -u
 }
 
 # remoteRef.key of every ExternalSecret data/dataFrom entry, block or inline form.

@@ -2,15 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
+source "$SCRIPT_DIR/../scripts/lib/common.sh"
 
 compose_cmd() {
     if command -v docker-compose &> /dev/null; then

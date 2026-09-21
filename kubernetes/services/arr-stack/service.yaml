@@ -7,3 +7,7 @@ url: sonarr
 description: Sonarr, Radarr, Prowlarr, Bazarr
 steps:
   - apply: shared-storage.yaml
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: talks to qBittorrent in another namespace; needs a cross-namespace rule before it can be isolated.
+networkPolicies: []

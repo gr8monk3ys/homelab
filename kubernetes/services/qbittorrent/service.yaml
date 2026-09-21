@@ -6,3 +6,7 @@ group: media
 optin: true
 url: torrent
 description: BitTorrent client
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: peer traffic on arbitrary ports; allow-external-https is not enough.
+networkPolicies: []

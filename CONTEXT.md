@@ -46,6 +46,10 @@ _Avoid_: template, substitute
 `setup-v2.sh`: the one script that takes an empty K3s cluster to a running homelab, idempotently.
 _Avoid_: bootstrap script, deploy script
 
+**Installer phase**:
+One `setup_*` function in the installer that brings up one piece of infrastructure or one service group; disaster recovery re-runs them.
+_Avoid_: stage, section
+
 **Infrastructure**:
 The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, MinIO, Velero, the monitoring stack, network policies.
 _Avoid_: platform, system services

@@ -4,7 +4,7 @@ kind: Kustomization
 
 # Core ArgoCD Applications ("app-of-apps").
 #
-# Infrastructure apps plus every service the installer deploys by default
+# Infrastructure Applications plus every service the installer deploys by default
 # (../services/default.yaml, generated from the catalogue). Everything else
 # lives in `../full`.
 

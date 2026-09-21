@@ -6,3 +6,7 @@ group: monitoring
 optin: true
 url: status
 description: Health dashboard and status page
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: probes every other namespace and the LAN; no template expresses that yet.
+networkPolicies: []

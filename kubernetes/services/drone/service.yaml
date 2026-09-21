@@ -7,5 +7,6 @@ url: drone
 description: Drone CI (no runner by default)
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
-# allow-external-https: this service fetches from the internet.
-networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]
+# Deliberately open: reaches Gitea through its public hostname (the LoadBalancer IP),
+# which no template expresses yet.
+networkPolicies: []
