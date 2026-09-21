@@ -580,7 +580,7 @@ spec:
     targetRevision: HEAD
     path: kubernetes/services/loki
     directory:
-      exclude: '{service.yaml,values.yaml,*.values.yaml,promtail-deployment.yaml}'
+      exclude: '{service.yaml,values.yaml,*.values.yaml,alloy-daemonset.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: loki

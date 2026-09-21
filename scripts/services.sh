@@ -18,6 +18,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/render.sh"
 source "$SCRIPT_DIR/lib/services.sh"
 source "$SCRIPT_DIR/lib/netpol.sh"
+source "$SCRIPT_DIR/lib/argocd.sh"
 
 usage() {
     sed -n '4,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
