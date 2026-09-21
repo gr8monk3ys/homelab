@@ -146,6 +146,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: frigate
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: home
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/frigate
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: frigate
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: gatus
   namespace: argocd
   labels:
@@ -332,6 +360,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: immich
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: intel-device-plugin
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/intel-device-plugin
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml,node-feature-rule.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: intel-device-plugins
   syncPolicy:
     automated:
       prune: true
@@ -538,6 +594,35 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: longhorn
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: 1.10.2
+    helm:
+      releaseName: longhorn
+      valueFiles: [kubernetes/services/longhorn/values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: matrix
   namespace: argocd
   labels:
@@ -706,6 +791,35 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: node-feature-discovery
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+    chart: node-feature-discovery
+    targetRevision: 0.18.0
+    helm:
+      releaseName: node-feature-discovery
+      valueFiles: [kubernetes/services/node-feature-discovery/values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: node-feature-discovery
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: ntfy
   namespace: argocd
   labels:
@@ -724,6 +838,35 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ntfy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nvidia-device-plugin
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://nvidia.github.io/k8s-device-plugin
+    chart: nvidia-device-plugin
+    targetRevision: 0.20.0
+    helm:
+      releaseName: nvidia-device-plugin
+      valueFiles: [kubernetes/services/nvidia-device-plugin/values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nvidia-device-plugin
   syncPolicy:
     automated:
       prune: true
@@ -930,6 +1073,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: snapshot-controller
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/snapshot-controller
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: snapshot-controller
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: stirling-pdf
   namespace: argocd
   labels:
@@ -986,6 +1157,35 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: tailscale-operator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: network
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://pkgs.tailscale.com/helmcharts
+    chart: tailscale-operator
+    targetRevision: 1.90.0
+    helm:
+      releaseName: tailscale-operator
+      valueFiles: [kubernetes/services/tailscale-operator/values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: tautulli
   namespace: argocd
   labels:
@@ -1032,6 +1232,35 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: umami
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: volsync
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://backube.github.io/helm-charts/
+    chart: volsync
+    targetRevision: 0.17.0
+    helm:
+      releaseName: volsync
+      valueFiles: [kubernetes/services/volsync/values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: volsync-system
   syncPolicy:
     automated:
       prune: true

@@ -1,0 +1,25 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# Intel GPU device plugin, vendored from intel/intel-device-plugins-for-kubernetes
+# v0.37.0 (`kustomize build deployments/gpu_plugin/overlays/nfd_labeled_nodes`),
+# so the DaemonSet only schedules on nodes NFD has labelled
+# intel.feature.node.kubernetes.io/gpu=true. Advertises gpu.intel.com/i915
+# (and gpu.intel.com/xe) for Jellyfin, Immich, Frigate (OpenVINO) and friends.
+name: intel-device-plugin
+namespace: intel-device-plugins
+group: core
+optin: true
+priority: 20
+description: Intel GPU device plugin (gpu.intel.com/i915); gated by the NFD label intel.feature.node.kubernetes.io/gpu
+steps:
+  # The NodeFeatureRule that produces the gating label is an NFD CRD: apply it
+  # only when node-feature-discovery is installed (ENABLE_NFD_RULES=true),
+  # otherwise label the node by hand (docs/runbooks/storage-and-hardware.md).
+  - apply: node-feature-rule.yaml
+    when: ENABLE_NFD_RULES
+  - apply: daemonset.yaml
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: a DaemonSet with hostPath mounts that only talks to the
+# kubelet device-plugin socket; nothing to isolate.
+networkPolicies: []

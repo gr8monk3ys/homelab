@@ -30,10 +30,11 @@ SCRIPT_DOC_PATHS=("$HOMELAB_DIR/scripts" "$HOMELAB_DIR/docs" "$HOMELAB_DIR/test"
 # Secrets the operator creates by hand in the `secrets` namespace. Each one
 # must be documented in docs/credentials.md under "User-supplied".
 USER_SUPPLIED=(
-    alertmanager-webhook   # docs/runbooks/alerting.md
-    cloudflare-api-token   # docs/runbooks/external-dns.md
+    alertmanager-webhook     # docs/runbooks/alerting.md
+    cloudflare-api-token     # docs/runbooks/external-dns.md
     cloudflare-tunnel-token  # docs/credentials.md (cloudflared)
-    renovate-token         # docs/credentials.md (renovate)
+    renovate-token           # docs/credentials.md (renovate)
+    tailscale-oauth          # docs/credentials.md (Tailscale operator)
 )
 
 NAME='[A-Za-z0-9._-]+'

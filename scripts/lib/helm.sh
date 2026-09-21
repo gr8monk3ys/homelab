@@ -55,6 +55,11 @@ HELM_REPOS=(
     "metallb=https://metallb.github.io/metallb"
     "vmware-tanzu=https://vmware-tanzu.github.io/helm-charts"
     "kyverno=https://kyverno.github.io/kyverno/"
+    "longhorn=https://charts.longhorn.io"
+    "backube=https://backube.github.io/helm-charts/"
+    "tailscale=https://pkgs.tailscale.com/helmcharts"
+    "nfd=https://kubernetes-sigs.github.io/node-feature-discovery/charts"
+    "nvdp=https://nvidia.github.io/k8s-device-plugin"
 )
 
 # Infrastructure releases: "<release> <chart> <namespace> [helm_release options]".

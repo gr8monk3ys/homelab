@@ -1,0 +1,23 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# Longhorn is Helm-chart-managed: the chart is the whole install and the
+# values file (rendered like a manifest) carries every setting we change.
+name: longhorn
+namespace: longhorn-system
+group: core
+optin: true
+priority: 10
+url: longhorn
+description: Longhorn distributed block storage (snapshots, backups to MinIO); needs open-iscsi on the host
+kind: helm
+chart: longhorn/longhorn
+release: longhorn
+values: kubernetes/services/longhorn/values.yaml
+versionVar: LONGHORN_CHART_VERSION
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: Longhorn is a storage system, not an app. Its manager,
+# instance-manager and CSI pods talk to the kubelet, the API server, iSCSI
+# targets on the node and MinIO across namespaces, none of which a template
+# allows yet. See docs/runbooks/storage-and-hardware.md.
+networkPolicies: []

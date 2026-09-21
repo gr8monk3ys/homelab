@@ -1,0 +1,21 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# VolSync is Helm-chart-managed; the values file is small because the chart
+# defaults are already what a single node wants.
+name: volsync
+namespace: volsync-system
+group: core
+optin: true
+priority: 30
+description: PVC replication and restic backups to MinIO (needs snapshot-controller for snapshot copy method)
+kind: helm
+chart: backube/volsync
+release: volsync
+values: kubernetes/services/volsync/values.yaml
+versionVar: VOLSYNC_CHART_VERSION
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the operator only talks to the API server, and the mover
+# pods it creates run in the application namespaces (each ReplicationSource's
+# namespace needs egress to MinIO: see docs/runbooks/storage-and-hardware.md).
+networkPolicies: []

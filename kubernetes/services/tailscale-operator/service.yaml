@@ -1,0 +1,24 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# The Tailscale Kubernetes operator is Helm-chart-managed. Its OAuth client
+# credentials are NOT in values.yaml: the chart mounts a Secret named
+# operator-oauth (keys client_id, client_secret) that the ExternalSecret in
+# namespace.yaml creates from the user-supplied tailscale-oauth secret in the
+# secrets namespace (docs/credentials.md).
+name: tailscale-operator
+namespace: tailscale
+group: network
+optin: true
+description: Tailscale operator (expose Services/Ingresses on your tailnet, no port forwarding); needs the user-supplied tailscale-oauth secret
+kind: helm
+chart: tailscale/tailscale-operator
+release: tailscale-operator
+values: kubernetes/services/tailscale-operator/values.yaml
+versionVar: TAILSCALE_OPERATOR_CHART_VERSION
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the operator reaches the Tailscale control plane and
+# DERP relays (WireGuard over UDP 41641 and HTTPS), and the proxy pods it
+# creates in this namespace forward tailnet traffic to Services in every
+# other namespace. Neither fits a per-namespace template.
+networkPolicies: []

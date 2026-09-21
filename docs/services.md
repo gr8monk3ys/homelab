@@ -119,31 +119,44 @@ secrets are already generated. Add them by name:
 | Cloudflare Tunnel (`cloudflared`; no URL, publishes services outbound-only; needs the user-supplied `cloudflare-tunnel-token` secret) | — | network |
 | code-server | `code.` | dev |
 | CyberChef | `cyberchef.` | productivity |
+| Frigate (local NVR; needs Mosquitto from Home Assistant and, realistically, a Coral or iGPU) | `frigate.` | home |
 | Gatus | `status.` | monitoring |
 | Heimdall | `dashboard.` | core |
 | Homebox | `inventory.` | productivity |
 | Hoppscotch | `hoppscotch.` | dev |
+| Intel device plugin (no URL; exposes `gpu.intel.com/i915` for transcoding and detection) | — | core |
 | IT-Tools | `tools.` | productivity |
 | Jellyseerr | `requests.` | media |
 | Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
 | Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
 | kured (no URL; reboots the node when `/var/run/reboot-required` appears; hostPID + privileged by design) | — | core |
 | LocalAI | `localai.` | ai |
+| Longhorn (distributed block storage, snapshots, backups to MinIO; needs open-iscsi on the host) | `longhorn.` | core |
 | Metabase | `metabase.` | productivity |
 | Miniflux (feed reader, Postgres-backed; overlaps yarr) | `reader.` | content |
 | Navidrome | `music.` | media |
 | NocoDB | `nocodb.` | productivity |
+| node-feature-discovery (no URL; labels nodes so the device plugins can target them) | — | core |
 | ntfy | `ntfy.` | productivity |
+| NVIDIA device plugin (no URL; exposes `nvidia.com/gpu`; needs the NVIDIA container toolkit on the host) | — | core |
 | Outline | `wiki.` | productivity |
 | qBittorrent | `torrent.` | media |
 | Reloader (no URL; workloads opt in with the `reloader.stakater.com/auto: "true"` annotation) | — | core |
 | Renovate (no URL; nightly CronJob opening dependency PRs, needs the user-supplied `renovate-token` secret and the repo name in its ConfigMap) | — | dev |
 | RomM | `games.` | media |
+| snapshot-controller (no URL; CSI VolumeSnapshot support, prerequisite for VolSync snapshot copies) | — | core |
 | Stirling-PDF | `pdf.` | productivity |
 | system-upgrade-controller (no URL; k3s server/agent upgrade Plans on the stable channel, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
+| Tailscale operator (no URL; exposes services on your tailnet; needs the user-supplied `tailscale-oauth` secret) | — | network |
 | Tautulli | `stats.` | media |
 | Umami | `analytics.` | productivity |
+| VolSync (no URL; PVC replication and restic backups to MinIO) | — | core |
 | Whisper | `whisper.` | ai |
+
+Storage, remote access and hardware acceleration (Longhorn, VolSync,
+snapshot-controller, the Tailscale operator, node-feature-discovery and the
+Intel/NVIDIA device plugins) have host prerequisites: see
+`docs/runbooks/storage-and-hardware.md`.
 
 Older and higher-risk manifests that used to live in `extras/` and `legacy/`
 are preserved on the `archive/legacy` branch.

@@ -153,12 +153,15 @@ Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
 WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
 Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
 (`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, cloudflared,
-code-server, CyberChef, Gatus, Heimdall, Homebox, Hoppscotch, IT-Tools,
-Jellyseerr, Keycloak, Kiwix, kured, LocalAI, Metabase, Miniflux, Navidrome,
-NocoDB, ntfy, Outline, qBittorrent, Reloader, Renovate, RomM, Stirling-PDF,
-system-upgrade-controller, Tautulli, Umami, Whisper. The full
-catalogue with URLs is in `docs/services.md`, or run
-`./scripts/services.sh list`.
+code-server, CyberChef, Frigate, Gatus, Heimdall, Homebox, Hoppscotch,
+Intel and NVIDIA device plugins, IT-Tools, Jellyseerr, Keycloak, Kiwix,
+kured, LocalAI, Longhorn, Metabase, Miniflux, Navidrome, NocoDB,
+node-feature-discovery, ntfy, Outline, qBittorrent, Reloader, Renovate,
+RomM, snapshot-controller, Stirling-PDF, system-upgrade-controller,
+Tailscale operator, Tautulli, Umami, VolSync, Whisper. The full catalogue
+with URLs is in `docs/services.md`, or run `./scripts/services.sh list`.
+Host prerequisites for the storage, remote-access and hardware pieces are
+in `docs/runbooks/storage-and-hardware.md`.
 
 ## DNS
 

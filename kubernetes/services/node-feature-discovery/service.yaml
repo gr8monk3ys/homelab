@@ -1,0 +1,22 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+# NFD is Helm-chart-managed. It labels nodes with what hardware they have
+# (feature.node.kubernetes.io/*); intel-device-plugin schedules on those
+# labels and nvidia-device-plugin can too.
+name: node-feature-discovery
+namespace: node-feature-discovery
+group: core
+optin: true
+priority: 10
+description: Node Feature Discovery (hardware labels that gate the GPU device plugins)
+kind: helm
+chart: nfd/node-feature-discovery
+release: node-feature-discovery
+values: kubernetes/services/node-feature-discovery/values.yaml
+versionVar: NFD_CHART_VERSION
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: the worker DaemonSet reads the host (/sys, /usr/lib,
+# hostNetwork off but hostPath on) and the master patches Node objects through
+# the API server, which no template allows yet.
+networkPolicies: []
