@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# KinD / Compose harness validation. Cluster health and service URLs come
-# from scripts/lib/health.sh (the catalogue decides both); this script keeps
-# the harness-specific checks: config files, YAML syntax, the Compose stack,
-# the descriptor check, and HTTP reachability of each service URL.
+# KinD harness validation. Cluster health and service URLs come from
+# scripts/lib/health.sh (the catalogue decides both); this script keeps the
+# harness-specific checks: config files, YAML syntax, the descriptor check,
+# and HTTP reachability of each service URL.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
@@ -19,14 +19,6 @@ FAILURES=0
 fail() {
     log "ERROR: $*"
     FAILURES=$((FAILURES+1))
-}
-
-compose_cmd() {
-    if command -v docker-compose &> /dev/null; then
-        docker-compose "$@"
-    else
-        docker compose "$@"
-    fi
 }
 
 check_service_health() {
@@ -60,61 +52,12 @@ check_kubernetes_resources() {
     return "$rc"
 }
 
-check_docker_compose() {
-    log "Checking Docker Compose setup..."
-
-    if [ ! -f "$SCRIPT_DIR/docker-compose.yml" ]; then
-        fail "Docker Compose file not found"
-        return 1
-    fi
-
-    success "Docker Compose file found"
-
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-        fail "Docker Compose is not available (install docker-compose or the docker compose plugin)"
-        return 1
-    fi
-
-    # Validate Docker Compose file
-    if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config &> /dev/null; then
-        success "Docker Compose file is valid"
-    else
-        fail "Docker Compose file has syntax errors"
-        return 1
-    fi
-
-    # Check if services are defined
-    local expected_services=(
-        "traefik"
-        "pihole"
-        "nextcloud"
-        "nextcloud-db"
-        "vaultwarden"
-        "jellyfin"
-        "prometheus"
-        "grafana"
-        "gitea"
-        "gitea-db"
-        "minio"
-        "heimdall"
-    )
-
-    for service in "${expected_services[@]}"; do
-        if compose_cmd -f "$SCRIPT_DIR/docker-compose.yml" config --services | grep -q "^$service$"; then
-            success "Service $service is defined"
-        else
-            fail "Service $service is not defined"
-        fi
-    done
-}
-
 check_configuration_files() {
     log "Checking configuration files..."
 
     local required_files=(
         "$HOMELAB_DIR/config/homelab.yaml"
         "$HOMELAB_DIR/setup-v2.sh"
-        "$SCRIPT_DIR/docker-compose.yml"
         "$SCRIPT_DIR/kind-config.yaml"
         "$SCRIPT_DIR/setup-kind.sh"
     )
@@ -138,7 +81,7 @@ check_configuration_files() {
 check_kubernetes_manifests() {
     log "Checking Kubernetes manifests..."
 
-    # Nextcloud is deployed from the repo Helm chart, not kubernetes/services/
+    # Nextcloud is a kind: helm catalogue service; the chart it names lives here.
     if [ -f "$HOMELAB_DIR/helm/nextcloud/Chart.yaml" ]; then
         success "Nextcloud Helm chart exists"
     else
@@ -207,7 +150,11 @@ run_yaml_syntax_check() {
             fail "YAML syntax error in: $yaml_file"
             syntax_errors=$((syntax_errors+1))
         fi
-    done < <(find "$HOMELAB_DIR" \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/helm/*/templates/*" -print0)
+    # The repo's own YAML only: .tools/ is the pinned toolchain (a Go module
+    # cache full of deliberately malformed test fixtures), and a chart template
+    # is Go templating, not YAML.
+    done < <(find "$HOMELAB_DIR" \( -path "*/.git" -o -path "$HOMELAB_DIR/.tools" \) -prune -o \
+        \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/helm/*/templates/*" -print0)
 
     if [ $syntax_errors -eq 0 ]; then
         success "All YAML files have valid syntax"
@@ -255,6 +202,17 @@ generate_report() {
     echo "Full log available at: $LOGFILE"
 }
 
+usage() {
+    cat << EOF
+Usage: $0 [all|config|k8s|connectivity]
+
+  all           every check below (default)
+  config        required config files and YAML syntax
+  k8s           service descriptors plus cluster health (scripts/lib/health.sh)
+  connectivity  HTTP reachability of every enabled service URL
+EOF
+}
+
 main() {
     local test_type="${1:-all}"
 
@@ -269,17 +227,17 @@ main() {
             check_kubernetes_manifests || true
             check_kubernetes_resources || true
             ;;
-        "docker")
-            check_docker_compose || true
-            ;;
         "connectivity")
             validate_service_connectivity || true
+            ;;
+        "help"|"-h"|"--help")
+            usage
+            exit 0
             ;;
         "all"|*)
             check_configuration_files || true
             run_yaml_syntax_check || true
             check_kubernetes_manifests || true
-            check_docker_compose || true
             check_kubernetes_resources || true
             validate_service_connectivity || true
             ;;

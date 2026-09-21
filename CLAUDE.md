@@ -16,7 +16,6 @@ end-to-end on a live cluster — see the README status line.
 ./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, helm lint, kustomize build
 ./scripts/services.sh list       # the catalogue; `check` validates descriptors, `render <dir>` renders without a cluster
 ./test/setup-kind.sh             # throwaway KinD cluster; test/validate.sh k8s
-cd test && docker compose up -d  # Compose stack; needs test/.env (copy .env.example)
 ```
 
 ## Where things live

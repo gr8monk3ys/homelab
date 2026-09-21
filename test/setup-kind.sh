@@ -15,10 +15,17 @@ KIND_SERVICE_GROUPS="${KIND_SERVICE_GROUPS:-core network content}"
 LOGFILE="$SCRIPT_DIR/kind-setup.log"
 export LOGFILE
 
+# The harness is a caller of the installer's modules, not a second installer:
+# charts come from the helm seam (HELM_INFRA_RELEASES), readiness and the
+# access summary from the health seam, services from the catalogue. What stays
+# here is what is genuinely KinD-specific: the cluster, its port mappings and
+# the KIND_* toggles.
 source "$SCRIPT_DIR/../scripts/lib/common.sh"
 source "$SCRIPT_DIR/../scripts/lib/render.sh"
 source "$SCRIPT_DIR/../scripts/lib/services.sh"
 source "$SCRIPT_DIR/../scripts/lib/netpol.sh"
+source "$SCRIPT_DIR/../scripts/lib/helm.sh"
+source "$SCRIPT_DIR/../scripts/lib/health.sh"
 homelab_load_config
 
 check_requirements() {
@@ -76,19 +83,13 @@ create_cluster() {
 setup_ingress() {
     log "Setting up ingress controller..."
 
-    # Install Traefik
-    helm repo add traefik https://traefik.github.io/charts
-    helm repo update
-
-    helm upgrade --install traefik traefik/traefik \
-        --namespace traefik-system \
-        --create-namespace \
-        --version "$TRAEFIK_CHART_VERSION" \
-        --values "$HOMELAB_DIR/kubernetes/ingress/traefik/values.yaml" \
+    # KinD has no LoadBalancer: Traefik is reached through the node ports the
+    # kind config maps to the host (30080/30443). Everything else about the
+    # release is the table's row.
+    helm_infra_release traefik \
         --set service.type=NodePort \
         --set ports.web.nodePort=30080 \
-        --set ports.websecure.nodePort=30443 \
-        --wait
+        --set ports.websecure.nodePort=30443
 
     log "Ingress controller setup completed"
 }
@@ -96,15 +97,7 @@ setup_ingress() {
 setup_cert_manager() {
     log "Setting up cert-manager..."
 
-    helm repo add jetstack https://charts.jetstack.io
-    helm repo update
-
-    helm upgrade --install cert-manager jetstack/cert-manager \
-        --namespace cert-manager \
-        --create-namespace \
-        --version "$CERT_MANAGER_CHART_VERSION" \
-        --set installCRDs=true \
-        --wait
+    helm_infra_release cert-manager
 
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/ingress/cert-manager"
 
@@ -125,15 +118,7 @@ setup_external_secrets() {
         sleep 1
     done
 
-    helm repo add external-secrets https://charts.external-secrets.io
-    helm repo update
-
-    helm upgrade --install external-secrets external-secrets/external-secrets \
-        --namespace external-secrets \
-        --create-namespace \
-        --version "$EXTERNAL_SECRETS_CHART_VERSION" \
-        --set installCRDs=true \
-        --wait
+    helm_infra_release external-secrets
 
     kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/secrets/secret-store-rbac.yaml"
     kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/secrets/secret-store.yaml"
@@ -211,20 +196,15 @@ setup_monitoring() {
         return 0
     fi
 
-    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-    helm repo update
-
     # Ensure Grafana admin secret exists in monitoring (via ExternalSecret) before installing the chart.
     kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
     kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/monitoring/prometheus/external-secrets.yaml" || \
         log "WARNING: Failed to apply Grafana ExternalSecret (ESO must be running)"
 
-    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
-        --create-namespace \
-        --version "$KUBE_PROMETHEUS_STACK_CHART_VERSION" \
-        --values "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml" \
-        --wait || log "WARNING: kube-prometheus-stack Helm install failed"
+    # A monitoring stack that will not come up in KinD is a warning, not a
+    # failed harness; the rest of the cluster is still worth testing.
+    helm_infra_release kube-prometheus-stack || \
+        log "WARNING: kube-prometheus-stack Helm install failed"
 
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/monitoring/uptime-kuma" || \
         log "WARNING: Failed to deploy uptime-kuma"
@@ -237,50 +217,13 @@ setup_monitoring() {
     log "Monitoring setup completed"
 }
 
-wait_for_services() {
-    log "Waiting for services to be ready..."
+report_health() {
+    log "Reporting cluster health (scripts/lib/health.sh)..."
 
-    local services_ready=true
-
-    # Wait for some key services with status reporting
-    if ! kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=traefik -n traefik-system --timeout=300s 2>/dev/null; then
-        log "WARNING: Traefik pods not ready within timeout"
-        services_ready=false
-    fi
-
-    if ! kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=external-secrets -n external-secrets --timeout=300s 2>/dev/null; then
-        log "WARNING: External Secrets pods not ready within timeout"
-        services_ready=false
-    fi
-
-    if ! kubectl wait --for=condition=Ready pods -n cert-manager --timeout=300s 2>/dev/null; then
-        log "WARNING: cert-manager pods not ready within timeout"
-        services_ready=false
-    fi
-
-    if [[ -z "$KIND_SERVICES" || " $KIND_SERVICES " == *" pihole "* ]]; then
-        if ! kubectl wait --for=condition=Ready pods -l app=pihole -n pihole --timeout=300s 2>/dev/null; then
-            log "WARNING: Pi-hole pods not ready within timeout"
-            services_ready=false
-        fi
-    fi
-
-    if [[ "$KIND_ENABLE_NEXTCLOUD" == "true" ]]; then
-        if ! kubectl wait --for=condition=Ready pods -n nextcloud --timeout=300s 2>/dev/null; then
-            log "WARNING: Nextcloud pods not ready within timeout"
-            services_ready=false
-        fi
-    fi
-
-    if [[ -z "$KIND_SERVICES" || " $KIND_SERVICES " == *" homepage "* ]]; then
-        if ! kubectl wait --for=condition=Ready pods -n homepage --timeout=300s 2>/dev/null; then
-            log "WARNING: Homepage pods not ready within timeout"
-            services_ready=false
-        fi
-    fi
-
-    if [ "$services_ready" = true ]; then
-        log "All key services are ready"
+    # Best-effort: the harness answers "did it deploy", not "is it all green".
+    # health_report reads the catalogue, so it needs no list of its own.
+    if health_report --all --enabled-only; then
+        log "All enabled services and infrastructure are healthy"
     else
         log "Some services may still be starting. Check with: kubectl get pods -A"
     fi
@@ -289,32 +232,24 @@ wait_for_services() {
 show_access_info() {
     log "Kind cluster setup completed!"
     echo ""
-    echo "🎉 Your Kind testing cluster is ready!"
+    echo "Your Kind testing cluster is ready!"
     echo ""
     echo "Cluster Info:"
     echo "Cluster Name: $CLUSTER_NAME"
     echo "Context: kind-$CLUSTER_NAME"
     echo ""
-    echo "Add these entries to /etc/hosts:"
-    echo "127.0.0.1 homelab.local"
-    echo "127.0.0.1 pihole.homelab.local"
-    echo "127.0.0.1 nextcloud.homelab.local"
-    echo "127.0.0.1 vault.homelab.local"
-    echo "127.0.0.1 jellyfin.homelab.local"
-    echo "127.0.0.1 grafana.homelab.local"
-    echo "127.0.0.1 git.homelab.local"
-    echo "127.0.0.1 dashboard.homelab.local"
-    if [[ "$KIND_ENABLE_STORAGE" == "true" ]]; then
-        echo "127.0.0.1 minio.homelab.local"
-    fi
-    echo "127.0.0.1 search.homelab.local"
-    echo "127.0.0.1 books.homelab.local"
-    echo "127.0.0.1 rss.homelab.local"
+
+    # Hostnames and URLs come from the catalogue via the health seam; only the
+    # KinD node ports below are this harness's own.
+    access_summary
+
     echo ""
-    echo "Access services at:"
-    echo "🌐 Traefik: http://localhost:30080 (HTTP) -> redirects to HTTPS when configured"
-    echo "📊 Services (HTTP):  http://<service>.homelab.local:30080"
-    echo "📊 Services (HTTPS): https://<service>.homelab.local:30443"
+    echo "KinD access (no LoadBalancer; Traefik is on the node ports the kind"
+    echo "config maps to localhost). Point the hostnames above at 127.0.0.1 in"
+    echo "/etc/hosts, then:"
+    echo "  Traefik:           http://localhost:30080"
+    echo "  Services (HTTP):   http://<service>.$DOMAIN:30080"
+    echo "  Services (HTTPS):  https://<service>.$DOMAIN:30443"
     echo ""
     echo "Useful commands:"
     echo "kubectl get pods --all-namespaces"
@@ -343,7 +278,7 @@ main() {
             setup_storage
             setup_monitoring
             deploy_core_services
-            wait_for_services
+            report_health
             show_access_info
             ;;
         "cleanup")

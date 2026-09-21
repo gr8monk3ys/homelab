@@ -1,136 +1,11 @@
 # Homelab Testing Environment
 
-This directory contains testing configurations for the homelab setup.
-
-## Docker Compose Testing
-
-Test individual services without the complexity of Kubernetes.
-
-This Compose stack is for local testing only; do not expose it to the internet.
-Credentials are read from `test/.env` (gitignored) — copy `test/.env.example`
-and fill it in before `docker compose up`.
-
-### Prerequisites
-
-- Docker and Docker Compose installed
-- At least 8GB RAM available
-- 50GB free disk space
-
-### Quick Start
-
-1. **Start the testing stack:**
-   ```bash
-   cd test/
-   docker-compose up -d
-   ```
-
-2. **Add entries to your `/etc/hosts` file:**
-   ```
-   127.0.0.1 homelab.local
-   127.0.0.1 nextcloud.homelab.local
-   127.0.0.1 vault.homelab.local
-   127.0.0.1 jellyfin.homelab.local
-   127.0.0.1 grafana.homelab.local
-   127.0.0.1 pihole.homelab.local
-   127.0.0.1 git.homelab.local
-   127.0.0.1 registry.homelab.local
-   127.0.0.1 minio.homelab.local
-   127.0.0.1 dashboard.homelab.local
-   127.0.0.1 search.homelab.local
-   127.0.0.1 books.homelab.local
-   127.0.0.1 rss.homelab.local
-   ```
-
-3. **Access services:**
-   - Traefik Dashboard: http://localhost:8080
-   - Pi-hole: http://pihole.homelab.local
-   - Nextcloud: http://nextcloud.homelab.local
-   - Vaultwarden: http://vault.homelab.local
-   - Jellyfin: http://jellyfin.homelab.local
-   - Grafana: http://grafana.homelab.local
-   - Gitea: http://git.homelab.local
-   - MinIO: http://minio.homelab.local
-   - Dashboard: http://dashboard.homelab.local
-   - SearXNG: http://search.homelab.local (private search)
-   - Calibre-web: http://books.homelab.local (digital library)
-   - Yarr: http://rss.homelab.local
-
-   Credentials are whatever you put in `test/.env`.
-
-### Service Status
-
-Check service status:
-```bash
-docker-compose ps
-```
-
-View logs:
-```bash
-docker-compose logs -f [service-name]
-```
-
-Stop services:
-```bash
-docker-compose down
-```
-
-Remove all data:
-```bash
-docker-compose down -v
-```
-
-### Limitations
-
-**What works:**
-- Individual service functionality
-- Basic inter-service communication
-- Web interface access
-- Basic monitoring
-
-**What doesn't work:**
-- Advanced Kubernetes features
-- Automatic SSL certificates (Let's Encrypt)
-- Full network isolation
-- Some advanced integrations
-
-### Media Testing
-
-Create a `media` directory for Jellyfin:
-```bash
-mkdir -p test/media/{movies,tv,music}
-# Add some sample media files for testing
-```
-
-### Development Workflow
-
-1. Test individual services with Docker Compose
-2. Validate configurations and connectivity
-3. Debug issues in isolated environment
-4. Apply fixes to Kubernetes manifests
-5. Deploy to full homelab environment
-
-## Network Configuration
-
-The Docker Compose stack uses:
-- Network: 172.20.0.0/16
-- Pi-hole IP: 172.20.0.10
-- All other services use dynamic IPs
-
-## Resource Usage
-
-Approximate resource consumption:
-- CPU: 2-4 cores
-- RAM: 6-8GB
-- Storage: 20-50GB (depending on data)
-
-Monitor resource usage:
-```bash
-docker stats
-```
+The KinD harness: the repo's manifests and Helm releases against a real
+Kubernetes cluster running in Docker, through the same modules the installer
+uses (`scripts/lib/{common,render,services,netpol,helm,health}.sh`), so the
+harness carries only what is KinD-specific.
 
 ## Kind (Kubernetes-In-Docker) Testing
-
-This exercises the Kubernetes manifests against a real Kubernetes cluster running in Docker.
 
 ### Prerequisites
 
@@ -165,3 +40,33 @@ KIND_CONFIG=./test/kind-config-smoke.yaml \
 
 ./test/validate.sh k8s
 ```
+
+### Toggles
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `CLUSTER_NAME` | `homelab-test` | Kind cluster name |
+| `KIND_CONFIG` | `test/kind-config.yaml` | Kind cluster config (port mappings) |
+| `KIND_NODE_IMAGE` | unset | pin the Kind node image |
+| `KIND_ENABLE_STORAGE` | `true` | apply `kubernetes/storage/` |
+| `KIND_ENABLE_MONITORING` | `true` | install kube-prometheus-stack and uptime-kuma |
+| `KIND_ENABLE_NEXTCLOUD` | `true` | include the Nextcloud catalogue service |
+| `KIND_SERVICES` | unset | explicit service list; overrides the groups |
+| `KIND_SERVICE_GROUPS` | `core network content` | groups to deploy when `KIND_SERVICES` is unset |
+
+### Access information
+
+`./test/setup-kind.sh info` prints the cluster's NodePorts plus the access
+summary from `scripts/lib/health.sh`, which reads service URLs from the
+catalogue rather than a list kept here.
+
+## Validation
+
+```bash
+./test/validate.sh            # all checks
+./test/validate.sh config     # required files and YAML syntax
+./test/validate.sh k8s        # descriptors plus cluster health
+./test/validate.sh connectivity
+```
+
+`./test/test-runner.sh help` wraps both scripts.
