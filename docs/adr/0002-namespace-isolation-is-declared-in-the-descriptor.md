@@ -14,9 +14,10 @@ We chose this over the two previous shapes: a standalone toolkit
 hardcoded list of 28 namespaces that nothing ran, and per-namespace
 default-deny blocks copied into the static files under
 `kubernetes/security/network-policies/`. Static files now hold only what a
-template cannot express: infrastructure namespaces, Nextcloud (Helm, no
-descriptor), and cross-namespace rules such as one app reaching another's
-database.
+template cannot express: infrastructure namespaces and cross-namespace or
+per-pod rules such as one app reaching another's database (Nextcloud, once
+the static exception because it had no descriptor, now declares its
+isolation like any other service through its `kind: helm` descriptor).
 
 ## Consequences
 

@@ -1,8 +1,8 @@
 # Egress allow-lists that are finer than the per-namespace templates.
 #
-# Namespace-wide default-deny and allow-dns for catalogued services come from
-# their service.yaml (networkPolicies:) via scripts/lib/netpol.sh; only
-# Nextcloud (Helm-managed, no descriptor) keeps them here. The per-pod rules
+# Namespace-wide default-deny and allow-dns for every catalogued service
+# (Nextcloud included, via its kind: helm descriptor) come from its
+# service.yaml (networkPolicies:) via scripts/lib/netpol.sh. The per-pod rules
 # below (app -> its database, app -> internet) are additive on top of the
 # templates and stay as documentation of what each app actually needs.
 ---
@@ -25,36 +25,6 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-egress
-  namespace: nextcloud
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: nextcloud
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

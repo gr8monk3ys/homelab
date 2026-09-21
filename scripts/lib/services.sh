@@ -23,6 +23,13 @@
 #     - apply: promtail-deployment.yaml
 #       when: INSTALL_PROMTAIL         # env var that must be "true"
 #
+# A Helm-chart-managed service says so instead of listing steps:
+#   kind: helm                     # default: manifests
+#   chart: helm/nextcloud          # repo-relative chart dir, or <repo>/<chart> (repo in HELM_REPOS)
+#   release: nextcloud             # optional; default: name
+#   values: helm/nextcloud/values.yaml   # optional; repo-relative, rendered like a manifest
+#   versionVar: FOO_CHART_VERSION  # optional; the tools/versions.env variable pinning the chart
+#
 # Rules the implementation applies to every service:
 #   1. namespace.yaml is applied first.
 #   2. steps run in order; a wait is best-effort (warns, continues).
@@ -31,8 +38,12 @@
 #      Prometheus Operator CRD is absent.
 #   4. the descriptor's `networkPolicies:` templates are rendered into the
 #      namespace (scripts/lib/netpol.sh).
+#   A kind: helm service replaces 2 and 3 with one helm_release
+#   (scripts/lib/helm.sh); its directory holds only the descriptor and an
+#   optional namespace.yaml.
 #
-# Requires scripts/lib/common.sh and scripts/lib/render.sh.
+# Requires scripts/lib/common.sh and scripts/lib/render.sh; sources
+# scripts/lib/helm.sh itself.
 
 if [[ -n "${HOMELAB_SERVICES_SOURCED:-}" ]]; then
     return 0
@@ -43,6 +54,8 @@ if [[ -z "${HOMELAB_RENDER_SOURCED:-}" ]]; then
     echo "ERROR: source scripts/lib/render.sh before scripts/lib/services.sh" >&2
     exit 1
 fi
+# shellcheck source=scripts/lib/helm.sh
+source "$HOMELAB_LIB_DIR/helm.sh"
 
 SERVICES_DIR="${SERVICES_DIR:-$HOMELAB_DIR/kubernetes/services}"
 
@@ -160,6 +173,16 @@ install_service() {
         kubectl_apply_rendered_file "$dir/namespace.yaml"
     fi
 
+    # kind: helm: the chart is the whole install; then isolation as usual.
+    if [[ "$(service_field "$dir" '.kind' manifests)" == "helm" ]]; then
+        _install_service_helm "$dir" "$name" "$ns"
+        if declare -F install_service_network_policies >/dev/null; then
+            install_service_network_policies "$dir" "$ns"
+        fi
+        success "Service $name installed"
+        return 0
+    fi
+
     # 2. Ordered steps.
     local stepped=" "
     local count i file when wait timeout
@@ -216,6 +239,21 @@ install_service() {
     success "Service $name installed"
 }
 
+# _install_service_helm <dir> <name> <namespace>: the helm_release call a
+# kind: helm descriptor describes.
+_install_service_helm() {
+    local dir="$1" name="$2" ns="$3"
+    local chart release values version_var args=()
+    chart="$(service_field "$dir" '.chart')"
+    release="$(service_field "$dir" '.release' "$name")"
+    values="$(service_field "$dir" '.values')"
+    version_var="$(service_field "$dir" '.versionVar')"
+    [[ -n "$chart" ]] || error "install_service: $dir/service.yaml is kind: helm but has no chart"
+    [[ -n "$values" ]] && args+=(--values "$values")
+    [[ -n "$version_var" ]] && args+=(--version-var "$version_var")
+    helm_release "$release" "$chart" "$ns" "${args[@]}"
+}
+
 # install_service_group <group>: every enabled service in the group, in order.
 install_service_group() {
     local group="$1" name
@@ -234,7 +272,7 @@ install_service_group() {
 
 # services_check: every directory has a valid descriptor, every step file exists.
 services_check() {
-    local d name group desc failures=0 count i file when
+    local d name group desc failures=0 count i file when kind chart values
     for d in "$SERVICES_DIR"/*/; do
         name="$(basename "$d")"
         desc="$d/service.yaml"
@@ -256,6 +294,34 @@ services_check() {
             echo "BAD group '$group' in $desc (known: ${SERVICE_GROUPS[*]})"
             failures=$((failures + 1))
         fi
+        kind="$(service_field "$name" '.kind' manifests)"
+        case "$kind" in
+            manifests) ;;
+            helm)
+                chart="$(service_field "$name" '.chart')"
+                if [[ -z "$chart" ]]; then
+                    echo "BAD kind: helm in $desc: no chart"
+                    failures=$((failures + 1))
+                elif _helm_chart_is_local "$chart"; then
+                    if [[ ! -f "$(_helm_repo_path "$chart")/Chart.yaml" ]]; then
+                        echo "BAD chart in $desc: no Chart.yaml at $chart"
+                        failures=$((failures + 1))
+                    fi
+                elif ! helm_repo_url "${chart%%/*}" >/dev/null; then
+                    echo "BAD chart in $desc: repo '${chart%%/*}' is not in HELM_REPOS (scripts/lib/helm.sh)"
+                    failures=$((failures + 1))
+                fi
+                values="$(service_field "$name" '.values')"
+                if [[ -n "$values" && ! -f "$(_helm_repo_path "$values")" ]]; then
+                    echo "BAD values in $desc: file '$values' not found"
+                    failures=$((failures + 1))
+                fi
+                ;;
+            *)
+                echo "BAD kind '$kind' in $desc (manifests|helm)"
+                failures=$((failures + 1))
+                ;;
+        esac
         count="$(yq -r '.steps | length' "$desc" 2>/dev/null || echo 0)"
         [[ "$count" =~ ^[0-9]+$ ]] || count=0
         for ((i = 0; i < count; i++)); do
@@ -333,7 +399,7 @@ service_is_default() {
 
 # services_argocd_applications <default|optional>: Application manifests to stdout.
 services_argocd_applications() {
-    local subset="$1" name ns project prio wave excludes count i when file
+    local subset="$1" name ns project prio wave
     echo "---"
     echo "# GENERATED by scripts/services.sh argocd from kubernetes/services/*/service.yaml."
     echo "# Do not edit; change the descriptor and regenerate. CI fails if this is stale."
@@ -348,15 +414,6 @@ services_argocd_applications() {
         project="$(service_argocd_project "$name")"
         prio="$(service_field "$name" '.priority' 50)"
         wave=$(( (prio - 50) / 10 ))
-        # Files behind a `when:` toggle are installer-only; ArgoCD never applies them.
-        excludes="service.yaml,values.yaml,*.values.yaml"
-        count="$(yq -r '.steps | length' "$(service_descriptor "$name")" 2>/dev/null || echo 0)"
-        [[ "$count" =~ ^[0-9]+$ ]] || count=0
-        for ((i = 0; i < count; i++)); do
-            when="$(service_field "$name" ".steps[$i].when")"
-            file="$(service_field "$name" ".steps[$i].apply")"
-            [[ -n "$when" ]] && excludes+=",$file"
-        done
         cat <<YAML
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -372,11 +429,9 @@ metadata:
 spec:
   project: $project
   source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/$name
-    directory:
-      exclude: '{$excludes}'
+YAML
+        _services_argocd_source "$name"
+        cat <<YAML
   destination:
     server: https://kubernetes.default.svc
     namespace: $ns
@@ -388,6 +443,62 @@ spec:
     - CreateNamespace=true
 YAML
     done
+}
+
+# _services_argocd_source <name>: the Application's spec.source body (4-space
+# indented). A manifests service is its directory; a kind: helm service is
+# its chart (a repo-relative path, or a chart in one of HELM_REPOS) with the
+# descriptor's values file.
+_services_argocd_source() {
+    local name="$1" excludes count i when file
+    local kind chart release values version_var
+    kind="$(service_field "$name" '.kind' manifests)"
+    if [[ "$kind" != "helm" ]]; then
+        # Files behind a `when:` toggle are installer-only; ArgoCD never applies them.
+        excludes="service.yaml,values.yaml,*.values.yaml"
+        count="$(yq -r '.steps | length' "$(service_descriptor "$name")" 2>/dev/null || echo 0)"
+        [[ "$count" =~ ^[0-9]+$ ]] || count=0
+        for ((i = 0; i < count; i++)); do
+            when="$(service_field "$name" ".steps[$i].when")"
+            file="$(service_field "$name" ".steps[$i].apply")"
+            [[ -n "$when" ]] && excludes+=",$file"
+        done
+        cat <<YAML
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/$name
+    directory:
+      exclude: '{$excludes}'
+YAML
+        return 0
+    fi
+
+    chart="$(service_field "$name" '.chart')"
+    release="$(service_field "$name" '.release' "$name")"
+    values="$(service_field "$name" '.values')"
+    version_var="$(service_field "$name" '.versionVar')"
+    if _helm_chart_is_local "$chart"; then
+        cat <<YAML
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: ${chart#./}
+YAML
+    else
+        cat <<YAML
+    repoURL: $(helm_repo_url "${chart%%/*}")
+    chart: ${chart#*/}
+    targetRevision: ${!version_var:-"*"}
+YAML
+    fi
+    echo "    helm:"
+    echo "      releaseName: $release"
+    if [[ -n "$values" ]]; then
+        # valueFiles are relative to the chart path.
+        case "$values" in
+            "${chart#./}"/*) echo "      valueFiles: [${values#"${chart#./}"/}]" ;;
+            *)               echo "      valueFiles: [$values]" ;;
+        esac
+    fi
 }
 
 # services_argocd_projects: AppProjects whose destinations follow the catalogue.
@@ -425,9 +536,8 @@ YAML
         else
             # Static, non-catalogue namespaces each project also owns.
             case "$project" in
-                homelab-productivity) extra="nextcloud" ;;
-                homelab-security)     extra="crowdsec" ;;
-                *)                    extra="" ;;
+                homelab-security) extra="crowdsec" ;;
+                *)                extra="" ;;
             esac
             for name in $extra; do
                 echo "  - namespace: $name"

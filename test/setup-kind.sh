@@ -162,19 +162,11 @@ setup_storage() {
 deploy_core_services() {
     log "Deploying core services..."
 
-    if [[ "$KIND_ENABLE_NEXTCLOUD" == "true" ]]; then
-        # Nextcloud is managed via the repo Helm chart (matches setup-v2.sh).
-        helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
-            --namespace nextcloud \
-            --create-namespace \
-            --wait || log "WARNING: Nextcloud Helm install failed"
-    else
-        log "Skipping Nextcloud (KIND_ENABLE_NEXTCLOUD=$KIND_ENABLE_NEXTCLOUD)"
-    fi
-
-    # Services come from the catalogue (kubernetes/services/*/service.yaml).
-    # KIND_SERVICES names them explicitly; otherwise every non-opt-in service in
-    # KIND_SERVICE_GROUPS (default: core network content) is deployed.
+    # Services come from the catalogue (kubernetes/services/*/service.yaml);
+    # Nextcloud is one of them (kind: helm, installed through the same
+    # install_service). KIND_SERVICES names them explicitly; otherwise every
+    # non-opt-in service in KIND_SERVICE_GROUPS (default: core network content)
+    # is deployed. KIND_ENABLE_NEXTCLOUD=false leaves Nextcloud out.
     local services=()
     if [[ -n "$KIND_SERVICES" ]]; then
         IFS=' ' read -r -a services <<<"$KIND_SERVICES"
@@ -183,6 +175,10 @@ deploy_core_services() {
         local group name
         for group in $KIND_SERVICE_GROUPS; do
             for name in $(services_in_group "$group"); do
+                if [[ "$name" == "nextcloud" && "$KIND_ENABLE_NEXTCLOUD" != "true" ]]; then
+                    log "Skipping Nextcloud (KIND_ENABLE_NEXTCLOUD=$KIND_ENABLE_NEXTCLOUD)"
+                    continue
+                fi
                 service_enabled "$name" && services+=("$name")
             done
         done

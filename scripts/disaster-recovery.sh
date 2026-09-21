@@ -32,8 +32,8 @@ LOG_FILE="${HOMELAB_DIR}/disaster-recovery-$(date +%Y%m%d-%H%M%S).log"
 SECRETS_BACKUP_FILE="${SECRETS_BACKUP_FILE:-}"
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 # Services reinstalled by `services` / step 4 of `full`. Names in the core
-# group (and nextcloud) come back through setup_core_services; any other name
-# is installed from its descriptor regardless of its group toggle.
+# group (Nextcloud included) come back through setup_core_services; any other
+# name is installed from its descriptor regardless of its group toggle.
 CRITICAL_SERVICES="${CRITICAL_SERVICES:-vaultwarden nextcloud gitea home-assistant}"
 
 # This log family is defined after scripts/lib/common.sh on purpose: the
@@ -386,9 +386,9 @@ reinstall_monitoring() {
     report_step_results "Monitoring stack reinstallation"
 }
 
-# Reinstall critical services: setup_core_services covers Nextcloud and the
-# core group; every other name in CRITICAL_SERVICES installs from its
-# descriptor.
+# Reinstall critical services: setup_core_services covers the core group
+# (Nextcloud included); every other name in CRITICAL_SERVICES installs from
+# its descriptor.
 reinstall_critical_services() {
     local services=()
     read -r -a services <<< "${CRITICAL_SERVICES//,/ }"
@@ -397,13 +397,13 @@ reinstall_critical_services() {
 
     FAILED_STEPS=()
 
-    local core_names=" nextcloud "
+    local core_names=" "
     local name
     for name in $(services_in_group core); do
         core_names+="$name "
     done
 
-    run_step "Core services: Nextcloud and the core group (setup_core_services)" setup_core_services
+    run_step "Core services: the core group (setup_core_services)" setup_core_services
 
     local service
     for service in "${services[@]}"; do

@@ -314,6 +314,35 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: nextcloud
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: helm/nextcloud
+    helm:
+      releaseName: nextcloud
+      valueFiles: [values.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nextcloud
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: paperless-ngx
   namespace: argocd
   labels:

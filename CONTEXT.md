@@ -15,7 +15,7 @@ The set of all services, read from their descriptors. The installer, disaster re
 _Avoid_: service list, inventory
 
 **Descriptor**:
-The `service.yaml` in a service directory: the only thing the installer needs to know to install that service.
+The `service.yaml` in a service directory: the only thing the installer needs to know to install that service. A `kind: helm` descriptor names a chart and values file instead of steps.
 _Avoid_: manifest (a descriptor is not applied to the cluster), config
 
 **Group**:

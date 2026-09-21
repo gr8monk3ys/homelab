@@ -228,112 +228,31 @@ run_helm_remote_smoke() {
     return 0
   fi
 
-  # This repo uses several third-party Helm charts with pinned versions.
-  # Templating them in CI catches schema/template breakages early.
+  # Every third-party chart the installer pins (HELM_INFRA_RELEASES in
+  # scripts/lib/helm.sh) is templated in render mode, through the same
+  # helm_release the installer uses, so CI never keeps its own chart list.
   if [[ "${CI:-}" != "true" && "${HELM_REMOTE_SMOKE:-false}" != "true" ]]; then
     log "helm template smoke (remote charts) skipped (set HELM_REMOTE_SMOKE=true to run locally)"
     return 0
   fi
 
-  local versions_file="$REPO_ROOT/tools/versions.env"
-  if [[ ! -f "$versions_file" ]]; then
-    warn "Missing $versions_file; skipping helm template smoke"
-    return 0
-  fi
-  # shellcheck disable=SC1090
-  source "$versions_file"
+  log "helm template smoke (remote charts, through helm_release)..."
+  source "$SCRIPT_DIR/lib/render.sh"
+  source "$SCRIPT_DIR/lib/helm.sh"
 
-  local required_vars=(
-    TRAEFIK_CHART_VERSION
-    CERT_MANAGER_CHART_VERSION
-    EXTERNAL_SECRETS_CHART_VERSION
-    KUBE_PROMETHEUS_STACK_CHART_VERSION
-    METALLB_CHART_VERSION
-    KYVERNO_CHART_VERSION
-    VELERO_CHART_VERSION
-    EXTERNAL_DNS_CHART_VERSION
-    PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION
-  )
-  local missing=()
-  local v
-  for v in "${required_vars[@]}"; do
-    if [[ -z "${!v:-}" ]]; then
-      missing+=("$v")
-    fi
-  done
-  if [[ ${#missing[@]} -ne 0 ]]; then
+  local render_dir
+  render_dir="$(mktemp -d "${TMPDIR:-/tmp}/homelab-helm-smoke.XXXXXX")"
+  # shellcheck disable=SC2064  # expand now: the path is fixed
+  trap "rm -rf '$render_dir'" RETURN
+  homelab_load_config >/dev/null
+
+  # helm_template_all warns and skips a chart it cannot fetch; here that is a failure in CI.
+  if ! (HOMELAB_APPLY_MODE=render HOMELAB_RENDER_DIR="$render_dir" helm_template_all); then
     if [[ "${CI:-}" == "true" ]]; then
-      die "Missing required version vars in tools/versions.env: ${missing[*]}"
+      die "helm template failed for one or more charts (see warnings above)"
     fi
-    warn "Missing version vars (skipping helm template smoke): ${missing[*]}"
-    return 0
+    warn "helm template skipped one or more charts (chart repos unreachable?)"
   fi
-
-  log "helm template smoke (remote charts)..."
-
-  # Ensure repos exist (idempotent), then template pinned versions.
-  helm repo add traefik https://traefik.github.io/charts >/dev/null 2>&1 || true
-  helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
-  helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&1 || true
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
-  helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ >/dev/null 2>&1 || true
-  helm repo add metallb https://metallb.github.io/metallb >/dev/null 2>&1 || true
-  helm repo add kyverno https://kyverno.github.io/kyverno/ >/dev/null 2>&1 || true
-  helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts >/dev/null 2>&1 || true
-  helm repo update >/dev/null
-
-  helm template traefik traefik/traefik \
-    --version "$TRAEFIK_CHART_VERSION" \
-    --namespace traefik-system \
-    --values "$REPO_ROOT/kubernetes/ingress/traefik/values.yaml" \
-    >/dev/null
-
-  helm template cert-manager jetstack/cert-manager \
-    --version "$CERT_MANAGER_CHART_VERSION" \
-    --namespace cert-manager \
-    --set installCRDs=true \
-    >/dev/null
-
-  helm template external-secrets external-secrets/external-secrets \
-    --version "$EXTERNAL_SECRETS_CHART_VERSION" \
-    --namespace external-secrets \
-    --set installCRDs=true \
-    >/dev/null
-
-  helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-    --version "$KUBE_PROMETHEUS_STACK_CHART_VERSION" \
-    --namespace monitoring \
-    --values "$REPO_ROOT/kubernetes/monitoring/prometheus/values.yaml" \
-    >/dev/null
-
-  helm template metallb metallb/metallb \
-    --version "$METALLB_CHART_VERSION" \
-    --namespace metallb-system \
-    >/dev/null
-
-  helm template kyverno kyverno/kyverno \
-    --version "$KYVERNO_CHART_VERSION" \
-    --namespace kyverno \
-    --values "$REPO_ROOT/kubernetes/policy/kyverno/values.yaml" \
-    >/dev/null
-
-  helm template velero vmware-tanzu/velero \
-    --version "$VELERO_CHART_VERSION" \
-    --namespace velero \
-    --values "$REPO_ROOT/kubernetes/backup/velero/values.yaml" \
-    >/dev/null
-
-  helm template external-dns external-dns/external-dns \
-    --version "$EXTERNAL_DNS_CHART_VERSION" \
-    --namespace external-dns \
-    --values "$REPO_ROOT/kubernetes/dns/external-dns/values.yaml" \
-    >/dev/null
-
-  helm template blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
-    --version "$PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION" \
-    --namespace monitoring \
-    --values "$REPO_ROOT/kubernetes/monitoring/blackbox-exporter/values.yaml" \
-    >/dev/null
 }
 
 run_kustomize_build() {

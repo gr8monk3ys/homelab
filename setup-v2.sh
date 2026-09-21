@@ -12,6 +12,7 @@ LOGFILE="${LOGFILE:-$HOMELAB_DIR/setup.log}"
 # and the service catalogue. See scripts/lib/*.sh.
 source "$HOMELAB_DIR/scripts/lib/common.sh"
 source "$HOMELAB_DIR/scripts/lib/render.sh"
+source "$HOMELAB_DIR/scripts/lib/helm.sh"
 source "$HOMELAB_DIR/scripts/lib/services.sh"
 source "$HOMELAB_DIR/scripts/lib/netpol.sh"
 
@@ -156,21 +157,12 @@ install_tools() {
     success "Tools installation completed"
 }
 
-# Every chart repo the phases below pull from. Idempotent; also used by DR.
+# Chart repos are not fetched up front: helm_release (scripts/lib/helm.sh)
+# adds and updates the one repo a chart needs, so an unreachable repo fails
+# only that release and a run with every INSTALL_* Helm toggle off needs no
+# repo at all. Kept as a phase name for install_tools and disaster recovery.
 add_helm_repos() {
-    log "Adding Helm repositories..."
-    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || log "WARNING: prometheus-community repo may already exist"
-    helm repo add bitnami https://charts.bitnami.com/bitnami || log "WARNING: bitnami repo may already exist"
-    helm repo add jetstack https://charts.jetstack.io || log "WARNING: jetstack repo may already exist"
-    helm repo add traefik https://traefik.github.io/charts || log "WARNING: traefik repo may already exist"
-    helm repo add external-secrets https://charts.external-secrets.io || log "WARNING: external-secrets repo may already exist"
-    helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/ || log "WARNING: external-dns repo may already exist"
-    helm repo add metallb https://metallb.github.io/metallb || log "WARNING: metallb repo may already exist"
-    helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || log "WARNING: vmware-tanzu repo may already exist"
-
-    if ! helm repo update; then
-        error "Failed to update Helm repositories"
-    fi
+    log "Helm repositories are added per chart at install time (HELM_REPOS in scripts/lib/helm.sh)."
 }
 
 setup_secrets() {
@@ -188,20 +180,7 @@ setup_secrets() {
     done
 
     if [[ "$INSTALL_EXTERNAL_SECRETS" == "true" ]]; then
-        if [[ -z "${EXTERNAL_SECRETS_CHART_VERSION:-}" ]]; then
-            error "Missing EXTERNAL_SECRETS_CHART_VERSION (set in tools/versions.env)"
-        fi
-        log "Installing External Secrets Operator (Helm)..."
-        helm upgrade --install external-secrets external-secrets/external-secrets \
-            --namespace external-secrets \
-            --create-namespace \
-            --version "$EXTERNAL_SECRETS_CHART_VERSION" \
-            --set installCRDs=true \
-            --wait
-
-        # Wait for External Secrets Operator to be ready
-        kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=external-secrets -n external-secrets --timeout=300s || \
-            warning "External Secrets pods not ready yet (continuing)"
+        helm_infra_release external-secrets
 
         # Deploy SecretStore RBAC + ClusterSecretStore (requires ESO CRDs)
         kubectl_apply_rendered_file kubernetes/secrets/secret-store-rbac.yaml
@@ -242,31 +221,13 @@ setup_ingress() {
     log "Setting up ingress controller and certificates..."
 
     if [[ "$INSTALL_TRAEFIK" == "true" ]]; then
-        if [[ -z "${TRAEFIK_CHART_VERSION:-}" ]]; then
-            error "Missing TRAEFIK_CHART_VERSION (set in tools/versions.env)"
-        fi
-        log "Installing Traefik (Helm)..."
-        helm upgrade --install traefik traefik/traefik \
-            --namespace traefik-system \
-            --create-namespace \
-            --version "$TRAEFIK_CHART_VERSION" \
-            --values kubernetes/ingress/traefik/values.yaml \
-            --wait
+        helm_infra_release traefik
     else
         warning "INSTALL_TRAEFIK=false; skipping Traefik install."
     fi
 
     if [[ "$INSTALL_CERT_MANAGER" == "true" ]]; then
-        if [[ -z "${CERT_MANAGER_CHART_VERSION:-}" ]]; then
-            error "Missing CERT_MANAGER_CHART_VERSION (set in tools/versions.env)"
-        fi
-        # Install cert-manager with Helm
-        helm upgrade --install cert-manager jetstack/cert-manager \
-            --namespace cert-manager \
-            --create-namespace \
-            --version "$CERT_MANAGER_CHART_VERSION" \
-            --set installCRDs=true \
-            --wait
+        helm_infra_release cert-manager
 
         # Apply certificate issuers (local CA + optional Let's Encrypt)
         kubectl_apply_rendered_dir kubernetes/ingress/cert-manager
@@ -283,9 +244,6 @@ setup_external_dns() {
     if [[ "$INSTALL_EXTERNAL_DNS" != "true" ]]; then
         warning "INSTALL_EXTERNAL_DNS=false; skipping ExternalDNS."
         return 0
-    fi
-    if [[ -z "${EXTERNAL_DNS_CHART_VERSION:-}" ]]; then
-        error "Missing EXTERNAL_DNS_CHART_VERSION (set in tools/versions.env)"
     fi
 
     # Namespace must exist for ExternalSecret resources.
@@ -316,15 +274,7 @@ setup_external_dns() {
         fi
     fi
 
-    local values_tmp
-    values_tmp="$(render_to_tmpfile kubernetes/dns/external-dns/values.yaml)"
-    helm upgrade --install external-dns external-dns/external-dns \
-        --namespace external-dns \
-        --create-namespace \
-        --version "$EXTERNAL_DNS_CHART_VERSION" \
-        --values "$values_tmp" \
-        --wait
-    rm -f "$values_tmp"
+    helm_infra_release external-dns
 
     success "ExternalDNS setup completed"
 }
@@ -340,18 +290,8 @@ setup_blackbox_exporter() {
         warning "INSTALL_TRAEFIK=false; skipping blackbox exporter probes (Traefik is not installed)."
         return 0
     fi
-    if [[ -z "${PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION:-}" ]]; then
-        error "Missing PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION (set in tools/versions.env)"
-    fi
 
-    local values_tmp
-    values_tmp="$(render_to_tmpfile kubernetes/monitoring/blackbox-exporter/values.yaml)"
-    helm upgrade --install blackbox-exporter prometheus-community/prometheus-blackbox-exporter \
-        --namespace monitoring \
-        --version "$PROMETHEUS_BLACKBOX_EXPORTER_CHART_VERSION" \
-        --values "$values_tmp" \
-        --wait
-    rm -f "$values_tmp"
+    helm_infra_release blackbox-exporter
 
     success "Blackbox exporter setup completed"
 }
@@ -412,19 +352,7 @@ setup_monitoring() {
     # Grafana admin creds are sourced from the central `secrets` namespace via ESO.
     kubectl_apply_rendered_file kubernetes/monitoring/prometheus/external-secrets.yaml
 
-    # Install Prometheus stack
-    if [[ -z "${KUBE_PROMETHEUS_STACK_CHART_VERSION:-}" ]]; then
-        error "Missing KUBE_PROMETHEUS_STACK_CHART_VERSION (set in tools/versions.env)"
-    fi
-    local prom_values_tmp
-    prom_values_tmp="$(render_to_tmpfile kubernetes/monitoring/prometheus/values.yaml)"
-    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
-        --create-namespace \
-        --version "$KUBE_PROMETHEUS_STACK_CHART_VERSION" \
-        --values "$prom_values_tmp" \
-        --wait
-    rm -f "$prom_values_tmp"
+    helm_infra_release kube-prometheus-stack
 
     # Apply additional PrometheusRules (custom alerts) after the chart CRDs are installed.
     kubectl_apply_rendered_dir kubernetes/monitoring/alerts
@@ -470,18 +398,8 @@ setup_logging() {
 setup_core_services() {
     log "Setting up core services..."
 
-    # Nextcloud is the one Helm-chart-managed app.
-    local nextcloud_values_tmp
-    nextcloud_values_tmp="$(render_to_tmpfile helm/nextcloud/values.yaml)"
-    helm upgrade --install nextcloud helm/nextcloud \
-        --namespace nextcloud \
-        --create-namespace \
-        --dependency-update \
-        --values "$nextcloud_values_tmp" \
-        --wait
-    rm -f "$nextcloud_values_tmp"
-
-    # Authelia (first), Vaultwarden, Gitea, Homepage (last), plus opt-ins such as Keycloak.
+    # Authelia (first), Nextcloud (kind: helm), Vaultwarden, Gitea, Homepage
+    # (last), plus opt-ins such as Keycloak: all from their descriptors.
     install_service_group core
 
     success "Core services setup completed"
@@ -530,29 +448,13 @@ setup_loadbalancer() {
         warning "INSTALL_METALLB=false; skipping MetalLB install."
         return 0
     fi
-    if [[ -z "${METALLB_CHART_VERSION:-}" ]]; then
-        error "Missing METALLB_CHART_VERSION (set in tools/versions.env)"
-    fi
 
     if grep -q "192\\.168\\.1\\.200-192\\.168\\.1\\.250" kubernetes/loadbalancing/metallb/ipaddresspool.yaml 2>/dev/null; then
         warning "MetalLB IP pool appears to be using the default example range (192.168.1.200-192.168.1.250)."
         warning "Review kubernetes/loadbalancing/metallb/ipaddresspool.yaml before exposing services on your LAN."
     fi
 
-    # Add MetalLB Helm repo
-    helm repo add metallb https://metallb.github.io/metallb || log "WARNING: metallb repo may already exist"
-    helm repo update
-
-    # Install MetalLB
-    helm upgrade --install metallb metallb/metallb \
-        --namespace metallb-system \
-        --create-namespace \
-        --version "$METALLB_CHART_VERSION" \
-        --wait
-
-    # Wait for MetalLB to be ready
-    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=metallb -n metallb-system --timeout=300s || \
-        warning "MetalLB pods not ready yet (continuing)"
+    helm_infra_release metallb
 
     # Apply IP address pool and L2 advertisement
     kubectl_apply_rendered_file kubernetes/loadbalancing/metallb/ipaddresspool.yaml
@@ -568,13 +470,6 @@ setup_backup() {
         warning "INSTALL_VELERO=false; skipping Velero."
         return 0
     fi
-    if [[ -z "${VELERO_CHART_VERSION:-}" ]]; then
-        error "Missing VELERO_CHART_VERSION (set in tools/versions.env)"
-    fi
-
-    # Add Velero Helm repo
-    helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || log "WARNING: vmware-tanzu repo may already exist"
-    helm repo update
 
     # Create namespace
     kubectl_apply_rendered_file kubernetes/backup/velero/namespace.yaml
@@ -582,15 +477,7 @@ setup_backup() {
     # Credentials are sourced from the central `secrets` namespace via ESO.
     kubectl_apply_rendered_file kubernetes/backup/velero/external-secrets.yaml
 
-    # Install Velero with Helm
-    local velero_values_tmp
-    velero_values_tmp="$(render_to_tmpfile kubernetes/backup/velero/values.yaml)"
-    helm upgrade --install velero vmware-tanzu/velero \
-        --namespace velero \
-        --version "$VELERO_CHART_VERSION" \
-        --values "$velero_values_tmp" \
-        --wait
-    rm -f "$velero_values_tmp"
+    helm_infra_release velero
 
     # Apply backup schedules
     kubectl_apply_rendered_file kubernetes/backup/velero/schedules.yaml
@@ -619,7 +506,6 @@ setup_network_policies() {
 
     # Apply all network policies
     kubectl_apply_rendered_file kubernetes/security/network-policies/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/default-deny-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/egress-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/database-policies.yaml
     kubectl_apply_rendered_file kubernetes/security/network-policies/sensitive-services-policies.yaml
@@ -630,10 +516,44 @@ setup_network_policies() {
     success "Network policies setup completed"
 }
 
+# kubectl_apply_rendered_file_existing_ns <file>: like kubectl_apply_rendered_file,
+# but documents whose namespace does not exist yet are skipped with a warning
+# (a disabled Helm release or service group never created it). Render mode
+# applies everything.
+kubectl_apply_rendered_file_existing_ns() {
+    local file="$1"
+    if [[ "$HOMELAB_APPLY_MODE" == "render" ]]; then
+        kubectl_apply_rendered_file "$file"
+        return 0
+    fi
+    local existing ns present="" missing=()
+    existing=" $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}') "
+    for ns in $(render_file "$file" | yq -r '.metadata.namespace // ""' | sort -u); do
+        [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || continue   # drops yq's --- separators
+        if [[ "$existing" == *" $ns "* ]]; then
+            present+="${present:+|}$ns"
+        else
+            missing+=("$ns")
+        fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warning "$file: skipping documents for namespaces that do not exist: ${missing[*]}"
+        warning "Re-run ./setup-v2.sh after enabling the toggles that create them."
+    fi
+    if [[ -z "$present" ]]; then
+        warning "$file: nothing to apply yet"
+        return 0
+    fi
+    render_file "$file" | yq "select(.metadata.namespace | test(\"^($present)\$\"))" | \
+        apply_stream "$(_render_label "$file")"
+}
+
 setup_pod_disruption_budgets() {
     log "Setting up PodDisruptionBudgets for critical services..."
 
-    kubectl_apply_rendered_file kubernetes/security/pod-disruption-budgets.yaml
+    # Targets infrastructure and service namespaces; those a disabled toggle
+    # never created are skipped (see kubectl_apply_rendered_file_existing_ns).
+    kubectl_apply_rendered_file_existing_ns kubernetes/security/pod-disruption-budgets.yaml
 
     success "PodDisruptionBudgets setup completed"
 }
@@ -641,7 +561,7 @@ setup_pod_disruption_budgets() {
 setup_resource_quotas() {
     log "Setting up ResourceQuotas for namespace resource limits..."
 
-    kubectl_apply_rendered_file kubernetes/security/resource-quotas.yaml
+    kubectl_apply_rendered_file_existing_ns kubernetes/security/resource-quotas.yaml
 
     success "ResourceQuotas setup completed"
 }
@@ -676,19 +596,7 @@ setup_policy_as_code() {
         return 0
     fi
 
-    # Add Kyverno Helm repo
-    helm repo add kyverno https://kyverno.github.io/kyverno/ || log "WARNING: kyverno repo may already exist"
-    helm repo update
-
-    local kyverno_values_tmp
-    kyverno_values_tmp="$(render_to_tmpfile kubernetes/policy/kyverno/values.yaml)"
-    helm upgrade --install kyverno kyverno/kyverno \
-        --namespace kyverno \
-        --create-namespace \
-        --version "$KYVERNO_CHART_VERSION" \
-        --values "$kyverno_values_tmp" \
-        --wait
-    rm -f "$kyverno_values_tmp"
+    helm_infra_release kyverno
 
     case "$KYVERNO_POLICY_MODE" in
         audit)
@@ -913,7 +821,6 @@ backup_configuration() {
     # Backup important configs
     cp -r "$HOMELAB_DIR/config" "$backup_dir/"
     cp -r "$HOMELAB_DIR/helm" "$backup_dir/"
-    cp -r "$HOMELAB_DIR/kustomize" "$backup_dir/"
 
     # Secure backup directory permissions (dirs must stay traversable)
     find "$backup_dir" -mindepth 1 -type d -exec chmod 700 {} +

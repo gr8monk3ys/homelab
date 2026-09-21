@@ -99,11 +99,17 @@ spec:
   sourceRepos:
   - https://github.com/your-username/homelab.git
   destinations:
-  - namespace: nextcloud
-    server: https://kubernetes.default.svc
   - namespace: actual-budget
     server: https://kubernetes.default.svc
   - namespace: calibre-web
+    server: https://kubernetes.default.svc
+  - namespace: cyberchef
+    server: https://kubernetes.default.svc
+  - namespace: homebox
+    server: https://kubernetes.default.svc
+  - namespace: it-tools
+    server: https://kubernetes.default.svc
+  - namespace: kiwix
     server: https://kubernetes.default.svc
   - namespace: linkwarden
     server: https://kubernetes.default.svc
@@ -117,13 +123,19 @@ spec:
     server: https://kubernetes.default.svc
   - namespace: n8n
     server: https://kubernetes.default.svc
+  - namespace: nextcloud
+    server: https://kubernetes.default.svc
   - namespace: nocodb
+    server: https://kubernetes.default.svc
+  - namespace: ntfy
     server: https://kubernetes.default.svc
   - namespace: outline
     server: https://kubernetes.default.svc
   - namespace: paperless-ngx
     server: https://kubernetes.default.svc
   - namespace: searxng
+    server: https://kubernetes.default.svc
+  - namespace: stirling-pdf
     server: https://kubernetes.default.svc
   - namespace: umami
     server: https://kubernetes.default.svc

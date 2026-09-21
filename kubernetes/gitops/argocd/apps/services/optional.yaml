@@ -62,6 +62,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: cyberchef
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: productivity
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/cyberchef
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cyberchef
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: drone
   namespace: argocd
   labels:
@@ -202,6 +230,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: homebox
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: productivity
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/homebox
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homebox
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: hoppscotch
   namespace: argocd
   labels:
@@ -258,6 +314,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: it-tools
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: productivity
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/it-tools
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: it-tools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: jellyseerr
   namespace: argocd
   labels:
@@ -304,6 +388,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kiwix
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: content
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/kiwix
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kiwix
   syncPolicy:
     automated:
       prune: true
@@ -510,6 +622,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: ntfy
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: productivity
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/ntfy
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ntfy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: ollama
   namespace: argocd
   labels:
@@ -622,6 +762,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: reloader
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: core
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-infrastructure
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/reloader
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: reloader
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: romm
   namespace: argocd
   labels:
@@ -640,6 +808,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: romm
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stirling-pdf
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: productivity
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-productivity
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/stirling-pdf
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stirling-pdf
   syncPolicy:
     automated:
       prune: true
