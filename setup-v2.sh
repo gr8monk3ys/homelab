@@ -46,7 +46,7 @@ INSTALL_MONITORING="${INSTALL_MONITORING:-true}"
 INSTALL_BLACKBOX_EXPORTER="${INSTALL_BLACKBOX_EXPORTER:-true}"
 CONFIGURE_ALERTING="${CONFIGURE_ALERTING:-false}"
 INSTALL_LOGGING="${INSTALL_LOGGING:-false}"
-INSTALL_PROMTAIL="${INSTALL_PROMTAIL:-false}"
+INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
 INSTALL_VELERO="${INSTALL_VELERO:-true}"
 
 # Optional: include an encrypted backup of secret values in backup_configuration()
@@ -379,11 +379,12 @@ setup_logging() {
         return 0
     fi
 
-    # Loki, and Promtail when INSTALL_PROMTAIL=true (see kubernetes/services/loki/service.yaml).
+    # Loki, and the Grafana Alloy log shipper when INSTALL_ALLOY=true
+    # (see kubernetes/services/loki/service.yaml).
     install_service loki
-    if [[ "$INSTALL_PROMTAIL" != "true" ]]; then
-        warning "INSTALL_PROMTAIL=false; no default log shipper was installed."
-        warning "To enable later: INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh"
+    if [[ "$INSTALL_ALLOY" != "true" ]]; then
+        warning "INSTALL_ALLOY=false; no default log shipper was installed."
+        warning "To enable later: INSTALL_LOGGING=true INSTALL_ALLOY=true ./setup-v2.sh"
     fi
 
     # Provision a Loki datasource for Grafana (picked up by kube-prometheus-stack Grafana sidecar).
@@ -769,7 +770,7 @@ main() {
     log "  Kyverno (policy-as-code): $INSTALL_KYVERNO (mode: $KYVERNO_POLICY_MODE)"
     log "  Blackbox Exporter: $INSTALL_BLACKBOX_EXPORTER"
     log "  Alerting (AlertmanagerConfig): $CONFIGURE_ALERTING"
-    log "  Logging (Loki): $INSTALL_LOGGING (Promtail: $INSTALL_PROMTAIL)"
+    log "  Logging (Loki): $INSTALL_LOGGING (Alloy: $INSTALL_ALLOY)"
     log "  Service groups: media=$ENABLE_MEDIA_SERVICES network=$ENABLE_NETWORK_SERVICES dev=$ENABLE_DEV_SERVICES content=$ENABLE_CONTENT_SERVICES ai=$ENABLE_AI_SERVICES productivity=$ENABLE_PRODUCTIVITY_SERVICES home=$ENABLE_HOME_SERVICES communication=$ENABLE_COMMUNICATION_SERVICES"
     log "  Opt-in services: ${OPTIN_SERVICES:-none}"
 

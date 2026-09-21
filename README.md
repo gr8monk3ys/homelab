@@ -64,7 +64,7 @@ passwords as one of its checks. `docs/credentials.md` lists every secret name.
 | Storage | local-path provisioner, MinIO (S3-compatible) | on |
 | Backups | Velero (daily/weekly/monthly + 6-hourly critical schedules) | on |
 | Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager), blackbox-exporter, Uptime Kuma | on |
-| Logging | Loki (+ optional Promtail) | off |
+| Logging | Loki (+ optional Grafana Alloy log shipper) | off |
 | Security | CrowdSec agent, NetworkPolicies, Pod Security Admission (audit), optional Kyverno | mixed, see below |
 | GitOps | ArgoCD (+ optional KSOPS for encrypted secrets in git) | off |
 
@@ -137,7 +137,7 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | `INSTALL_EXTERNAL_SECRETS` | `true` | External Secrets Operator |
 | `INSTALL_MONITORING` | `true` | kube-prometheus-stack + Uptime Kuma |
 | `INSTALL_BLACKBOX_EXPORTER` | `true` | Synthetic HTTPS probes via blackbox-exporter |
-| `INSTALL_LOGGING` | `false` | Loki (`INSTALL_PROMTAIL` for shipping) |
+| `INSTALL_LOGGING` | `false` | Loki (`INSTALL_ALLOY` for shipping) |
 | `INSTALL_VELERO` / `INSTALL_METALLB` | `true` | Backups / LoadBalancer IPs |
 | `INSTALL_EXTERNAL_DNS` | `false` | Cloudflare DNS automation (needs API token) |
 | `INSTALL_KYVERNO` | `false` | Policy engine (`KYVERNO_POLICY_MODE=audit\|enforce`) |
@@ -256,7 +256,7 @@ scripts/                     # installer libraries (scripts/lib/: common, render
 docs/adr/                    # decisions; docs/research/ holds research notes; CONTEXT.md is the glossary
 ansible/                     # host prep for K3s nodes: packages, hardening, host backups (just ansible-prep)
 docs/                        # credentials reference, day-2 runbooks, ADRs, research
-test/                        # KinD configs, Compose stack, validation suite
+test/                        # KinD harness configs and the validation suite
 ```
 
 ## Troubleshooting

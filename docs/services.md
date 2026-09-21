@@ -61,7 +61,7 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 | Alertmanager | internal | Notification routing is opt-in: `CONFIGURE_ALERTING=true` + `docs/runbooks/alerting.md` |
 | Blackbox exporter | internal | Synthetic HTTPS probes of key endpoints through Traefik |
 | Uptime Kuma | `uptime.` | Standalone uptime monitoring and status pages |
-| Loki | internal, optional | `INSTALL_LOGGING=true`; ship logs with `INSTALL_PROMTAIL=true`; see `docs/runbooks/logging.md` |
+| Loki | internal, optional | `INSTALL_LOGGING=true`; ship logs with `INSTALL_ALLOY=true` (Grafana Alloy, which replaced the end-of-life Promtail); see `docs/runbooks/logging.md` |
 
 ## Applications installed by default
 

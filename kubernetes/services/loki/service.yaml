@@ -3,11 +3,11 @@
 name: loki
 namespace: loki
 group: logging
-description: Log aggregation (Promtail optional)
+description: Log aggregation (Alloy log shipper optional)
 steps:
   - apply: deployment.yaml
-  - apply: promtail-deployment.yaml
-    when: INSTALL_PROMTAIL
+  - apply: alloy-daemonset.yaml
+    when: INSTALL_ALLOY
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]
