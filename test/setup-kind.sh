@@ -11,6 +11,7 @@ KIND_ENABLE_STORAGE="${KIND_ENABLE_STORAGE:-true}"
 KIND_ENABLE_MONITORING="${KIND_ENABLE_MONITORING:-true}"
 KIND_ENABLE_NEXTCLOUD="${KIND_ENABLE_NEXTCLOUD:-true}"
 KIND_SERVICES="${KIND_SERVICES:-}"
+KIND_SERVICE_GROUPS="${KIND_SERVICE_GROUPS:-core network content}"
 LOGFILE="$SCRIPT_DIR/kind-setup.log"
 export LOGFILE
 
@@ -170,22 +171,21 @@ deploy_core_services() {
         log "Skipping Nextcloud (KIND_ENABLE_NEXTCLOUD=$KIND_ENABLE_NEXTCLOUD)"
     fi
 
-    # Deploy services one by one to avoid resource conflicts
+    # Services come from the catalogue (kubernetes/services/*/service.yaml).
+    # KIND_SERVICES names them explicitly; otherwise every non-opt-in service in
+    # KIND_SERVICE_GROUPS (default: core network content) is deployed.
     local services=()
     if [[ -n "$KIND_SERVICES" ]]; then
         IFS=' ' read -r -a services <<<"$KIND_SERVICES"
         log "Using KIND_SERVICES override: ${services[*]}"
     else
-        services=(
-            "pihole"
-            "vaultwarden"
-            "jellyfin"
-            "gitea"
-            "homepage"
-            "searxng"
-            "calibre-web"
-            "yarr"
-        )
+        local group name
+        for group in $KIND_SERVICE_GROUPS; do
+            for name in $(services_in_group "$group"); do
+                service_enabled "$name" && services+=("$name")
+            done
+        done
+        log "Deploying groups [$KIND_SERVICE_GROUPS]: ${services[*]}"
     fi
 
     local failed_services=()

@@ -17,11 +17,12 @@ labels:
 
 # Note: controller replicas and image pinning are managed by Helm chart values.
 
+# Domain, timezone and email are NOT set here: config/homelab.yaml (or env) is
+# the single source of truth and scripts/kustomize-apply.sh renders the built
+# overlay through scripts/lib/render.sh, exactly like the installer does.
 configMapGenerator:
   - name: homelab-config
     literals:
-      - domain=homelab.local
-      - timezone=America/New_York
       - environment=production
       - log_level=info
       - backup_enabled=true

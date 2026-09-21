@@ -135,6 +135,12 @@ run_services_check() {
   log "services check (descriptors)..."
   "$REPO_ROOT/scripts/services.sh" check
 
+  log "argocd check (generated app-of-apps is current)..."
+  "$REPO_ROOT/scripts/services.sh" argocd --check
+
+  log "secrets check (producer vs ExternalSecret consumers)..."
+  "$REPO_ROOT/scripts/secrets-check.sh"
+
   if ! require_cmd kubeconform; then
     return 0
   fi
@@ -147,6 +153,23 @@ run_services_check() {
     TIMEZONE="Europe/Amsterdam" \
     CERT_MANAGER_CLUSTER_ISSUER="letsencrypt-staging" \
     "$REPO_ROOT/scripts/services.sh" render "$render_dir" >/dev/null
+
+  # Infrastructure manifests go through the same seam (placeholders included).
+  log "infrastructure render (through render_stream)..."
+  local f rel
+  while IFS= read -r f; do
+    rel="${f#"$REPO_ROOT"/}"
+    mkdir -p "$render_dir/$(dirname "$rel")"
+    DOMAIN="ci.example.test" ADMIN_EMAIL="ci@example.test" TIMEZONE="Europe/Amsterdam" \
+      CERT_MANAGER_CLUSTER_ISSUER="letsencrypt-staging" \
+      "$REPO_ROOT/scripts/services.sh" render-file "$f" > "$render_dir/$rel"
+  done < <(
+    find "$REPO_ROOT/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) \
+      ! -path "$REPO_ROOT/kubernetes/services/*" \
+      ! -path "$REPO_ROOT/kubernetes/secrets/sops/*" \
+      ! -name "values.yaml" ! -name "*.values.yaml" ! -name "*-patch.yaml" \
+      ! -name "kustomization.yaml" -print | sort
+  )
 
   if grep -rl "homelab\.local" "$render_dir" >/dev/null; then
     die "Rendered manifests still contain the homelab.local placeholder:\n$(grep -rl 'homelab\.local' "$render_dir")"

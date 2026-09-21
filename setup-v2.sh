@@ -5,7 +5,8 @@ set -euo pipefail
 # Features: Secret management, Helm charts, Kustomize, health checks
 
 HOMELAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOGFILE="$HOMELAB_DIR/setup.log"
+# DR (scripts/disaster-recovery.sh) sources this file and points LOGFILE at its own log.
+LOGFILE="${LOGFILE:-$HOMELAB_DIR/setup.log}"
 
 # Shared preamble (tools PATH, versions.env, log family), the rendering seam,
 # and the service catalogue. See scripts/lib/*.sh.
@@ -149,7 +150,13 @@ install_tools() {
         rm -rf "$tmpdir"
     fi
 
-    # Add Helm repositories
+    add_helm_repos
+
+    success "Tools installation completed"
+}
+
+# Every chart repo the phases below pull from. Idempotent; also used by DR.
+add_helm_repos() {
     log "Adding Helm repositories..."
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || log "WARNING: prometheus-community repo may already exist"
     helm repo add bitnami https://charts.bitnami.com/bitnami || log "WARNING: bitnami repo may already exist"
@@ -163,8 +170,6 @@ install_tools() {
     if ! helm repo update; then
         error "Failed to update Helm repositories"
     fi
-
-    success "Tools installation completed"
 }
 
 setup_secrets() {

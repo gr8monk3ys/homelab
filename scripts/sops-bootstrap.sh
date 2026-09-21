@@ -33,6 +33,7 @@ ROTATE_SOPS_SECRETS="${ROTATE_SOPS_SECRETS:-false}"
 CONFIG_FILE="${CONFIG_FILE:-$REPO_ROOT/config/homelab.yaml}"
 AUTHELIA_IMAGE="${AUTHELIA_IMAGE:-authelia/authelia:4.38.18}"
 
+# shellcheck disable=SC2120  # length argument is optional
 generate_password() {
   local length="${1:-32}"
   openssl rand -base64 "$length" | tr -d "=+/" | cut -c1-"$length"
@@ -131,13 +132,6 @@ main() {
     --dry-run=client -o yaml > "$tmpdir/minio-config.yaml"
   encrypt_secret_yaml "$tmpdir/minio-config.yaml" "$OUT_DIR/minio-config.sops.yaml"
 
-  kubectl create secret generic minio-credentials \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=access-key="$(generate_password 20)" \
-    --from-literal=secret-key="$(generate_secret_key 32)" \
-    --dry-run=client -o yaml > "$tmpdir/minio-credentials.yaml"
-  encrypt_secret_yaml "$tmpdir/minio-credentials.yaml" "$OUT_DIR/minio-credentials.sops.yaml"
-
   kubectl create secret generic velero-minio-credentials \
     --namespace="$SECRETS_NAMESPACE" \
     --from-literal=access-key="velero" \
@@ -163,12 +157,6 @@ main() {
     --from-literal=password="$(generate_password)" \
     --dry-run=client -o yaml > "$tmpdir/gitea-db-password.yaml"
   encrypt_secret_yaml "$tmpdir/gitea-db-password.yaml" "$OUT_DIR/gitea-db-password.sops.yaml"
-
-  kubectl create secret generic harbor-db-password \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=password="$(generate_password)" \
-    --dry-run=client -o yaml > "$tmpdir/harbor-db-password.yaml"
-  encrypt_secret_yaml "$tmpdir/harbor-db-password.yaml" "$OUT_DIR/harbor-db-password.sops.yaml"
 
   kubectl create secret generic immich-db-password \
     --namespace="$SECRETS_NAMESPACE" \
@@ -404,12 +392,6 @@ EOF
     --dry-run=client -o yaml > "$tmpdir/linkwarden-config.yaml"
   encrypt_secret_yaml "$tmpdir/linkwarden-config.yaml" "$OUT_DIR/linkwarden-config.sops.yaml"
 
-  kubectl create secret generic home-assistant-token \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=token="$(generate_secret_key 64)" \
-    --dry-run=client -o yaml > "$tmpdir/home-assistant-token.yaml"
-  encrypt_secret_yaml "$tmpdir/home-assistant-token.yaml" "$OUT_DIR/home-assistant-token.sops.yaml"
-
   kubectl create secret generic node-red-password \
     --namespace="$SECRETS_NAMESPACE" \
     --from-literal=password="$(generate_password)" \
@@ -427,26 +409,6 @@ EOF
     --from-literal=secret-key="$(generate_secret_key 32)" \
     --dry-run=client -o yaml > "$tmpdir/open-webui-config.yaml"
   encrypt_secret_yaml "$tmpdir/open-webui-config.yaml" "$OUT_DIR/open-webui-config.sops.yaml"
-
-  kubectl create secret generic localai-api-key \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=api-key="$(generate_secret_key 32)" \
-    --dry-run=client -o yaml > "$tmpdir/localai-api-key.yaml"
-  encrypt_secret_yaml "$tmpdir/localai-api-key.yaml" "$OUT_DIR/localai-api-key.sops.yaml"
-
-  kubectl create secret generic synapse-registration-secret \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --from-literal=macaroon-secret-key="$(generate_secret_key 64)" \
-    --from-literal=form-secret="$(generate_secret_key 64)" \
-    --dry-run=client -o yaml > "$tmpdir/synapse-registration-secret.yaml"
-  encrypt_secret_yaml "$tmpdir/synapse-registration-secret.yaml" "$OUT_DIR/synapse-registration-secret.sops.yaml"
-
-  kubectl create secret generic netdata-claim-token \
-    --namespace="$SECRETS_NAMESPACE" \
-    --from-literal=token="" \
-    --dry-run=client -o yaml > "$tmpdir/netdata-claim-token.yaml"
-  encrypt_secret_yaml "$tmpdir/netdata-claim-token.yaml" "$OUT_DIR/netdata-claim-token.sops.yaml"
 
   kubectl create secret generic code-server-password \
     --namespace="$SECRETS_NAMESPACE" \

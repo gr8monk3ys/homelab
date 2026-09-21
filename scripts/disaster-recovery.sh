@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # Homelab Disaster Recovery Script
-# Automated recovery procedures for homelab infrastructure
+# Automated recovery procedures for homelab infrastructure.
+#
+# Reinstall phases are the installer's own: this script sources setup-v2.sh
+# and runs its setup_* functions, so recovery cannot diverge from install.
+# What is DR-specific lives here: Velero restores, the encrypted secrets
+# restore, confirmation prompts, per-step failure tracking and reporting.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
@@ -26,7 +31,15 @@ BACKUP_NAMESPACE="${BACKUP_NAMESPACE:-velero}"
 LOG_FILE="${HOMELAB_DIR}/disaster-recovery-$(date +%Y%m%d-%H%M%S).log"
 SECRETS_BACKUP_FILE="${SECRETS_BACKUP_FILE:-}"
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
+# Services reinstalled by `services` / step 4 of `full`. Names in the core
+# group (and nextcloud) come back through setup_core_services; any other name
+# is installed from its descriptor regardless of its group toggle.
+CRITICAL_SERVICES="${CRITICAL_SERVICES:-vaultwarden nextcloud gitea home-assistant}"
 
+# This log family is defined after scripts/lib/common.sh on purpose: the
+# later definition wins, so everything in this process logs in colour and
+# to LOG_FILE. error() here does not exit; run_step runs the installer's
+# phases in a child bash where the installer's exiting error() applies.
 log() {
     local msg
     msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -63,18 +76,43 @@ prompt() {
     echo -e "${BOLD}${msg}${NC}"
 }
 
+# The installer is the one owner of every install phase (chart versions,
+# values files, apply order). Sourcing it only defines its functions and
+# reads its toggles; main() runs only when it is executed directly.
+LOGFILE="$LOG_FILE"
+source "$HOMELAB_DIR/setup-v2.sh"
+
 # Best-effort step runner: log failures instead of aborting, and track them
 # so the calling function can print an honest summary.
+#
+# Each step runs in a child bash that re-sources setup-v2.sh from the repo
+# root (the phases apply repo-relative paths) with `set -e` in force and the
+# installer's exiting error(). A subshell would not do: bash ignores `set -e`
+# inside `cmd || ...` and `if cmd` contexts, which is how the reinstall_*
+# functions are called, so a failing helm in the middle of a phase would
+# otherwise go unrecorded. Toggles (INSTALL_*, ENABLE_*, OPTIN_SERVICES) and
+# the effective DOMAIN/TIMEZONE/... reach the child through the environment,
+# which is why the child re-runs homelab_load_config. The child's log family
+# writes to stdout only; this process tees it into LOG_FILE.
 FAILED_STEPS=()
 
 run_step() {
     local desc="$1"
     shift
     log "$desc..."
-    if "$@" 2>&1 | tee -a "$LOG_FILE"; then
+    local status=0
+    bash -c '
+        set -euo pipefail
+        cd "$HOMELAB_DIR"
+        source ./setup-v2.sh
+        LOGFILE=""
+        homelab_load_config
+        "$@"
+    ' run_step "$@" 2>&1 | tee -a "$LOG_FILE" || status=$?
+    if [ "$status" -eq 0 ]; then
         return 0
     fi
-    error "Step failed: $desc"
+    error "Step failed (exit $status): $desc"
     FAILED_STEPS+=("$desc")
     return 0
 }
@@ -295,131 +333,85 @@ EOF
     success "Namespace restore initiated: $restore_name"
 }
 
-# Reinstall core infrastructure
+# Reinstall core infrastructure: the installer's storage, secrets, ingress
+# and backup phases. MetalLB (setup_loadbalancer) is deliberately not part of
+# this, as it never was: a LoadBalancer pool is site-specific and survives
+# most recoveries; run ./setup-v2.sh if it is gone.
 reinstall_infrastructure() {
     confirm "This will reinstall core infrastructure components. Continue?"
 
-    log "Reinstalling core infrastructure..."
+    log "Reinstalling core infrastructure via the installer's phases..."
 
     FAILED_STEPS=()
 
-    # Storage provisioner
-    run_step "Installing local-path-provisioner" \
-        kubectl apply -f "$HOMELAB_DIR/kubernetes/storage/local-path-provisioner.yaml"
+    run_step "Adding Helm repositories (add_helm_repos)" add_helm_repos
+    run_step "Storage (setup_storage)" setup_storage
 
-    # Secrets management
-    run_step "Adding external-secrets Helm repo" \
-        helm repo add external-secrets https://charts.external-secrets.io --force-update
-    run_step "Updating Helm repos" helm repo update
-    run_step "Installing External Secrets Operator" \
-        helm upgrade --install external-secrets external-secrets/external-secrets \
-        -n external-secrets --create-namespace \
-        --version "${EXTERNAL_SECRETS_CHART_VERSION}" \
-        --set installCRDs=true \
-        --wait
-
-    if [ -d "$HOMELAB_DIR/kubernetes/secrets" ]; then
-        run_step "Applying secrets manifests" \
-            kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/secrets"
-    fi
-
-    # Ingress
-    run_step "Adding traefik Helm repo" \
-        helm repo add traefik https://traefik.github.io/charts --force-update
-    run_step "Installing Traefik" \
-        helm upgrade --install traefik traefik/traefik \
-        -n traefik-system --create-namespace \
-        --version "${TRAEFIK_CHART_VERSION}" \
-        -f "$HOMELAB_DIR/kubernetes/ingress/traefik/values.yaml" \
-        --wait
-
-    # Cert-manager
-    run_step "Adding jetstack Helm repo" \
-        helm repo add jetstack https://charts.jetstack.io --force-update
-    run_step "Installing cert-manager" \
-        helm upgrade --install cert-manager jetstack/cert-manager \
-        -n cert-manager --create-namespace \
-        --version "${CERT_MANAGER_CHART_VERSION}" \
-        --set installCRDs=true \
-        --wait
-
-    # Optional: restore encrypted secrets before (re)creating issuers/certificates.
+    # Optional: restore encrypted secrets BEFORE setup_secrets, because
+    # generate-secrets.sh keeps any secret that already exists.
     if [ -n "${SECRETS_BACKUP_FILE:-}" ]; then
         if [ ! -f "$SECRETS_BACKUP_FILE" ]; then
             warning "SECRETS_BACKUP_FILE was set but does not exist: $SECRETS_BACKUP_FILE"
             FAILED_STEPS+=("Restoring secrets from encrypted backup (file not found)")
         else
-            run_step "Restoring secrets from encrypted backup: $SECRETS_BACKUP_FILE" \
-                env AGE_IDENTITY_FILE="$AGE_IDENTITY_FILE" bash "$HOMELAB_DIR/scripts/restore-secrets.sh" "$SECRETS_BACKUP_FILE"
+            # Absolute path: run_step changes to the repo root.
+            local secrets_backup_abs
+            secrets_backup_abs="$(cd "$(dirname "$SECRETS_BACKUP_FILE")" && pwd)/$(basename "$SECRETS_BACKUP_FILE")"
+            run_step "Restoring secrets from encrypted backup: $secrets_backup_abs" \
+                env AGE_IDENTITY_FILE="$AGE_IDENTITY_FILE" bash "$HOMELAB_DIR/scripts/restore-secrets.sh" "$secrets_backup_abs"
         fi
     fi
 
-    if [ -d "$HOMELAB_DIR/kubernetes/ingress/cert-manager" ]; then
-        run_step "Applying cert-manager issuers" \
-            kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/ingress/cert-manager"
-    fi
+    run_step "Secret management: ESO, ClusterSecretStore, generated secrets (setup_secrets)" setup_secrets
+    run_step "Ingress: Traefik, cert-manager, issuers (setup_ingress)" setup_ingress
+    info "MetalLB is not reinstalled by disaster recovery; run ./setup-v2.sh if the LoadBalancer is missing."
+    run_step "Velero (setup_backup)" setup_backup
 
     info "Note: Some components may take time to become ready"
     report_step_results "Core infrastructure reinstallation"
 }
 
-# Reinstall monitoring stack
+# Reinstall monitoring stack: the installer's monitoring and logging phases.
+# Loki only comes back when INSTALL_LOGGING=true, exactly as on install.
 reinstall_monitoring() {
     confirm "This will reinstall the monitoring stack. Continue?"
 
-    log "Reinstalling monitoring stack..."
+    log "Reinstalling monitoring stack via the installer's phases..."
 
     FAILED_STEPS=()
 
-    # Prometheus
-    if [ -d "$HOMELAB_DIR/kubernetes/monitoring/prometheus" ]; then
-        run_step "Adding prometheus-community Helm repo" \
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
-        run_step "Updating Helm repos" helm repo update
-        run_step "Installing kube-prometheus-stack" \
-            helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-            -n monitoring --create-namespace \
-            --version "${KUBE_PROMETHEUS_STACK_CHART_VERSION}" \
-            -f "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml"
-    fi
-
-    # Loki, plus Promtail when INSTALL_PROMTAIL=true (kubernetes/services/loki/service.yaml)
-    if [ -d "$HOMELAB_DIR/kubernetes/services/loki" ]; then
-        run_step "Installing Loki" install_service loki
-    fi
+    run_step "Monitoring: kube-prometheus-stack, alerts, ServiceMonitors, Uptime Kuma (setup_monitoring)" setup_monitoring
+    run_step "Logging: Loki and Grafana datasource (setup_logging)" setup_logging
 
     report_step_results "Monitoring stack reinstallation"
 }
 
-# Reinstall critical services
+# Reinstall critical services: setup_core_services covers Nextcloud and the
+# core group; every other name in CRITICAL_SERVICES installs from its
+# descriptor.
 reinstall_critical_services() {
-    local services=(
-        "vaultwarden"
-        "nextcloud"
-        "gitea"
-        "home-assistant"
-    )
+    local services=()
+    read -r -a services <<< "${CRITICAL_SERVICES//,/ }"
 
     confirm "This will reinstall critical services: ${services[*]}. Continue?"
 
     FAILED_STEPS=()
 
+    local core_names=" nextcloud "
+    local name
+    for name in $(services_in_group core); do
+        core_names+="$name "
+    done
+
+    run_step "Core services: Nextcloud and the core group (setup_core_services)" setup_core_services
+
+    local service
     for service in "${services[@]}"; do
-        if [[ "$service" == "nextcloud" ]]; then
-            local nextcloud_values_tmp
-            nextcloud_values_tmp="$(render_to_tmpfile "$HOMELAB_DIR/helm/nextcloud/values.yaml")"
-            run_step "Installing nextcloud (Helm)" \
-                helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
-                --namespace nextcloud \
-                --create-namespace \
-                --dependency-update \
-                -f "$nextcloud_values_tmp"
-            rm -f "$nextcloud_values_tmp"
+        if [[ "$core_names" == *" $service "* ]]; then
             continue
         fi
-
         if [ -f "$HOMELAB_DIR/kubernetes/services/$service/service.yaml" ]; then
-            run_step "Installing $service" install_service "$service"
+            run_step "Installing $service (install_service)" install_service "$service"
         else
             warning "Service descriptor not found: kubernetes/services/$service/service.yaml"
             FAILED_STEPS+=("Installing $service (descriptor not found)")
@@ -579,7 +571,10 @@ Options:
   --namespace NAME   Specify namespace for restore operations
 
 Environment Variables:
-  BACKUP_NAMESPACE   Velero namespace (default: velero)
+  BACKUP_NAMESPACE     Velero namespace (default: velero)
+  CRITICAL_SERVICES    Services for 'services' (default: vaultwarden nextcloud gitea home-assistant)
+  SECRETS_BACKUP_FILE  Encrypted secrets backup restored before secrets are generated
+  INSTALL_*/ENABLE_*   Installer toggles apply unchanged (e.g. INSTALL_LOGGING=true for Loki)
 
 Examples:
   $0                                     # Interactive mode

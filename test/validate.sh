@@ -5,6 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 LOGFILE="$SCRIPT_DIR/validation.log"
 
+# The service catalogue is the source of truth for what should exist.
+source "$HOMELAB_DIR/scripts/lib/common.sh"
+source "$HOMELAB_DIR/scripts/lib/render.sh"
+source "$HOMELAB_DIR/scripts/lib/services.sh"
+homelab_load_config >/dev/null 2>&1 || true
+
 FAILURES=0
 
 log() {
@@ -58,21 +64,12 @@ check_kubernetes_resources() {
 
     success "Kubernetes cluster is accessible"
 
-    # Check namespaces
-    local namespaces=(
-        "pihole"
-        "wireguard"
-        "gitea"
-        "harbor"
-        "drone"
-        "dnsmasq-dhcp"
-        "nextcloud"
-        "vaultwarden"
-        "jellyfin"
-        "heimdall"
-        "monitoring"
-        "traefik-system"
-    )
+    # Namespaces: infrastructure plus every enabled service in the catalogue.
+    local namespaces=("monitoring" "traefik-system" "nextcloud")
+    local name
+    for name in $(services_all); do
+        service_enabled "$name" && namespaces+=("$(service_field "$name" '.namespace')")
+    done
 
     for ns in "${namespaces[@]}"; do
         if kubectl get namespace "$ns" &> /dev/null; then
@@ -184,18 +181,6 @@ check_configuration_files() {
 check_kubernetes_manifests() {
     log "Checking Kubernetes manifests..."
 
-    local service_dirs=(
-        "pihole"
-        "wireguard"
-        "gitea"
-        "harbor"
-        "drone"
-        "dnsmasq-dhcp"
-        "vaultwarden"
-        "jellyfin"
-        "heimdall"
-    )
-
     # Nextcloud is deployed from the repo Helm chart, not kubernetes/services/
     if [ -f "$HOMELAB_DIR/helm/nextcloud/Chart.yaml" ]; then
         success "Nextcloud Helm chart exists"
@@ -203,25 +188,20 @@ check_kubernetes_manifests() {
         error "Nextcloud Helm chart missing: helm/nextcloud"
     fi
 
-    for service in "${service_dirs[@]}"; do
-        local service_dir="$HOMELAB_DIR/kubernetes/services/$service"
-        if [ -d "$service_dir" ]; then
-            success "Service directory exists: $service"
+    # Every service directory must carry a valid descriptor (same check CI runs).
+    if services_check; then
+        success "Service catalogue is consistent"
+    else
+        error "Service catalogue check failed"
+    fi
 
-            # Check for required files
-            if [ -f "$service_dir/namespace.yaml" ]; then
-                success "$service has namespace.yaml"
-            else
-                log "WARNING: $service missing namespace.yaml"
-            fi
-
-            if [ -f "$service_dir/deployment.yaml" ]; then
-                success "$service has deployment.yaml"
-            else
-                log "WARNING: $service missing deployment.yaml"
-            fi
+    local name service_dir
+    for name in $(services_all); do
+        service_dir="$HOMELAB_DIR/kubernetes/services/$name"
+        if [ -f "$service_dir/namespace.yaml" ]; then
+            success "$name has namespace.yaml"
         else
-            error "Service directory missing: $service"
+            error "$name missing namespace.yaml"
         fi
     done
 }
@@ -229,17 +209,14 @@ check_kubernetes_manifests() {
 validate_service_connectivity() {
     log "Validating service connectivity (requires running environment)..."
 
-    # Common service endpoints to test
-    local services=(
-        "Pi-hole:http://pihole.homelab.local"
-        "Nextcloud:http://nextcloud.homelab.local"
-        "Vaultwarden:http://vault.homelab.local"
-        "Jellyfin:http://jellyfin.homelab.local"
-        "Grafana:http://grafana.homelab.local"
-        "Gitea:http://git.homelab.local"
-        "MinIO:http://minio.homelab.local"
-        "Dashboard:http://dashboard.homelab.local"
-    )
+    # Endpoints come from each enabled service's descriptor (url: <host prefix>).
+    local services=("Grafana:https://grafana.$DOMAIN" "MinIO:https://minio.$DOMAIN")
+    local name url
+    for name in $(services_all); do
+        service_enabled "$name" || continue
+        url="$(service_field "$name" '.url')"
+        [[ -n "$url" ]] && services+=("$name:https://$url.$DOMAIN")
+    done
 
     local connectivity_failures=0
 

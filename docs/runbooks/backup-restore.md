@@ -89,7 +89,16 @@ Use the interactive helper when you need to restore from Velero backups:
 ./scripts/disaster-recovery.sh
 ```
 
-To include a secrets restore as part of the run (optional):
+Its reinstall options (`infrastructure`, `monitoring`, `services`, and steps of
+`full`) run the installer's own phases from `setup-v2.sh` (`setup_storage`,
+`setup_secrets`, `setup_ingress`, `setup_backup`, `setup_monitoring`,
+`setup_logging`, `setup_core_services`), so a recovery cannot diverge from a
+fresh install; the same `INSTALL_*`/`ENABLE_*` toggles apply. MetalLB is not
+reinstalled by DR. `CRITICAL_SERVICES` (default `vaultwarden nextcloud gitea
+home-assistant`) picks the services step 4 brings back.
+
+To include a secrets restore as part of the run (optional; it runs before the
+installer generates secrets, so restored values are kept):
 
 ```bash
 SECRETS_BACKUP_FILE=backups/secrets-secrets-<timestamp>.yaml.age ./scripts/disaster-recovery.sh

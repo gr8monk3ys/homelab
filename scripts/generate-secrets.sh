@@ -47,6 +47,7 @@ check_dependencies() {
     log "All dependencies verified"
 }
 
+# shellcheck disable=SC2120  # length argument is optional; every current caller uses the default
 generate_password() {
     local length=${1:-32}
     openssl rand -base64 "$length" | tr -d "=+/" | cut -c1-"$length"
@@ -109,15 +110,12 @@ kubectl create namespace "$SECRETS_NAMESPACE" --dry-run=client -o yaml | kubectl
 # Core infrastructure secrets
 log "Creating core infrastructure secrets..."
 
-# MinIO root credentials (used by minio-system deployment)
+# MinIO root credentials (minio-system copies these via ExternalSecret; Velero uses
+# velero-minio-credentials below). Every secret here must have a consumer:
+# scripts/secrets-check.sh fails CI on generated-but-unused or used-but-ungenerated names.
 upsert_secret minio-config \
     --from-literal=root-user="minioadmin" \
     --from-literal=root-password="$(generate_password)"
-
-# MinIO S3 credentials (used by services like Velero for bucket access)
-upsert_secret minio-credentials \
-    --from-literal=access-key="$(generate_password 20)" \
-    --from-literal=secret-key="$(generate_secret_key 32)"
 
 # Database passwords
 log "Creating database secrets..."
@@ -129,9 +127,6 @@ upsert_secret nextcloud-db-password \
     --from-literal=password="$(generate_password)"
 
 upsert_secret gitea-db-password \
-    --from-literal=password="$(generate_password)"
-
-upsert_secret harbor-db-password \
     --from-literal=password="$(generate_password)"
 
 # Application admin passwords
@@ -271,10 +266,6 @@ upsert_secret linkwarden-config \
 
 log "Creating Smart Home service secrets..."
 
-# Home Assistant secrets
-upsert_secret home-assistant-token \
-    --from-literal=token="$(generate_secret_key 64)"
-
 # Node-RED secrets
 upsert_secret node-red-password \
     --from-literal=password="$(generate_password)"
@@ -289,30 +280,15 @@ log "Creating AI/LLM service secrets..."
 upsert_secret open-webui-config \
     --from-literal=secret-key="$(generate_secret_key 32)"
 
-# LocalAI secrets
-upsert_secret localai-api-key \
-    --from-literal=api-key="$(generate_secret_key 32)"
-
 log "Creating Communication service secrets..."
 
 # Matrix/Synapse secrets
 upsert_secret synapse-db-password \
     --from-literal=password="$(generate_password)"
 
-upsert_secret synapse-registration-secret \
-    --from-literal=secret="$(generate_secret_key 64)" \
-    --from-literal=macaroon-secret-key="$(generate_secret_key 64)" \
-    --from-literal=form-secret="$(generate_secret_key 64)"
-
 # Mattermost secrets
 upsert_secret mattermost-db-password \
     --from-literal=password="$(generate_password)"
-
-log "Creating Observability service secrets..."
-
-# Netdata cloud claim token (optional - leave empty if not using Netdata Cloud)
-upsert_secret netdata-claim-token \
-    --from-literal=token=""
 
 log "Creating Development tool secrets..."
 
