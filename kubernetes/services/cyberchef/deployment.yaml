@@ -1,0 +1,158 @@
+---
+# CyberChef - data encoding, encryption and analysis workbench (static SPA)
+#
+# The upstream image is nginx:stable-alpine: it starts nginx as root on port 80
+# and relies on CAP_SETUID/SETGID to drop to the nginx worker user. Instead of
+# running root with capabilities, the pod runs as the image's nginx user (uid
+# 101) with an nginx.conf below that listens on 8080 and keeps pid/temp files
+# on writable emptyDirs, the same layout nginx-unprivileged uses. Only the
+# static files under /usr/share/nginx/html come from the image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cyberchef-nginx
+  namespace: cyberchef
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr warn;
+
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log off;
+      sendfile on;
+      keepalive_timeout 65;
+      gzip on;
+      gzip_types text/plain text/css application/javascript application/json image/svg+xml application/wasm;
+
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+
+      server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location / {
+          try_files $uri $uri/ /index.html;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cyberchef
+  namespace: cyberchef
+  labels:
+    app: cyberchef
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cyberchef
+  template:
+    metadata:
+      labels:
+        app: cyberchef
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cyberchef
+        image: ghcr.io/gchq/cyberchef:10.24.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 10
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: cyberchef-nginx
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cyberchef
+  namespace: cyberchef
+spec:
+  selector:
+    app: cyberchef
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cyberchef-ingress
+  namespace: cyberchef
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - cyberchef.homelab.local
+    secretName: cyberchef-tls
+  rules:
+  - host: cyberchef.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cyberchef
+            port:
+              number: 8080

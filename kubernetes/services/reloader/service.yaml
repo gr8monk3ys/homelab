@@ -1,0 +1,15 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: reloader
+namespace: reloader
+group: core
+optin: true
+description: Rolls workloads when their ConfigMaps or Secrets change (opt in per workload with reloader.stakater.com/auto)
+steps:
+  - apply: rbac.yaml
+  - apply: deployment.yaml
+    wait: app=reloader
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Deliberately open: it watches and patches through the Kubernetes API server, which no template allows yet.
+networkPolicies: []

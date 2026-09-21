@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: ntfy
+namespace: ntfy
+group: productivity
+optin: true
+url: ntfy
+description: Push notifications over HTTP
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: FCM/web-push delivery and the optional ntfy.sh upstream for iOS.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

@@ -69,7 +69,7 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 
 | Service | URL | Purpose |
 |---|---|---|
-| Nextcloud | `nextcloud.` | Files/calendar/contacts. The one Helm-managed app (`helm/nextcloud/`), with a separate MySQL StatefulSet |
+| Nextcloud | `nextcloud.` | Files/calendar/contacts. Helm chart (`helm/nextcloud/`) declared with `kind: helm` in its descriptor; separate MySQL StatefulSet |
 | Gitea | `git.` | Git hosting |
 | Vaultwarden | `vault.` | Bitwarden-compatible password manager (admin panel at `/admin`) |
 | Authelia | `auth.` | SSO/2FA; protects selected apps via Traefik ForwardAuth middleware |
@@ -117,18 +117,25 @@ secrets are already generated. Add them by name:
 |---|---|---|
 | Actual Budget | `budget.` | productivity |
 | code-server | `code.` | dev |
+| CyberChef | `cyberchef.` | productivity |
 | Gatus | `status.` | monitoring |
 | Heimdall | `dashboard.` | core |
+| Homebox | `inventory.` | productivity |
 | Hoppscotch | `hoppscotch.` | dev |
+| IT-Tools | `tools.` | productivity |
 | Jellyseerr | `requests.` | media |
 | Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
+| Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
 | LocalAI | `localai.` | ai |
 | Metabase | `metabase.` | productivity |
 | Navidrome | `music.` | media |
 | NocoDB | `nocodb.` | productivity |
+| ntfy | `ntfy.` | productivity |
 | Outline | `wiki.` | productivity |
 | qBittorrent | `torrent.` | media |
+| Reloader (no URL; workloads opt in with the `reloader.stakater.com/auto: "true"` annotation) | — | core |
 | RomM | `games.` | media |
+| Stirling-PDF | `pdf.` | productivity |
 | Tautulli | `stats.` | media |
 | Umami | `analytics.` | productivity |
 | Whisper | `whisper.` | ai |

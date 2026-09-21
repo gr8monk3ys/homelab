@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: cyberchef
+namespace: cyberchef
+group: productivity
+optin: true
+url: cyberchef
+description: Data encoding, encryption and analysis workbench
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Static files only; everything runs in the browser.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

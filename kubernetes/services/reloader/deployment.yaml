@@ -1,0 +1,94 @@
+---
+# Reloader - rolls a Deployment/StatefulSet/DaemonSet when a ConfigMap or
+# Secret it uses changes. This is what makes an ESO-rotated secret reach a
+# running pod. Nothing is reloaded until a workload opts in with
+#   metadata.annotations:
+#     reloader.stakater.com/auto: "true"
+# (or reloader.stakater.com/search + reloader.stakater.com/match on the
+# ConfigMap/Secret). No Service, no Ingress: it only talks to the API server.
+#
+# Image tag v1.4.22 is the newest release tag on github.com/stakater/Reloader
+# at the time of writing (verified against ghcr.io).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reloader
+  namespace: reloader
+  labels:
+    app: reloader
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: reloader
+  template:
+    metadata:
+      labels:
+        app: reloader
+    spec:
+      serviceAccountName: reloader
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: reloader
+        image: ghcr.io/stakater/reloader:v1.4.22
+        args:
+        # Single replica: leader election (--enable-ha) stays off, so no Lease RBAC.
+        - --log-format=json
+        - --reload-strategy=annotations
+        - --ignored-workload-types=jobs,cronjobs
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: GOMAXPROCS
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.cpu
+              divisor: "1"
+        - name: GOMEMLIMIT
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.memory
+              divisor: "1"
+        - name: RELOADER_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: RELOADER_DEPLOYMENT_NAME
+          value: reloader
+        ports:
+        - containerPort: 9090
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "10m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5

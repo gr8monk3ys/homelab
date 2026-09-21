@@ -1,18 +1,39 @@
 # Homelab
 
-**Status: not yet proven end-to-end on a live cluster.** The manifests are
-consistent and CI-validated (yamllint, shellcheck, kubeconform, helm lint,
-kustomize build), and subsets have run on KinD, but nobody has deployed the
-whole stack to a real K3s node and watched it stay up. Deploy a subset,
-verify, then grow.
+**Status: verified against a live Kubernetes API, not yet on a real node.**
+Every check in `scripts/ci.sh` passes, every service in the catalogue has been
+applied through the installer's own code path to a real `kube-apiserver`
+(with the External Secrets, Traefik, cert-manager and Prometheus Operator CRDs
+loaded) and the installer has run end to end against it with the Helm-based
+infrastructure disabled. What has not happened yet: pods scheduling on a real
+K3s node and staying up. Deploy a subset, verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
 the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
-MinIO, Velero, kube-prometheus-stack) and the application catalogue: every
+MinIO, Velero, kube-prometheus-stack) and the **service catalogue**: every
 directory under `kubernetes/services/` carries a `service.yaml` descriptor
-that says which group it belongs to and whether it is opt-in, and the
-installer installs whatever the toggles select (23 by default, 43 available).
-`./scripts/services.sh list` prints the catalogue.
+(group, opt-in, ordered install steps, network isolation), and one code path,
+`install_service`, installs any of them. The installer installs whatever the
+toggles select; `./scripts/services.sh list` prints the catalogue.
+
+## How it fits together
+
+- **Catalogue.** `kubernetes/services/<name>/service.yaml` is the interface;
+  `scripts/lib/services.sh` is the implementation. The installer, disaster
+  recovery, the KinD harness, the validator, CI and the generated ArgoCD
+  app-of-apps all read the same catalogue, so a service cannot be half-wired.
+- **Render seam.** Manifests carry placeholders (`homelab.local`,
+  `admin@homelab.local`, `UTC`, the `homelab-ca` issuer). Everything that
+  reaches a cluster goes through `scripts/lib/render.sh`; nothing is applied
+  raw.
+- **Isolation.** Each descriptor lists the NetworkPolicy templates it wants
+  (or `[]` with a reason). Cross-namespace rules live in
+  `kubernetes/security/network-policies/`.
+- **Secrets.** One table in `scripts/lib/secrets.sh` feeds two adapters: live
+  Kubernetes Secrets (`generate-secrets.sh`) or SOPS-encrypted files for
+  GitOps (`sops-bootstrap.sh`). `scripts/secrets-check.sh` fails CI when an
+  `ExternalSecret` asks for a secret nobody produces, or vice versa.
+- **Decisions** are in `docs/adr/`; the vocabulary is in `CONTEXT.md`.
 
 ## Secrets design
 
@@ -131,9 +152,10 @@ Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
 Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
 WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
 Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
-(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, code-server, Gatus,
-Heimdall, Hoppscotch, Jellyseerr, Keycloak, LocalAI, Metabase, Navidrome,
-NocoDB, Outline, qBittorrent, RomM, Tautulli, Umami, Whisper. The full
+(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, code-server, CyberChef,
+Gatus, Heimdall, Homebox, Hoppscotch, IT-Tools, Jellyseerr, Keycloak,
+Kiwix, LocalAI, Metabase, Navidrome, NocoDB, ntfy, Outline, qBittorrent,
+Reloader, RomM, Stirling-PDF, Tautulli, Umami, Whisper. The full
 catalogue with URLs is in `docs/services.md`, or run
 `./scripts/services.sh list`.
 
@@ -174,10 +196,39 @@ Details: `docs/runbooks/gitops-secrets.md`. Set `gitops.repo_url` in
 ```bash
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
 pre-commit install               # fast local checks on commit
-./scripts/ci.sh                  # the full lint/validate gate CI runs
+./scripts/ci.sh                  # the full gate CI runs (see below)
+./scripts/services.sh list       # the catalogue; check / render / install / argocd
+./scripts/secrets-check.sh       # secret producer vs consumer drift
 just                             # task shortcuts (just validate, just ci, just kind-smoke, ...)
 cd test && ./setup-kind.sh       # throwaway KinD cluster for testing
 ```
+
+`scripts/ci.sh` runs, in order: `bash -n`, shellcheck, yamllint, kubeconform
+on the raw manifests, the catalogue check (every directory has a valid
+descriptor with an isolation decision), the ArgoCD freshness check (generated
+app-of-apps matches the catalogue), the secret drift check, a render of every
+service and every infrastructure manifest with non-default domain, email,
+timezone and issuer validated by kubeconform, helm lint, and the ArgoCD
+kustomize builds.
+
+## Adding a service
+
+Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
+manifests and a `service.yaml` (see `docs/services.md`). If it needs a
+credential, add one line to the table in `scripts/lib/secrets.sh` and an
+`ExternalSecret` in the directory. Run `./scripts/services.sh argocd` to
+regenerate the GitOps files, then `./scripts/ci.sh`. Nothing in the installer
+changes.
+
+## What to add next
+
+`docs/research/homelab-additions.md` compares this repo with Project NOMAD
+and four well-known Kubernetes homelabs and ranks fifteen additions with
+sources: Renovate, Reloader (now in the catalogue), Kiwix (in), Gatus with
+gatus-sidecar, ntfy (in), Cloudflare Tunnel or Tailscale, system-upgrade-
+controller and kured, Longhorn, VolSync, Home Assistant with Frigate, GPU
+device plugins, Stirling-PDF and IT-Tools (in), Homebox (in), Miniflux, and
+the NOMAD knowledge stack (Kolibri, PMTiles maps).
 
 Tool and chart versions are pinned in `tools/versions.env`; Dependabot
 bumps the GitHub Actions. CI is one workflow (`.github/workflows/ci.yml`)
@@ -196,10 +247,11 @@ kubernetes/
   policy/kyverno/            # optional policy-as-code (audit + enforce sets)
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps
-helm/nextcloud/              # the one Helm-chart-managed app
-scripts/                     # secrets, backup/restore, validation, DR
+helm/nextcloud/              # the one Helm chart; installed like any service via kubernetes/services/nextcloud/service.yaml (kind: helm)
+scripts/                     # installer libraries (scripts/lib/: common, render, services, netpol, helm, secrets, tools), backup/restore, validation, DR
+docs/adr/                    # decisions; docs/research/ holds research notes; CONTEXT.md is the glossary
 ansible/                     # host prep for K3s nodes: packages, hardening, host backups (just ansible-prep)
-docs/                        # credentials reference + day-2 runbooks
+docs/                        # credentials reference, day-2 runbooks, ADRs, research
 test/                        # KinD configs, Compose stack, validation suite
 ```
 

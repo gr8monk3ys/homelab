@@ -1,0 +1,140 @@
+---
+# Homebox - home inventory and organisation (SQLite, single container)
+#
+# The -rootless image variant (Dockerfile.rootless) bakes in user 65532 and
+# owns /data; verified to exist as ghcr.io/sysadminsmedia/homebox:0.26.2-rootless.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homebox
+  namespace: homebox
+  labels:
+    app: homebox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: homebox
+  template:
+    metadata:
+      labels:
+        app: homebox
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: homebox
+        image: ghcr.io/sysadminsmedia/homebox:0.26.2-rootless
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: HBOX_LOG_LEVEL
+          value: "info"
+        - name: HBOX_LOG_FORMAT
+          value: "text"
+        - name: HBOX_WEB_MAX_FILE_UPLOAD
+          value: "10"
+        # Create the first user, then registration stays closed.
+        - name: HBOX_OPTIONS_ALLOW_REGISTRATION
+          value: "false"
+        - name: HBOX_OPTIONS_ALLOW_ANALYTICS
+          value: "false"
+        - name: TZ
+          value: "UTC"
+        ports:
+        - containerPort: 7745
+          name: http
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 7745
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 7745
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: homebox-data-pvc
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: homebox-data-pvc
+  namespace: homebox
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homebox
+  namespace: homebox
+spec:
+  selector:
+    app: homebox
+  ports:
+  - name: http
+    port: 7745
+    targetPort: 7745
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homebox-ingress
+  namespace: homebox
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - inventory.homelab.local
+    secretName: homebox-tls
+  rules:
+  - host: inventory.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: homebox
+            port:
+              number: 7745

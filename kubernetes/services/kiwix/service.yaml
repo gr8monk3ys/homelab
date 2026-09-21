@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: kiwix
+namespace: kiwix
+group: content
+optin: true
+url: library
+description: Offline reader for ZIM archives (Wikipedia and friends)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# Serves local files only; add allow-external-https temporarily if you run a ZIM download Job in this namespace.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]
