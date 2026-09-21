@@ -4,8 +4,10 @@ Self-hosted Kubernetes homelab on K3s. `setup-v2.sh` installs the
 infrastructure layer plus the service catalogue: every directory under
 `kubernetes/services/` has a `service.yaml` descriptor (group, opt-in,
 ordered steps) and `scripts/lib/services.sh` is the one code path that
-installs one. 23 install by default, 20 are opt-in. Not yet proven
-end-to-end on a live cluster — see the README status line.
+installs one. 64 services: 18 install under the default toggles, 37 are
+opt-in by name, the rest wait on a group toggle. Applied end-to-end to a
+live Kubernetes API, but no pod has ever started on a real node — see the
+README status line.
 
 ## Run / test
 
