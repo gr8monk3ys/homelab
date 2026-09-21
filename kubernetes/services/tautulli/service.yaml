@@ -5,8 +5,14 @@ namespace: tautulli
 group: media
 optin: true
 url: stats
-description: Media server statistics
+# Tautulli monitors Plex Media Server only: it speaks the Plex API and its
+# maintainers have kept it Plex-specific. This homelab ships Jellyfin, so
+# Tautulli is useful here only if you also run Plex (typically on a NAS or
+# another host) and point it at that server. For Jellyfin watch statistics,
+# Jellystat or Streamystats are the equivalents; neither is in the catalogue
+# yet.
+description: Plex Media Server statistics (Plex only; this homelab ships Jellyfin)
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
-# Deliberately open: talks to Jellyfin in another namespace.
+# Deliberately open: reaches a Plex server outside the cluster, on the LAN.
 networkPolicies: []

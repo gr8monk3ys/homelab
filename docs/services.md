@@ -148,7 +148,7 @@ secrets are already generated. Add them by name:
 | Stirling-PDF | `pdf.` | productivity |
 | system-upgrade-controller (no URL; k3s server/agent upgrade Plans on the stable channel, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
 | Tailscale operator (no URL; exposes services on your tailnet; needs the user-supplied `tailscale-oauth` secret) | — | network |
-| Tautulli | `stats.` | media |
+| Tautulli (Plex statistics; Plex-only, so it is useful here only if you run Plex somewhere alongside this cluster's Jellyfin) | `stats.` | media |
 | Umami | `analytics.` | productivity |
 | VolSync (no URL; PVC replication and restic backups to MinIO) | — | core |
 | Whisper | `whisper.` | ai |
