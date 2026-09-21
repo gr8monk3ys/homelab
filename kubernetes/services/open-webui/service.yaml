@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: open-webui
+namespace: open-webui
+group: ai
+priority: 60
+url: chat
+description: Chat UI for Ollama

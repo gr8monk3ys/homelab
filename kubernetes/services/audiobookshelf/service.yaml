@@ -1,0 +1,7 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: audiobookshelf
+namespace: audiobookshelf
+group: media
+url: audiobooks
+description: Audiobook and podcast server

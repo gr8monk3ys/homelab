@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: hoppscotch
+namespace: hoppscotch
+group: dev
+optin: true
+url: hoppscotch
+description: API client
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=hoppscotch-postgres

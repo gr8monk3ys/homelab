@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
 
 TOOLS_DIR="${TOOLS_DIR:-$REPO_ROOT/.tools}"
 BIN_DIR="$TOOLS_DIR/bin"
@@ -16,18 +17,6 @@ TMP_DIR="$TOOLS_DIR/tmp"
 
 FORCE="${FORCE:-false}"
 
-VERSIONS_FILE="${VERSIONS_FILE:-$REPO_ROOT/tools/versions.env}"
-if [[ ! -f "$VERSIONS_FILE" ]]; then
-  echo "ERROR: Missing versions file: $VERSIONS_FILE" >&2
-  exit 1
-fi
-# shellcheck disable=SC1090
-source "$VERSIONS_FILE"
-
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
 die() {
   log "ERROR: $*"
   exit 1
@@ -35,25 +24,6 @@ die() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
-}
-
-detect_os() {
-  local os
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  case "$os" in
-    linux|darwin) echo "$os" ;;
-    *) die "Unsupported OS: $os" ;;
-  esac
-}
-
-detect_arch() {
-  local arch
-  arch="$(uname -m)"
-  case "$arch" in
-    x86_64|amd64) echo "amd64" ;;
-    arm64|aarch64) echo "arm64" ;;
-    *) die "Unsupported architecture: $arch" ;;
-  esac
 }
 
 ensure_dirs() {

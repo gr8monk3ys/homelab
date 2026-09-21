@@ -1,0 +1,6 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: dnsmasq-dhcp
+namespace: dnsmasq-dhcp
+group: network
+description: DHCP server

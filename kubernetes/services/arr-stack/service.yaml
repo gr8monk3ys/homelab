@@ -1,0 +1,9 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: arr-stack
+namespace: arr-stack
+group: media
+url: sonarr
+description: Sonarr, Radarr, Prowlarr, Bazarr
+steps:
+  - apply: shared-storage.yaml

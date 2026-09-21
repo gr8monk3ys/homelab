@@ -1,0 +1,7 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: harbor
+namespace: harbor
+group: dev
+url: registry
+description: Container registry (in-cluster Helm job)

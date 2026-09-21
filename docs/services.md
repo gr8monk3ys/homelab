@@ -1,8 +1,34 @@
 # Services
 
-What `setup-v2.sh` installs, what each piece is for, and what exists in the
-repo but is not wired into the installer. URLs are `<name>.<domain>` with the
-domain from `config/homelab.yaml`.
+What `setup-v2.sh` installs and what each piece is for. URLs are
+`<name>.<domain>` with the domain from `config/homelab.yaml`.
+
+Applications are a **catalogue**: every `kubernetes/services/<name>/` carries a
+`service.yaml` descriptor (namespace, group, opt-in flag, ordered install
+steps). `./scripts/services.sh list` prints it; `./scripts/services.sh check`
+is what CI runs. A service's `group` maps to a toggle:
+
+| Group | Toggle (default) |
+|---|---|
+| `core` | always |
+| `media` | `ENABLE_MEDIA_SERVICES` (true) |
+| `network` | `ENABLE_NETWORK_SERVICES` (true) |
+| `content` | `ENABLE_CONTENT_SERVICES` (true) |
+| `productivity` | `ENABLE_PRODUCTIVITY_SERVICES` (true) |
+| `ai` | `ENABLE_AI_SERVICES` (false) |
+| `dev` | `ENABLE_DEV_SERVICES` (false) |
+| `home` | `ENABLE_HOME_SERVICES` (false) |
+| `communication` | `ENABLE_COMMUNICATION_SERVICES` (false) |
+| `monitoring` | `INSTALL_MONITORING` (true) |
+| `logging` | `INSTALL_LOGGING` (false) |
+
+A service marked `optin: true` additionally needs its name in
+`OPTIN_SERVICES` (space or comma separated, or `all`):
+
+```bash
+OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
+./scripts/services.sh install gatus      # one service into the current cluster
+```
 
 ## Infrastructure (installed by default)
 
@@ -62,7 +88,7 @@ also provides wildcard DNS for the cluster), WireGuard (`vpn.`), dnsmasq DHCP.
 Paperless-ngx (`docs.`), Mealie (`recipes.`), Linkwarden (`bookmarks.`),
 n8n (`automation.`).
 
-## Applications that are opt-in
+## Applications behind a group toggle
 
 | Service | URL | Toggle |
 |---|---|---|
@@ -71,20 +97,36 @@ n8n (`automation.`).
 | Open WebUI (chat UI for Ollama; behind Authelia) | `chat.` | `ENABLE_AI_SERVICES=true` |
 | Drone CI | `drone.` | `ENABLE_DEV_SERVICES=true` |
 | Harbor (container registry, installed via in-cluster Helm job) | — | `ENABLE_DEV_SERVICES=true` |
+| Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT | `hass.`, `nodered.`, `zigbee.` | `ENABLE_HOME_SERVICES=true` |
+| Matrix (Synapse + Element) | `matrix.`, `element.` | `ENABLE_COMMUNICATION_SERVICES=true` |
+| Mattermost | `mattermost.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | ArgoCD | `argocd.` | `ENABLE_GITOPS=true` |
 
-## In the repo but NOT installed
+## Opt-in services (`OPTIN_SERVICES`)
 
-These directories under `kubernetes/services/` contain manifests the installer
-never applies. They follow the same conventions (pinned images, security
-contexts, ExternalSecrets) but have had less scrutiny — review before use,
-then `kubectl apply -f kubernetes/services/<name>/`:
+These have had less scrutiny than the defaults; they follow the same
+conventions (pinned images, security contexts, ExternalSecrets) and their
+secrets are already generated. Add them by name:
 
-actual-budget, code-server, gatus, heimdall, home-assistant (+ Node-RED,
-Zigbee2MQTT, Mosquitto), hoppscotch, jellyseerr, keycloak (ingress host
-`keycloak.<domain>` — `auth.` belongs to Authelia), localai, matrix,
-mattermost, metabase, navidrome, nocodb, outline, qbittorrent, romm, tautulli,
-umami, whisper.
+| Service | URL | Group |
+|---|---|---|
+| Actual Budget | `budget.` | productivity |
+| code-server | `code.` | dev |
+| Gatus | `status.` | monitoring |
+| Heimdall | `dashboard.` | core |
+| Hoppscotch | `hoppscotch.` | dev |
+| Jellyseerr | `requests.` | media |
+| Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
+| LocalAI | `localai.` | ai |
+| Metabase | `metabase.` | productivity |
+| Navidrome | `music.` | media |
+| NocoDB | `nocodb.` | productivity |
+| Outline | `wiki.` | productivity |
+| qBittorrent | `torrent.` | media |
+| RomM | `games.` | media |
+| Tautulli | `stats.` | media |
+| Umami | `analytics.` | productivity |
+| Whisper | `whisper.` | ai |
 
 Older and higher-risk manifests that used to live in `extras/` and `legacy/`
 are preserved on the `archive/legacy` branch.
@@ -134,10 +176,24 @@ dominate storage.
 
 ## Adding a new service
 
-Follow the checklist in `CLAUDE.md`: create
-`kubernetes/services/<name>/` (namespace/deployment/service/ingress, plus
-`pdb.yaml` and `servicemonitor.yaml` where warranted), add an ExternalSecret
-for credentials and a matching entry in `scripts/generate-secrets.sh`, add a
-NetworkPolicy under `kubernetes/security/network-policies/`, and wire the
-directory into the appropriate `setup_*_services` function in `setup-v2.sh` —
-a directory alone does not deploy.
+Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
+manifests (plus `pdb.yaml` and `servicemonitor.yaml` where warranted), an
+ExternalSecret for credentials and a matching entry in
+`scripts/generate-secrets.sh`, a NetworkPolicy under
+`kubernetes/security/network-policies/`, and a `service.yaml` descriptor:
+
+```yaml
+name: <name>            # equals the directory name
+namespace: <name>
+group: productivity     # picks the toggle (table above)
+optin: true             # omit for services that should install by default
+url: <host-prefix>
+description: One line
+steps:                  # only when order matters; everything else applies after, sorted
+  - apply: postgres-deployment.yaml
+    wait: app=<name>-postgres
+```
+
+Nothing in `setup-v2.sh` changes. `./scripts/ci.sh` fails on a directory
+without a descriptor, and renders every service through the same code path
+the installer uses.

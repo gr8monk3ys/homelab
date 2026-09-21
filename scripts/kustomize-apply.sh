@@ -5,17 +5,9 @@ set -euo pipefail
 # `kubectl apply -k` uses restrictive load rules and will fail for these overlays.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$REPO_ROOT/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-  PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-  PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/render.sh"
 
 OVERLAY_DIR="${1:-}"
 if [ -z "$OVERLAY_DIR" ]; then
@@ -34,4 +26,5 @@ if ! command -v kubectl &> /dev/null; then
   exit 1
 fi
 
-kustomize build --load-restrictor LoadRestrictionsNone "$OVERLAY_DIR" | kubectl apply -f -
+homelab_load_config
+kustomize build --load-restrictor LoadRestrictionsNone "$OVERLAY_DIR" | render_stream | apply_stream "$(basename "$OVERLAY_DIR").yaml"

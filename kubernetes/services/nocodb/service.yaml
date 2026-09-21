@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: nocodb
+namespace: nocodb
+group: productivity
+optin: true
+url: nocodb
+description: No-code database
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=nocodb-postgres

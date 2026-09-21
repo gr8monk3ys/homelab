@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: umami
+namespace: umami
+group: productivity
+optin: true
+url: analytics
+description: Web analytics
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=umami-postgres

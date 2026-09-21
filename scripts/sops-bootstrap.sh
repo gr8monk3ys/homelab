@@ -14,16 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$REPO_ROOT/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-  PATH="$TOOLS_DIR/bin:$PATH"
-fi
-export PATH
-
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+source "$SCRIPT_DIR/lib/common.sh"
 
 die() {
   log "ERROR: $*"

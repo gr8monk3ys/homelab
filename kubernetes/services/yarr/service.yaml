@@ -1,0 +1,7 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: yarr
+namespace: yarr
+group: content
+url: rss
+description: RSS reader

@@ -6,41 +6,15 @@ set -euo pipefail
 
 HOMELAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGFILE="$HOMELAB_DIR/setup.log"
-CONFIG_FILE="${CONFIG_FILE:-$HOMELAB_DIR/config/homelab.yaml}"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
+# Shared preamble (tools PATH, versions.env, log family), the rendering seam,
+# and the service catalogue. See scripts/lib/*.sh.
+source "$HOMELAB_DIR/scripts/lib/common.sh"
+source "$HOMELAB_DIR/scripts/lib/render.sh"
+source "$HOMELAB_DIR/scripts/lib/services.sh"
 
-VERSIONS_FILE="${VERSIONS_FILE:-$HOMELAB_DIR/tools/versions.env}"
-if [[ ! -f "$VERSIONS_FILE" ]]; then
-    echo "ERROR: Missing versions file: $VERSIONS_FILE" >&2
-    exit 1
-fi
-# shellcheck disable=SC1090
-source "$VERSIONS_FILE"
-
-# Capture explicit env overrides (if any). Config file fills defaults; env overrides win.
-ENVIRONMENT_OVERRIDE="${ENVIRONMENT-}"
-DOMAIN_OVERRIDE="${DOMAIN-}"
-TIMEZONE_OVERRIDE="${TIMEZONE-}"
-ADMIN_EMAIL_OVERRIDE="${ADMIN_EMAIL-}"
-CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE="${CERT_MANAGER_CLUSTER_ISSUER-}"
-GITOPS_REPO_URL_OVERRIDE="${GITOPS_REPO_URL-}"
-
-# Defaults (may be overridden by config)
-ENVIRONMENT="production"
-DOMAIN="homelab.local"
-TIMEZONE="UTC"
-ADMIN_EMAIL="admin@homelab.local"
-CERT_MANAGER_CLUSTER_ISSUER="homelab-ca"
-GITOPS_REPO_URL="https://github.com/your-username/homelab.git"
+# DOMAIN, TIMEZONE, ADMIN_EMAIL, CERT_MANAGER_CLUSTER_ISSUER, GITOPS_REPO_URL:
+# defaults <- config/homelab.yaml <- environment (see homelab_load_config).
 
 # Feature toggles (set env vars to "true"/"false")
 ENABLE_GITOPS="${ENABLE_GITOPS:-false}"
@@ -53,6 +27,11 @@ ENABLE_NETWORK_SERVICES="${ENABLE_NETWORK_SERVICES:-true}"
 ENABLE_CONTENT_SERVICES="${ENABLE_CONTENT_SERVICES:-true}"
 ENABLE_MEDIA_SERVICES="${ENABLE_MEDIA_SERVICES:-true}"
 ENABLE_PRODUCTIVITY_SERVICES="${ENABLE_PRODUCTIVITY_SERVICES:-true}"
+ENABLE_HOME_SERVICES="${ENABLE_HOME_SERVICES:-false}"
+ENABLE_COMMUNICATION_SERVICES="${ENABLE_COMMUNICATION_SERVICES:-false}"
+# Services marked `optin: true` in their service.yaml install only when named here
+# (space/comma separated) or when set to "all". `./scripts/services.sh list` shows them.
+OPTIN_SERVICES="${OPTIN_SERVICES:-}"
 
 INSTALL_METALLB="${INSTALL_METALLB:-true}"
 INSTALL_TRAEFIK="${INSTALL_TRAEFIK:-true}"
@@ -81,43 +60,6 @@ KYVERNO_POLICY_MODE="${KYVERNO_POLICY_MODE:-audit}" # audit|enforce
 
 # When true and Pi-hole is enabled, configure wildcard DNS for *.$DOMAIN to Traefik's LoadBalancer.
 CONFIGURE_WILDCARD_DNS="${CONFIGURE_WILDCARD_DNS:-true}"
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
-
-success() {
-    log "✅ $*"
-}
-
-warning() {
-    log "⚠️  $*"
-}
-
-detect_arch() {
-    local arch
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64|amd64)  echo "amd64" ;;
-        aarch64|arm64) echo "arm64" ;;
-        *)             error "Unsupported architecture: $arch" ;;
-    esac
-}
-
-detect_os() {
-    local os
-    os=$(uname -s | tr '[:upper:]' '[:lower:]')
-    case "$os" in
-        linux)  echo "linux" ;;
-        darwin) echo "darwin" ;;
-        *)      error "Unsupported OS: $os" ;;
-    esac
-}
 
 check_requirements() {
     log "Checking system requirements..."
@@ -223,140 +165,6 @@ install_tools() {
     fi
 
     success "Tools installation completed"
-}
-
-load_config() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        warning "Config file not found at $CONFIG_FILE; using defaults and env overrides."
-        return 0
-    fi
-
-    if ! command -v yq &> /dev/null; then
-        warning "yq is not installed; skipping config parsing. (setup-v2.sh installs yq in install_tools)"
-        return 0
-    fi
-
-    local cfg_domain cfg_timezone cfg_email cfg_issuer cfg_environment cfg_gitops_repo_url
-    cfg_domain="$(yq -r '.homelab.domain // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_timezone="$(yq -r '.homelab.timezone // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_email="$(yq -r '.homelab.email // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_environment="$(yq -r '.homelab.environment // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_issuer="$(yq -r '.ingress.cert_manager.cluster_issuer // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-    cfg_gitops_repo_url="$(yq -r '.gitops.repo_url // empty' "$CONFIG_FILE" 2>/dev/null || true)"
-
-    [[ -n "${cfg_domain:-}" ]] && DOMAIN="$cfg_domain"
-    [[ -n "${cfg_timezone:-}" ]] && TIMEZONE="$cfg_timezone"
-    [[ -n "${cfg_email:-}" ]] && ADMIN_EMAIL="$cfg_email"
-    [[ -n "${cfg_environment:-}" ]] && ENVIRONMENT="$cfg_environment"
-    [[ -n "${cfg_issuer:-}" ]] && CERT_MANAGER_CLUSTER_ISSUER="$cfg_issuer"
-    [[ -n "${cfg_gitops_repo_url:-}" ]] && GITOPS_REPO_URL="$cfg_gitops_repo_url"
-}
-
-apply_env_overrides() {
-    [[ -n "${DOMAIN_OVERRIDE:-}" ]] && DOMAIN="$DOMAIN_OVERRIDE"
-    [[ -n "${TIMEZONE_OVERRIDE:-}" ]] && TIMEZONE="$TIMEZONE_OVERRIDE"
-    [[ -n "${ADMIN_EMAIL_OVERRIDE:-}" ]] && ADMIN_EMAIL="$ADMIN_EMAIL_OVERRIDE"
-    [[ -n "${ENVIRONMENT_OVERRIDE:-}" ]] && ENVIRONMENT="$ENVIRONMENT_OVERRIDE"
-    [[ -n "${CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE:-}" ]] && CERT_MANAGER_CLUSTER_ISSUER="$CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE"
-    [[ -n "${GITOPS_REPO_URL_OVERRIDE:-}" ]] && GITOPS_REPO_URL="$GITOPS_REPO_URL_OVERRIDE"
-}
-
-escape_sed_replacement() {
-    # Escape replacement strings for sed (/, \, &).
-    printf '%s' "$1" | sed -e 's/[\\/&]/\\&/g'
-}
-
-render_stream() {
-    local admin_email_esc domain_esc timezone_esc issuer_esc gitops_repo_url_esc
-    admin_email_esc="$(escape_sed_replacement "$ADMIN_EMAIL")"
-    domain_esc="$(escape_sed_replacement "$DOMAIN")"
-    timezone_esc="$(escape_sed_replacement "$TIMEZONE")"
-    issuer_esc="$(escape_sed_replacement "$CERT_MANAGER_CLUSTER_ISSUER")"
-    gitops_repo_url_esc="$(escape_sed_replacement "$GITOPS_REPO_URL")"
-
-    # 1) Email replacement first (domain replacement would otherwise partially change it).
-    # 2) GitOps repo URL placeholder replacement.
-    # 3) Domain replacement across the repo defaults.
-    # 4) TZ defaults (most manifests use value: "UTC" for TZ).
-    # 5) cert-manager issuer selection for Ingress annotations.
-    sed \
-        -e "s/admin@homelab\\.local/${admin_email_esc}/g" \
-        -e "s/https:\\/\\/github\\.com\\/your-username\\/homelab\\.git/${gitops_repo_url_esc}/g" \
-        -e "s/homelab\\.local/${domain_esc}/g" \
-        -e "s/value: \\\"UTC\\\"/value: \\\"${timezone_esc}\\\"/g" \
-        -e "s/cert-manager\\.io\\/cluster-issuer: \\\"homelab-ca\\\"/cert-manager.io\\/cluster-issuer: \\\"${issuer_esc}\\\"/g"
-}
-
-render_file() {
-    local file="$1"
-    if [[ ! -f "$file" ]]; then
-        error "render_file: file not found: $file"
-    fi
-    render_stream < "$file"
-}
-
-crd_exists() {
-    local crd="$1"
-    kubectl get crd "$crd" >/dev/null 2>&1
-}
-
-kubectl_apply_rendered_file() {
-    local file="$1"
-    render_file "$file" | kubectl apply -f -
-}
-
-kubectl_apply_rendered_dir() {
-    local dir="$1"
-    if [[ ! -d "$dir" ]]; then
-        error "kubectl_apply_rendered_dir: directory not found: $dir"
-    fi
-
-    local files=()
-    local has_servicemonitor_crd="false"
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        has_servicemonitor_crd="true"
-    fi
-
-    while IFS= read -r file; do
-        local base
-        base="$(basename "$file")"
-        if [[ "$base" == "servicemonitor.yaml" || "$base" == "servicemonitor.yml" ]]; then
-            if [[ "$has_servicemonitor_crd" != "true" ]]; then
-                continue
-            fi
-        fi
-        files+=("$file")
-    done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort)
-
-    if [ ${#files[@]} -eq 0 ]; then
-        warning "No YAML files found under: $dir"
-        return 0
-    fi
-
-    # Apply all YAML in a deterministic order, ensuring namespaces are created first.
-    {
-        local f
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" == "namespace.yaml" ]]; then
-                render_file "$f"
-                echo ""
-            fi
-        done
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" != "namespace.yaml" ]]; then
-                render_file "$f"
-                echo ""
-            fi
-        done
-    } | kubectl apply -f -
-}
-
-render_to_tmpfile() {
-    local file="$1"
-    local tmp
-    tmp="$(mktemp "${TMPDIR:-/tmp}/homelab-render.XXXXXX.yaml")"
-    render_file "$file" > "$tmp"
-    echo "$tmp"
 }
 
 setup_secrets() {
@@ -636,7 +444,12 @@ setup_logging() {
         return 0
     fi
 
-    kubectl_apply_rendered_dir kubernetes/services/loki
+    # Loki, and Promtail when INSTALL_PROMTAIL=true (see kubernetes/services/loki/service.yaml).
+    install_service loki
+    if [[ "$INSTALL_PROMTAIL" != "true" ]]; then
+        warning "INSTALL_PROMTAIL=false; no default log shipper was installed."
+        warning "To enable later: INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh"
+    fi
 
     # Provision a Loki datasource for Grafana (picked up by kube-prometheus-stack Grafana sidecar).
     if kubectl get namespace monitoring &>/dev/null; then
@@ -645,24 +458,13 @@ setup_logging() {
         warning "Monitoring namespace not found; skipping Grafana Loki datasource."
     fi
 
-    if [[ "$INSTALL_PROMTAIL" == "true" ]]; then
-        if [[ -f "kubernetes/services/loki/promtail-deployment.yaml" ]]; then
-            kubectl_apply_rendered_file kubernetes/services/loki/promtail-deployment.yaml
-        else
-            warning "Promtail manifest not found: kubernetes/services/loki/promtail-deployment.yaml (skipping)."
-        fi
-    else
-        warning "INSTALL_PROMTAIL=false; skipping Promtail (no default log shipper will be installed)."
-        warning "To enable later: INSTALL_LOGGING=true INSTALL_PROMTAIL=true ./setup-v2.sh"
-    fi
-
     success "Logging setup completed"
 }
 
 setup_core_services() {
-    log "Setting up core services with Helm..."
+    log "Setting up core services..."
 
-    # Install NextCloud using our custom Helm chart
+    # Nextcloud is the one Helm-chart-managed app.
     local nextcloud_values_tmp
     nextcloud_values_tmp="$(render_to_tmpfile helm/nextcloud/values.yaml)"
     helm upgrade --install nextcloud helm/nextcloud \
@@ -673,9 +475,8 @@ setup_core_services() {
         --wait
     rm -f "$nextcloud_values_tmp"
 
-    # Install other services
-    kubectl_apply_rendered_dir kubernetes/services/vaultwarden
-    kubectl_apply_rendered_dir kubernetes/services/gitea
+    # Authelia (first), Vaultwarden, Gitea, Homepage (last), plus opt-ins such as Keycloak.
+    install_service_group core
 
     success "Core services setup completed"
 }
@@ -683,14 +484,10 @@ setup_core_services() {
 setup_network_services() {
     log "Setting up network services..."
 
+    install_service_group network
     if [[ "$ENABLE_NETWORK_SERVICES" != "true" ]]; then
-        warning "ENABLE_NETWORK_SERVICES=false; skipping network services."
         return 0
     fi
-
-    kubectl_apply_rendered_dir kubernetes/services/pihole
-    kubectl_apply_rendered_dir kubernetes/services/wireguard
-    kubectl_apply_rendered_dir kubernetes/services/dnsmasq-dhcp
 
     if [[ "$CONFIGURE_WILDCARD_DNS" == "true" ]]; then
         bash scripts/configure-wildcard-dns.sh || warning "Wildcard DNS configuration failed (continuing)."
@@ -705,33 +502,18 @@ setup_network_services() {
 setup_development_services() {
     log "Setting up development services..."
 
-    if [[ "$ENABLE_DEV_SERVICES" != "true" ]]; then
-        warning "ENABLE_DEV_SERVICES=false; skipping development services (Harbor, Drone, etc)."
-        return 0
+    install_service_group dev
+    if [[ "$ENABLE_DEV_SERVICES" == "true" ]]; then
+        warning "Drone was installed without a runner (secure default)."
+        warning "A Docker-socket runner manifest is preserved on the archive/legacy branch."
     fi
-
-    # Do not `kubectl apply -f` the whole directory: it contains Helm values files.
-    kubectl_apply_rendered_file kubernetes/services/harbor/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/harbor/install.yaml
-    kubectl_apply_rendered_dir kubernetes/services/drone
-    warning "Drone was installed without a runner (secure default)."
-    warning "If you accept the Docker socket risk, apply: extras/kubernetes/services/drone/drone-runner-docker.yaml"
 
     success "Development services setup completed"
 }
 
 setup_content_services() {
     log "Setting up content services..."
-
-    if [[ "$ENABLE_CONTENT_SERVICES" != "true" ]]; then
-        warning "ENABLE_CONTENT_SERVICES=false; skipping content services."
-        return 0
-    fi
-
-    kubectl_apply_rendered_dir kubernetes/services/searxng
-    kubectl_apply_rendered_dir kubernetes/services/calibre-web
-    kubectl_apply_rendered_dir kubernetes/services/yarr
-
+    install_service_group content
     success "Content services setup completed"
 }
 
@@ -916,131 +698,39 @@ setup_policy_as_code() {
     success "Kyverno policy engine setup completed"
 }
 
-setup_authentication() {
-    log "Setting up Authelia SSO/2FA..."
-
-    # Apply all Authelia manifests (includes PDB + ServiceMonitor).
-    kubectl_apply_rendered_dir kubernetes/services/authelia
-
-    # Wait for Redis
-    kubectl wait --for=condition=Ready pods -l app=authelia-redis -n authelia --timeout=300s || \
-        warning "Authelia Redis pods not ready yet (continuing)"
-
-    success "Authelia SSO setup completed"
-}
-
 setup_media_services() {
     log "Setting up media services..."
-
-    if [[ "$ENABLE_MEDIA_SERVICES" != "true" ]]; then
-        warning "ENABLE_MEDIA_SERVICES=false; skipping media services."
-        return 0
-    fi
-
-    # Jellyfin
-    kubectl_apply_rendered_dir kubernetes/services/jellyfin
-
-    # Arr Stack
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/shared-storage.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/sonarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/radarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/prowlarr-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/arr-stack/bazarr-deployment.yaml
-
-    # Audiobookshelf
-    kubectl_apply_rendered_file kubernetes/services/audiobookshelf/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/audiobookshelf/deployment.yaml
-
+    install_service_group media
     success "Media services setup completed"
 }
 
 setup_ai_services() {
     log "Setting up AI services..."
-
-    if [[ "$ENABLE_AI_SERVICES" != "true" ]]; then
-        warning "ENABLE_AI_SERVICES=false; skipping AI services (Immich ML, Ollama, etc)."
-        return 0
-    fi
-
-    # Immich (photos with ML)
-    kubectl_apply_rendered_file kubernetes/services/immich/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/postgres-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/redis-deployment.yaml
-
-    # Wait for Immich dependencies
-    kubectl wait --for=condition=Ready pods -l app=immich-postgres -n immich --timeout=300s || log "WARNING: Immich postgres may take longer"
-    kubectl wait --for=condition=Ready pods -l app=immich-redis -n immich --timeout=300s || log "WARNING: Immich redis may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/immich/server-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/microservices-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/immich/machine-learning-deployment.yaml
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        kubectl_apply_rendered_file kubernetes/services/immich/servicemonitor.yaml
-    fi
-
-    # Ollama (local LLM)
-    kubectl_apply_rendered_dir kubernetes/services/ollama
-
-    # Open WebUI (chat UI for Ollama)
-    kubectl_apply_rendered_dir kubernetes/services/open-webui
-
+    install_service_group ai
     success "AI services setup completed"
 }
 
 setup_productivity_services() {
     log "Setting up productivity services..."
-
-    if [[ "$ENABLE_PRODUCTIVITY_SERVICES" != "true" ]]; then
-        warning "ENABLE_PRODUCTIVITY_SERVICES=false; skipping productivity services."
-        return 0
-    fi
-
-    # Paperless-ngx
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/postgres-deployment.yaml
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/redis-deployment.yaml
-
-    # Wait for Paperless dependencies
-    kubectl wait --for=condition=Ready pods -l app=paperless-postgres -n paperless-ngx --timeout=300s || log "WARNING: Paperless postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/paperless-ngx/deployment.yaml
-
-    # n8n
-    kubectl_apply_rendered_file kubernetes/services/n8n/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/n8n/postgres-deployment.yaml
-
-    kubectl wait --for=condition=Ready pods -l app=n8n-postgres -n n8n --timeout=300s || log "WARNING: n8n postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/n8n/deployment.yaml
-    if crd_exists "servicemonitors.monitoring.coreos.com"; then
-        kubectl_apply_rendered_file kubernetes/services/n8n/servicemonitor.yaml
-    fi
-
-    # Mealie
-    kubectl_apply_rendered_file kubernetes/services/mealie/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/mealie/deployment.yaml
-
-    # Linkwarden
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/postgres-deployment.yaml
-
-    kubectl wait --for=condition=Ready pods -l app=linkwarden-postgres -n linkwarden --timeout=300s || log "WARNING: Linkwarden postgres may take longer"
-
-    kubectl_apply_rendered_file kubernetes/services/linkwarden/deployment.yaml
-
+    install_service_group productivity
     success "Productivity services setup completed"
 }
 
-setup_dashboard() {
-    log "Setting up Homepage dashboard..."
+setup_home_services() {
+    log "Setting up home automation services..."
+    install_service_group home
+    success "Home automation services setup completed"
+}
 
-    kubectl_apply_rendered_file kubernetes/services/homepage/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/rbac.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/configmap.yaml
-    kubectl_apply_rendered_file kubernetes/services/homepage/deployment.yaml
+setup_communication_services() {
+    log "Setting up communication services..."
+    install_service_group communication
+    success "Communication services setup completed"
+}
 
-    success "Homepage dashboard setup completed"
+setup_monitoring_apps() {
+    # Opt-in apps that live next to the monitoring stack (e.g. Gatus).
+    install_service_group monitoring
 }
 
 setup_gitops() {
@@ -1233,10 +923,7 @@ main() {
     check_requirements
     install_tools
 
-    load_config
-    apply_env_overrides
-
-    export ENVIRONMENT DOMAIN TIMEZONE ADMIN_EMAIL CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL
+    homelab_load_config
 
     log "Effective configuration:"
     log "  Environment: $ENVIRONMENT"
@@ -1252,6 +939,8 @@ main() {
     log "  Blackbox Exporter: $INSTALL_BLACKBOX_EXPORTER"
     log "  Alerting (AlertmanagerConfig): $CONFIGURE_ALERTING"
     log "  Logging (Loki): $INSTALL_LOGGING (Promtail: $INSTALL_PROMTAIL)"
+    log "  Service groups: media=$ENABLE_MEDIA_SERVICES network=$ENABLE_NETWORK_SERVICES dev=$ENABLE_DEV_SERVICES content=$ENABLE_CONTENT_SERVICES ai=$ENABLE_AI_SERVICES productivity=$ENABLE_PRODUCTIVITY_SERVICES home=$ENABLE_HOME_SERVICES communication=$ENABLE_COMMUNICATION_SERVICES"
+    log "  Opt-in services: ${OPTIN_SERVICES:-none}"
 
     # Base infrastructure (LB, ingress, secrets, storage)
     setup_loadbalancer
@@ -1271,16 +960,17 @@ main() {
     setup_monitoring
     setup_logging
 
-    # Core apps
+    # Applications: every kubernetes/services/<name>/service.yaml, by group.
     setup_core_services
-    setup_authentication
     setup_media_services
     setup_network_services
     setup_development_services
     setup_content_services
     setup_ai_services
     setup_productivity_services
-    setup_dashboard
+    setup_home_services
+    setup_communication_services
+    setup_monitoring_apps
 
     setup_gitops
     run_health_checks

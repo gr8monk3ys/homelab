@@ -12,53 +12,12 @@ KIND_ENABLE_MONITORING="${KIND_ENABLE_MONITORING:-true}"
 KIND_ENABLE_NEXTCLOUD="${KIND_ENABLE_NEXTCLOUD:-true}"
 KIND_SERVICES="${KIND_SERVICES:-}"
 LOGFILE="$SCRIPT_DIR/kind-setup.log"
+export LOGFILE
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
-
-VERSIONS_FILE="${VERSIONS_FILE:-$HOMELAB_DIR/tools/versions.env}"
-if [[ ! -f "$VERSIONS_FILE" ]]; then
-    error "Missing versions file: $VERSIONS_FILE"
-fi
-# shellcheck disable=SC1090
-source "$VERSIONS_FILE"
-
-detect_arch() {
-    local arch
-    arch=$(uname -m)
-    case "$arch" in
-        x86_64)  echo "amd64" ;;
-        aarch64) echo "arm64" ;;
-        arm64)   echo "arm64" ;;
-        *)       error "Unsupported architecture: $arch" ;;
-    esac
-}
-
-detect_os() {
-    local os
-    os=$(uname -s | tr '[:upper:]' '[:lower:]')
-    case "$os" in
-        linux)  echo "linux" ;;
-        darwin) echo "darwin" ;;
-        *)      error "Unsupported OS: $os" ;;
-    esac
-}
+source "$SCRIPT_DIR/../scripts/lib/common.sh"
+source "$SCRIPT_DIR/../scripts/lib/render.sh"
+source "$SCRIPT_DIR/../scripts/lib/services.sh"
+homelab_load_config
 
 check_requirements() {
     log "Checking requirements for Kind testing..."
@@ -145,7 +104,7 @@ setup_cert_manager() {
         --set installCRDs=true \
         --wait
 
-    kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/cert-manager/"
+    kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/ingress/cert-manager"
 
     log "cert-manager setup completed"
 }
@@ -232,12 +191,11 @@ deploy_core_services() {
     local failed_services=()
     for service in "${services[@]}"; do
         if [ -d "$HOMELAB_DIR/kubernetes/services/$service" ]; then
-            log "Deploying $service..."
-            if ! kubectl apply -f "$HOMELAB_DIR/kubernetes/services/$service/"; then
+            # Same code path as setup-v2.sh: rendered, ordered, waited on.
+            if ! install_service "$service"; then
                 log "WARNING: Failed to deploy $service"
                 failed_services+=("$service")
             fi
-            sleep 10  # Give services time to start
         fi
     done
 

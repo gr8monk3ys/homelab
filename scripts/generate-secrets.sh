@@ -7,15 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
+source "$SCRIPT_DIR/lib/common.sh"
 
 SECRETS_NAMESPACE="${SECRETS_NAMESPACE:-secrets}"
 # By default, do not overwrite existing secrets. Set ROTATE_SECRETS=true to rotate.
@@ -30,15 +22,6 @@ if [[ -z "${ADMIN_EMAIL-}" ]]; then
         [[ -n "${cfg_email:-}" ]] && ADMIN_EMAIL="$cfg_email"
     fi
 fi
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
 
 # Check required dependencies before proceeding
 check_dependencies() {

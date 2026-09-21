@@ -1,0 +1,10 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: loki
+namespace: loki
+group: logging
+description: Log aggregation (Promtail optional)
+steps:
+  - apply: deployment.yaml
+  - apply: promtail-deployment.yaml
+    when: INSTALL_PROMTAIL

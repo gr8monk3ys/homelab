@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: metabase
+namespace: metabase
+group: productivity
+optin: true
+url: metabase
+description: Business intelligence
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=metabase-postgres

@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: qbittorrent
+namespace: qbittorrent
+group: media
+optin: true
+url: torrent
+description: BitTorrent client

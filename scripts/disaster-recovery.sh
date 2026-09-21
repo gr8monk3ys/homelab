@@ -7,23 +7,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
-
-VERSIONS_FILE="${VERSIONS_FILE:-$HOMELAB_DIR/tools/versions.env}"
-if [[ ! -f "$VERSIONS_FILE" ]]; then
-    echo "ERROR: Missing versions file: $VERSIONS_FILE" >&2
-    exit 1
-fi
-# shellcheck disable=SC1090
-source "$VERSIONS_FILE"
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/render.sh"
+source "$SCRIPT_DIR/lib/services.sh"
+homelab_load_config
 
 # Colors
 RED='\033[0;31m'
@@ -333,7 +320,7 @@ reinstall_infrastructure() {
 
     if [ -d "$HOMELAB_DIR/kubernetes/secrets" ]; then
         run_step "Applying secrets manifests" \
-            kubectl apply -f "$HOMELAB_DIR/kubernetes/secrets/"
+            kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/secrets"
     fi
 
     # Ingress
@@ -369,7 +356,7 @@ reinstall_infrastructure() {
 
     if [ -d "$HOMELAB_DIR/kubernetes/ingress/cert-manager" ]; then
         run_step "Applying cert-manager issuers" \
-            kubectl apply -f "$HOMELAB_DIR/kubernetes/ingress/cert-manager/"
+            kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/ingress/cert-manager"
     fi
 
     info "Note: Some components may take time to become ready"
@@ -396,16 +383,9 @@ reinstall_monitoring() {
             -f "$HOMELAB_DIR/kubernetes/monitoring/prometheus/values.yaml"
     fi
 
-    # Loki
+    # Loki, plus Promtail when INSTALL_PROMTAIL=true (kubernetes/services/loki/service.yaml)
     if [ -d "$HOMELAB_DIR/kubernetes/services/loki" ]; then
-        run_step "Installing Loki" \
-            kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/"
-    fi
-
-    # Promtail (optional; needs host mounts/capabilities)
-    if [ -f "$HOMELAB_DIR/kubernetes/services/loki/promtail-deployment.yaml" ]; then
-        run_step "Installing Promtail" \
-            kubectl apply -f "$HOMELAB_DIR/kubernetes/services/loki/promtail-deployment.yaml"
+        run_step "Installing Loki" install_service loki
     fi
 
     report_step_results "Monitoring stack reinstallation"
@@ -426,29 +406,23 @@ reinstall_critical_services() {
 
     for service in "${services[@]}"; do
         if [[ "$service" == "nextcloud" ]]; then
+            local nextcloud_values_tmp
+            nextcloud_values_tmp="$(render_to_tmpfile "$HOMELAB_DIR/helm/nextcloud/values.yaml")"
             run_step "Installing nextcloud (Helm)" \
                 helm upgrade --install nextcloud "$HOMELAB_DIR/helm/nextcloud" \
                 --namespace nextcloud \
                 --create-namespace \
                 --dependency-update \
-                -f "$HOMELAB_DIR/helm/nextcloud/values.yaml"
+                -f "$nextcloud_values_tmp"
+            rm -f "$nextcloud_values_tmp"
             continue
         fi
 
-        local service_path="$HOMELAB_DIR/kubernetes/services/$service"
-        if [ -d "$service_path" ]; then
-            # Apply namespace first if exists
-            if [ -f "$service_path/namespace.yaml" ]; then
-                run_step "Applying $service namespace" \
-                    kubectl apply -f "$service_path/namespace.yaml"
-            fi
-
-            # Apply all manifests
-            run_step "Installing $service" \
-                kubectl apply -f "$service_path/"
+        if [ -f "$HOMELAB_DIR/kubernetes/services/$service/service.yaml" ]; then
+            run_step "Installing $service" install_service "$service"
         else
-            warning "Service directory not found: $service_path"
-            FAILED_STEPS+=("Installing $service (directory not found)")
+            warning "Service descriptor not found: kubernetes/services/$service/service.yaml"
+            FAILED_STEPS+=("Installing $service (descriptor not found)")
         fi
     done
 

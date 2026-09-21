@@ -25,6 +25,15 @@ setup *ARGS:
 validate:
   ./scripts/validate-setup.sh
 
+services:
+  ./scripts/services.sh list
+
+services-check:
+  ./scripts/services.sh check
+
+services-render DIR:
+  ./scripts/services.sh render {{DIR}}
+
 dns:
   ./scripts/configure-wildcard-dns.sh
 

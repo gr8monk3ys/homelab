@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: gatus
+namespace: gatus
+group: monitoring
+optin: true
+url: status
+description: Health dashboard and status page

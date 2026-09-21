@@ -8,9 +8,11 @@ verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
 the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
-MinIO, Velero, kube-prometheus-stack) and 23 of the 43 application directories
-under `kubernetes/services/`; the other 20 are maintained manifests you apply
-by hand.
+MinIO, Velero, kube-prometheus-stack) and the application catalogue: every
+directory under `kubernetes/services/` carries a `service.yaml` descriptor
+that says which group it belongs to and whether it is opt-in, and the
+installer installs whatever the toggles select (23 by default, 43 available).
+`./scripts/services.sh list` prints the catalogue.
 
 ## Secrets design
 
@@ -104,6 +106,9 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | `ENABLE_PRODUCTIVITY_SERVICES` | `true` | Paperless-ngx, Mealie, Linkwarden, n8n |
 | `ENABLE_AI_SERVICES` | `false` | Ollama, Open WebUI, Immich |
 | `ENABLE_DEV_SERVICES` | `false` | Drone CI, Harbor registry |
+| `ENABLE_HOME_SERVICES` | `false` | Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT |
+| `ENABLE_COMMUNICATION_SERVICES` | `false` | Matrix (Synapse + Element), Mattermost |
+| `OPTIN_SERVICES` | empty | Space-separated names of `optin: true` services to add (or `all`); see `docs/services.md` |
 | `ENABLE_GITOPS` | `false` | ArgoCD (`APPLY_GITOPS_MANIFESTS` for the app-of-apps) |
 | `INSTALL_TRAEFIK` | `true` | Traefik ingress controller |
 | `INSTALL_CERT_MANAGER` | `true` | cert-manager + TLS issuers |
@@ -123,9 +128,13 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 Installed by default: Homepage, Grafana, Uptime Kuma, Nextcloud, Vaultwarden,
 Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
 Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
-WireGuard. Opt-in via the toggles: Immich, Ollama, Open WebUI, Drone, Harbor,
-ArgoCD. The full catalog with URLs, plus the 20 manifest-only directories, is
-in `docs/services.md`.
+WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
+Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
+(`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, code-server, Gatus,
+Heimdall, Hoppscotch, Jellyseerr, Keycloak, LocalAI, Metabase, Navidrome,
+NocoDB, Outline, qBittorrent, RomM, Tautulli, Umami, Whisper. The full
+catalogue with URLs is in `docs/services.md`, or run
+`./scripts/services.sh list`.
 
 ## DNS
 

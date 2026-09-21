@@ -1,0 +1,7 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: calibre-web
+namespace: calibre-web
+group: content
+url: books
+description: E-book library

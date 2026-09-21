@@ -1,0 +1,12 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: immich
+namespace: immich
+group: ai
+url: photos
+description: Photos with machine learning
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=immich-postgres
+  - apply: redis-deployment.yaml
+    wait: app=immich-redis

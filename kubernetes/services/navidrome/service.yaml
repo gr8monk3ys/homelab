@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: navidrome
+namespace: navidrome
+group: media
+optin: true
+url: music
+description: Music streaming (Subsonic API)

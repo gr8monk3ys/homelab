@@ -6,26 +6,8 @@ set -euo pipefail
 # This avoids per-machine /etc/hosts entries. Clients must use Pi-hole as their DNS server.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-    PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-    PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
-error() {
-    log "ERROR: $*"
-    exit 1
-}
+source "$SCRIPT_DIR/lib/common.sh"
 
 require_cmd() {
     local cmd="$1"

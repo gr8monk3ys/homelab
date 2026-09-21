@@ -1,0 +1,7 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: vaultwarden
+namespace: vaultwarden
+group: core
+url: vault
+description: Bitwarden-compatible password manager

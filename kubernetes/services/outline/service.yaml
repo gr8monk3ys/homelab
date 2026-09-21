@@ -1,0 +1,13 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: outline
+namespace: outline
+group: productivity
+optin: true
+url: wiki
+description: Team wiki
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=outline-postgres
+  - apply: redis-deployment.yaml
+    wait: app=outline-redis

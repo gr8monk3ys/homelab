@@ -1,0 +1,10 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: matrix
+namespace: matrix
+group: communication
+url: matrix
+description: Synapse and Element
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=synapse-postgres

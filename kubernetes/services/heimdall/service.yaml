@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: heimdall
+namespace: heimdall
+group: core
+optin: true
+url: dashboard
+description: Application dashboard (alternative to Homepage)

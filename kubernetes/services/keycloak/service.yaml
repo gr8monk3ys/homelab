@@ -1,0 +1,11 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: keycloak
+namespace: keycloak
+group: core
+optin: true
+url: keycloak
+description: Identity provider (OIDC/SAML)
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=keycloak-postgres

@@ -10,15 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOMELAB_DIR="$(dirname "$SCRIPT_DIR")"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$HOMELAB_DIR/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-  PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-  PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
+source "$SCRIPT_DIR/lib/common.sh"
 
 SECRETS_NAMESPACE="${SECRETS_NAMESPACE:-secrets}"
 INCLUDE_CERT_MANAGER="${INCLUDE_CERT_MANAGER:-true}"
@@ -26,15 +18,6 @@ INCLUDE_CERT_MANAGER="${INCLUDE_CERT_MANAGER:-true}"
 BACKUP_DIR="${BACKUP_DIR:-$HOMELAB_DIR/backups}"
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 AGE_RECIPIENT="${AGE_RECIPIENT:-}"
-
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
-
-error() {
-  log "ERROR: $*"
-  exit 1
-}
 
 require_cmd() {
   command -v "$1" &>/dev/null || error "Missing required tool: $1"

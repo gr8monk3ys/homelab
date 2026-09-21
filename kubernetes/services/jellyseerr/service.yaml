@@ -1,0 +1,8 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: jellyseerr
+namespace: jellyseerr
+group: media
+optin: true
+url: requests
+description: Media requests for Jellyfin

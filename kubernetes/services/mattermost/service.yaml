@@ -1,0 +1,10 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+name: mattermost
+namespace: mattermost
+group: communication
+url: mattermost
+description: Team chat
+steps:
+  - apply: postgres-deployment.yaml
+    wait: app=mattermost-postgres

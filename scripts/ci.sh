@@ -8,19 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# If repo-local tools are installed (see scripts/install-dev-tools.sh), prefer them.
-TOOLS_DIR="${TOOLS_DIR:-$REPO_ROOT/.tools}"
-if [[ -d "$TOOLS_DIR/bin" ]]; then
-  PATH="$TOOLS_DIR/bin:$PATH"
-fi
-if [[ -d "$TOOLS_DIR/venv/bin" ]]; then
-  PATH="$TOOLS_DIR/venv/bin:$PATH"
-fi
-export PATH
-
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+source "$SCRIPT_DIR/lib/common.sh"
 
 warn() {
   log "WARNING: $*"
@@ -118,6 +106,7 @@ run_kubeconform() {
       ! -name "*-patch.yml" \
       ! -name "kustomization.yaml" \
       ! -name "kustomization.yml" \
+      ! -name "service.yaml" \
       -print | sort
   )
 
@@ -133,6 +122,49 @@ run_kubeconform() {
     -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
     -summary \
     "${files[@]}"
+}
+
+run_services_check() {
+  # The service catalogue is the installer's interface, so CI tests through it:
+  # every kubernetes/services/<name>/ has a valid service.yaml, and every service
+  # renders (with non-default placeholders) into manifests kubeconform accepts.
+  if ! require_cmd yq; then
+    return 0
+  fi
+
+  log "services check (descriptors)..."
+  "$REPO_ROOT/scripts/services.sh" check
+
+  if ! require_cmd kubeconform; then
+    return 0
+  fi
+
+  log "services render + kubeconform (through install_service)..."
+  local render_dir
+  render_dir="$(mktemp -d "${TMPDIR:-/tmp}/homelab-render.XXXXXX")"
+  DOMAIN="ci.example.test" \
+    ADMIN_EMAIL="ci@example.test" \
+    TIMEZONE="Europe/Amsterdam" \
+    CERT_MANAGER_CLUSTER_ISSUER="letsencrypt-staging" \
+    "$REPO_ROOT/scripts/services.sh" render "$render_dir" >/dev/null
+
+  if grep -rl "homelab\.local" "$render_dir" >/dev/null; then
+    die "Rendered manifests still contain the homelab.local placeholder:\n$(grep -rl 'homelab\.local' "$render_dir")"
+  fi
+
+  local files=()
+  while IFS= read -r f; do
+    files+=("$f")
+  done < <(find "$render_dir" -type f -name "*.yaml" -print | sort)
+
+  kubeconform \
+    -strict \
+    -ignore-missing-schemas \
+    -schema-location default \
+    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    -summary \
+    "${files[@]}"
+  rm -rf "$render_dir"
 }
 
 run_helm_lint() {
@@ -337,6 +369,7 @@ main() {
   run_shellcheck
   run_yamllint
   run_kubeconform
+  run_services_check
   run_helm_lint
   run_helm_remote_smoke
   run_kustomize_build
