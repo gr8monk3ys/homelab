@@ -188,7 +188,7 @@ Actions minutes are capped and nothing runs on a schedule.
 
 ```
 setup-v2.sh                  # installer (idempotent; safe to re-run)
-config/homelab.yaml          # domain/email/timezone/issuer defaults
+config/homelab.yaml          # domain/email/timezone/issuer/GitOps URL (env vars override)
 kubernetes/
   ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
   secrets/                   # ExternalSecrets + SOPS store
@@ -197,9 +197,8 @@ kubernetes/
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps
 helm/nextcloud/              # the one Helm-chart-managed app
-kustomize/overlays/production/  # the single overlay (one node, one environment)
 scripts/                     # secrets, backup/restore, validation, DR
-ansible/                     # host provisioning (base system, security, backups)
+ansible/                     # host prep for K3s nodes: packages, hardening, host backups (just ansible-prep)
 docs/                        # credentials reference + day-2 runbooks
 test/                        # KinD configs, Compose stack, validation suite
 ```

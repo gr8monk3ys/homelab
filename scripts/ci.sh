@@ -83,7 +83,6 @@ run_yamllint() {
     "$REPO_ROOT/ansible" \
     "$REPO_ROOT/config" \
     "$REPO_ROOT/kubernetes" \
-    "$REPO_ROOT/kustomize" \
     "$REPO_ROOT/helm"
 }
 
@@ -342,34 +341,18 @@ run_kustomize_build() {
     return 0
   fi
 
-  log "kustomize build (overlays)..."
-  if [[ ! -d "$REPO_ROOT/kustomize/overlays" ]]; then
-    warn "No kustomize overlays directory found (kustomize/overlays)"
-  else
-    local overlay
-    local found=false
-    for overlay in "$REPO_ROOT"/kustomize/overlays/*; do
-      if [[ -f "$overlay/kustomization.yaml" ]]; then
-        found=true
-        kustomize build --load-restrictor LoadRestrictionsNone "$overlay" >/dev/null
-      fi
-    done
-    if [[ "$found" != "true" ]]; then
-      warn "No overlays found under kustomize/overlays/*"
+  # The only kustomizations in the repo are the ArgoCD app-of-apps and the
+  # SOPS secret store (docs/adr/0003-no-kustomize-overlay.md). The SOPS one
+  # needs the KSOPS exec plugin and an age key, so it is not built here.
+  local dir
+  for dir in \
+    "$REPO_ROOT/kubernetes/gitops/argocd/apps/core" \
+    "$REPO_ROOT/kubernetes/gitops/argocd/apps/full"; do
+    if [[ -f "$dir/kustomization.yaml" ]]; then
+      log "kustomize build (${dir#"$REPO_ROOT"/})..."
+      kustomize build --load-restrictor LoadRestrictionsNone "$dir" >/dev/null
     fi
-  fi
-
-  # Validate additional kustomizations used directly by scripts and/or GitOps.
-  local argocd_apps_core="$REPO_ROOT/kubernetes/gitops/argocd/apps/core"
-  local argocd_apps_full="$REPO_ROOT/kubernetes/gitops/argocd/apps/full"
-  if [[ -f "$argocd_apps_core/kustomization.yaml" ]]; then
-    log "kustomize build (argocd apps: core)..."
-    kustomize build --load-restrictor LoadRestrictionsNone "$argocd_apps_core" >/dev/null
-  fi
-  if [[ -f "$argocd_apps_full/kustomization.yaml" ]]; then
-    log "kustomize build (argocd apps: full)..."
-    kustomize build --load-restrictor LoadRestrictionsNone "$argocd_apps_full" >/dev/null
-  fi
+  done
 }
 
 run_docs_check() {
