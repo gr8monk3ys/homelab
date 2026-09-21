@@ -13,6 +13,7 @@ LOGFILE="${LOGFILE:-$HOMELAB_DIR/setup.log}"
 source "$HOMELAB_DIR/scripts/lib/common.sh"
 source "$HOMELAB_DIR/scripts/lib/render.sh"
 source "$HOMELAB_DIR/scripts/lib/services.sh"
+source "$HOMELAB_DIR/scripts/lib/netpol.sh"
 
 # DOMAIN, TIMEZONE, ADMIN_EMAIL, CERT_MANAGER_CLUSTER_ISSUER, GITOPS_REPO_URL:
 # defaults <- config/homelab.yaml <- environment (see homelab_load_config).

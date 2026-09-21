@@ -22,6 +22,11 @@ is what CI runs. A service's `group` maps to a toggle:
 | `monitoring` | `INSTALL_MONITORING` (true) |
 | `logging` | `INSTALL_LOGGING` (false) |
 
+The same catalogue generates the ArgoCD app-of-apps
+(`kubernetes/gitops/argocd/apps/services/`, see `kubernetes/gitops/argocd/README.md`),
+drives the KinD harness (`KIND_SERVICE_GROUPS`, default `core network content`)
+and `test/validate.sh`.
+
 A service marked `optin: true` additionally needs its name in
 `OPTIN_SERVICES` (space or comma separated, or `all`):
 
@@ -43,7 +48,7 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 | Velero | `INSTALL_VELERO` (true) | Backup schedules below |
 | ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
 | CrowdSec | always | Agent + Traefik bouncer, wired into the request path: Traefik writes the access logs the agent reads, and the bouncer middleware is enforced on the `websecure` entrypoint |
-| NetworkPolicies | always | `kubernetes/security/network-policies/` (default-deny for sensitive namespaces, DB access policies, egress rules). The separate `kubernetes/network-policies/` directory is a standalone toolkit the installer does not apply |
+| NetworkPolicies | always | Per-namespace isolation is declared in each service's `service.yaml` (`networkPolicies:`, rendered from `kubernetes/security/network-policies/templates/` by `scripts/lib/netpol.sh`); infrastructure namespaces, Nextcloud and the finer per-pod DB/egress rules stay in `kubernetes/security/network-policies/*.yaml` |
 | Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
 | Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
 
@@ -179,8 +184,7 @@ dominate storage.
 Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
 manifests (plus `pdb.yaml` and `servicemonitor.yaml` where warranted), an
 ExternalSecret for credentials and a matching entry in
-`scripts/generate-secrets.sh`, a NetworkPolicy under
-`kubernetes/security/network-policies/`, and a `service.yaml` descriptor:
+`scripts/generate-secrets.sh`, and a `service.yaml` descriptor:
 
 ```yaml
 name: <name>            # equals the directory name
@@ -192,7 +196,22 @@ description: One line
 steps:                  # only when order matters; everything else applies after, sorted
   - apply: postgres-deployment.yaml
     wait: app=<name>-postgres
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]
 ```
+
+`networkPolicies:` is the service's network isolation. Each name is a policy
+template in `kubernetes/security/network-policies/templates/`; the installer
+renders every listed template into the service's namespace
+(`scripts/lib/netpol.sh`). The five above are the standard set: deny
+everything, then allow DNS, Traefik, Prometheus scraping and same-namespace
+traffic (app to its database). Add `allow-external-https` only when the app
+fetches from the internet (feeds, models, webhooks); it excludes private
+ranges, so it never opens the LAN or other namespaces. Leave the key out for
+a service that must talk to the LAN or the Kubernetes API (Home Assistant,
+Homepage) until a template expresses that. An unknown template name fails
+the install and `./scripts/ci.sh`. Cross-namespace rules (one app reaching
+another's database) are not templates; add them to
+`kubernetes/security/network-policies/*.yaml`.
 
 Nothing in `setup-v2.sh` changes. `./scripts/ci.sh` fails on a directory
 without a descriptor, and renders every service through the same code path

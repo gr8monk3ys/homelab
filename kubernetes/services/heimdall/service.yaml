@@ -6,3 +6,6 @@ group: core
 optin: true
 url: dashboard
 description: Application dashboard (alternative to Homepage)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

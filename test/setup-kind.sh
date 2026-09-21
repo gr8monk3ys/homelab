@@ -18,6 +18,7 @@ export LOGFILE
 source "$SCRIPT_DIR/../scripts/lib/common.sh"
 source "$SCRIPT_DIR/../scripts/lib/render.sh"
 source "$SCRIPT_DIR/../scripts/lib/services.sh"
+source "$SCRIPT_DIR/../scripts/lib/netpol.sh"
 homelab_load_config
 
 check_requirements() {

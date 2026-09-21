@@ -9,3 +9,6 @@ description: No-code database
 steps:
   - apply: postgres-deployment.yaml
     wait: app=nocodb-postgres
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

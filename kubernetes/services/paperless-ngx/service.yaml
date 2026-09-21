@@ -10,3 +10,7 @@ steps:
     wait: app=paperless-postgres
   - apply: redis-deployment.yaml
     wait: app=paperless-redis
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: this service fetches from the internet.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

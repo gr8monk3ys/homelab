@@ -5,3 +5,6 @@ namespace: audiobookshelf
 group: media
 url: audiobooks
 description: Audiobook and podcast server
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

@@ -10,6 +10,10 @@ words the scripts, manifests and docs use.
 One self-hosted application as a directory under `kubernetes/services/<name>/`, deployed as a unit. Its databases and caches belong to it.
 _Avoid_: app, component, workload
 
+**Catalogue**:
+The set of all services, read from their descriptors. The installer, disaster recovery, the KinD harness, the validator, CI and the generated ArgoCD app-of-apps all read the same catalogue.
+_Avoid_: service list, inventory
+
 **Descriptor**:
 The `service.yaml` in a service directory: the only thing the installer needs to know to install that service.
 _Avoid_: manifest (a descriptor is not applied to the cluster), config
@@ -45,6 +49,10 @@ _Avoid_: bootstrap script, deploy script
 **Infrastructure**:
 The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, MinIO, Velero, the monitoring stack, network policies.
 _Avoid_: platform, system services
+
+**Policy template**:
+A NetworkPolicy under `kubernetes/security/network-policies/templates/` whose namespace is the literal `PLACEHOLDER_NAMESPACE`; a descriptor names the templates it wants in `networkPolicies:` and the installer renders them into the service's namespace.
+_Avoid_: base policy, generic policy, toolkit
 
 **Generated secret**:
 A credential created by `scripts/generate-secrets.sh` in the central `secrets` namespace and copied into a service's namespace by an ExternalSecret.

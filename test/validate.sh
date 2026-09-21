@@ -9,6 +9,7 @@ LOGFILE="$SCRIPT_DIR/validation.log"
 source "$HOMELAB_DIR/scripts/lib/common.sh"
 source "$HOMELAB_DIR/scripts/lib/render.sh"
 source "$HOMELAB_DIR/scripts/lib/services.sh"
+source "$HOMELAB_DIR/scripts/lib/netpol.sh"
 homelab_load_config >/dev/null 2>&1 || true
 
 FAILURES=0

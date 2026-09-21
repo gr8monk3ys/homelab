@@ -1,0 +1,28 @@
+---
+# Policy template: allow-external-https
+# Lets every pod in the namespace reach the internet on 443 and 80. Private
+# ranges are excluded, so this never opens the LAN or other namespaces.
+# List it only for services that fetch from outside (feeds, models, webhooks).
+# The namespace is filled in by scripts/lib/netpol.sh at install time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-https
+  namespace: PLACEHOLDER_NAMESPACE
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

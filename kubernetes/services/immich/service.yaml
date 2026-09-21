@@ -10,3 +10,7 @@ steps:
     wait: app=immich-postgres
   - apply: redis-deployment.yaml
     wait: app=immich-redis
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: this service fetches from the internet.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

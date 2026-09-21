@@ -11,3 +11,6 @@ steps:
     wait: app=outline-postgres
   - apply: redis-deployment.yaml
     wait: app=outline-redis
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

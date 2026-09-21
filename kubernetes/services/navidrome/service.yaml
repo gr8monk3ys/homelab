@@ -6,3 +6,6 @@ group: media
 optin: true
 url: music
 description: Music streaming (Subsonic API)
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

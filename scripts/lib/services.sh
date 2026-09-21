@@ -28,6 +28,8 @@
 #   3. every other *.yaml in the directory is applied afterwards, sorted,
 #      except service.yaml, values files, and ServiceMonitors when the
 #      Prometheus Operator CRD is absent.
+#   4. the descriptor's `networkPolicies:` templates are rendered into the
+#      namespace (scripts/lib/netpol.sh).
 #
 # Requires scripts/lib/common.sh and scripts/lib/render.sh.
 
@@ -202,6 +204,12 @@ install_service() {
                 echo "---"
             done
         } | apply_stream "$(_render_label "$dir")/rest.yaml"
+    fi
+
+    # 4. Namespace isolation, from the descriptor's networkPolicies: list
+    #    (scripts/lib/netpol.sh, when sourced).
+    if declare -F install_service_network_policies >/dev/null; then
+        install_service_network_policies "$dir" "$ns"
     fi
 
     success "Service $name installed"

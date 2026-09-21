@@ -1,0 +1,22 @@
+---
+# Policy template: allow-ingress
+# Lets the Traefik ingress controller (namespace traefik-system) reach every
+# pod in the namespace. This is the only way in for a web service.
+# The namespace is filled in by scripts/lib/netpol.sh at install time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-traefik
+  namespace: PLACEHOLDER_NAMESPACE
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik

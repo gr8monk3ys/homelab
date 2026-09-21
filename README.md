@@ -50,8 +50,9 @@ passwords as one of its checks. `docs/credentials.md` lists every secret name.
 Security posture, honestly stated: pod security contexts, drop-ALL
 capabilities, and resource limits are enforced in the manifests themselves;
 Pod Security Admission defaults to `audit` (warns, does not block), Kyverno is
-opt-in, NetworkPolicies cover the sensitive namespaces rather than every
-namespace, and the CrowdSec Traefik bouncer is enforced on the `websecure`
+opt-in, NetworkPolicies default-deny the 28 service namespaces whose
+descriptor declares `networkPolicies:` (Homepage and Home Assistant are left
+open because they need the kube API and the LAN), and the CrowdSec Traefik bouncer is enforced on the `websecure`
 entrypoint (Traefik writes access logs the agent reads; decisions are applied
 via bouncer middleware). See `docs/runbooks/hardening.md` to tighten the rest.
 
@@ -191,8 +192,7 @@ config/homelab.yaml          # domain/email/timezone/issuer defaults
 kubernetes/
   ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
   secrets/                   # ExternalSecrets + SOPS store
-  security/                  # CrowdSec + NetworkPolicies (applied by installer)
-  network-policies/          # standalone policy toolkit (manual, not installed)
+  security/                  # CrowdSec + NetworkPolicies (static rules + per-namespace templates)
   policy/kyverno/            # optional policy-as-code (audit + enforce sets)
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps
