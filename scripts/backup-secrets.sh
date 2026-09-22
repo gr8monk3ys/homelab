@@ -19,10 +19,6 @@ BACKUP_DIR="${BACKUP_DIR:-$HOMELAB_DIR/backups}"
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 AGE_RECIPIENT="${AGE_RECIPIENT:-}"
 
-require_cmd() {
-  command -v "$1" &>/dev/null || error "Missing required tool: $1"
-}
-
 ensure_age_identity() {
   if [[ -n "$AGE_RECIPIENT" ]]; then
     return 0

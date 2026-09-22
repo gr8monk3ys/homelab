@@ -114,12 +114,16 @@ n8n (`automation.`).
 | Immich (photos; server + ML + Postgres/pgvecto + Redis) | `photos.` | `ENABLE_AI_SERVICES=true` |
 | Ollama (LLM runtime; large storage, heavy CPU/RAM) | `ai.` | `ENABLE_AI_SERVICES=true` |
 | Open WebUI (chat UI for Ollama; behind Authelia) | `chat.` | `ENABLE_AI_SERVICES=true` |
-| Drone CI | `drone.` | `ENABLE_DEV_SERVICES=true` |
+| Drone CI (no runner by default, see note below) | `drone.` | `ENABLE_DEV_SERVICES=true` |
 | Harbor (container registry, installed via in-cluster Helm job) | — | `ENABLE_DEV_SERVICES=true` |
 | Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT | `hass.`, `nodered.`, `zigbee.` | `ENABLE_HOME_SERVICES=true` |
 | Matrix (Synapse + Element) | `matrix.`, `element.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | Mattermost | `mattermost.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | ArgoCD | `argocd.` | `ENABLE_GITOPS=true` |
+
+> **Drone has no runner.** Drone CI installs without a build runner, which is the
+> secure default: the usual runner mounts the host Docker socket. A Docker-socket
+> runner manifest is preserved on the `archive/legacy` branch if you want it.
 
 ## Opt-in services (`OPTIN_SERVICES`)
 
@@ -181,9 +185,10 @@ are preserved on the `archive/legacy` branch.
   cert-manager.
 - Every credential flows `generate-secrets.sh` → `secrets` namespace →
   ExternalSecret → app namespace. If ESO is down, new pods can't get secrets.
-- Databases are separate StatefulSet-style Deployments per app (Postgres for
-  Immich/Gitea/n8n etc., MySQL for Nextcloud, Redis where needed) — never
-  sidecars.
+- Databases are a separate Deployment per app (Postgres for Immich/Gitea/n8n
+  etc., MySQL for Nextcloud, Redis where needed) — never sidecars. Each has
+  its own PVC and `strategy: Recreate`, so a rolling update never puts a
+  second writer on a ReadWriteOnce volume.
 - Open WebUI depends on Ollama; the arr-stack shares a common storage PVC.
 
 ## Backups
@@ -226,7 +231,6 @@ ExternalSecret for credentials and a matching entry in
 `scripts/generate-secrets.sh`, and a `service.yaml` descriptor:
 
 ```yaml
-name: <name>            # equals the directory name
 namespace: <name>
 group: productivity     # picks the toggle (table above)
 optin: true             # omit for services that should install by default

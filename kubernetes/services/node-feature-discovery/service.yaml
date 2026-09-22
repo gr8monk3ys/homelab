@@ -3,7 +3,6 @@
 # NFD is Helm-chart-managed. It labels nodes with what hardware they have
 # (feature.node.kubernetes.io/*); intel-device-plugin schedules on those
 # labels and nvidia-device-plugin can too.
-name: node-feature-discovery
 namespace: node-feature-discovery
 group: core
 optin: true

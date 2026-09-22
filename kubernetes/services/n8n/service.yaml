@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: n8n
 namespace: n8n
 group: productivity
 url: automation

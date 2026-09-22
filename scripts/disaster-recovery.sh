@@ -5,7 +5,11 @@ set -euo pipefail
 # Automated recovery procedures for homelab infrastructure.
 #
 # Reinstall phases are the installer's own: this script sources setup-v2.sh
-# and runs its setup_* functions, so recovery cannot diverge from install.
+# and runs its setup_* functions, so a phase cannot behave differently here
+# than it does on install. Recovery does run a SUBSET of the installer's
+# phases, and the subset is deliberate: see reinstall_infrastructure (no
+# MetalLB), reinstall_monitoring, reinstall_critical_services and
+# reinstall_security. Anything outside those four is not restored.
 # What is DR-specific lives here: Velero restores, the encrypted secrets
 # restore, confirmation prompts, per-step failure tracking and reporting.
 
@@ -17,14 +21,8 @@ source "$SCRIPT_DIR/lib/render.sh"
 source "$SCRIPT_DIR/lib/services.sh"
 homelab_load_config
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Configuration
 BACKUP_NAMESPACE="${BACKUP_NAMESPACE:-velero}"
@@ -36,44 +34,19 @@ AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 # name is installed from its descriptor regardless of its group toggle.
 CRITICAL_SERVICES="${CRITICAL_SERVICES:-vaultwarden nextcloud gitea home-assistant}"
 
-# This log family is defined after scripts/lib/common.sh on purpose: the
-# later definition wins, so everything in this process logs in colour and
-# to LOG_FILE. error() here does not exit; run_step runs the installer's
-# phases in a child bash where the installer's exiting error() applies.
-log() {
-    local msg
-    msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-    echo -e "${BLUE}${msg}${NC}"
-    echo "$msg" >> "$LOG_FILE"
-}
-
-success() {
-    local msg="$*"
-    echo -e "${GREEN}[SUCCESS]${NC} $msg"
-    echo "[SUCCESS] $msg" >> "$LOG_FILE"
-}
-
-warning() {
-    local msg="$*"
-    echo -e "${YELLOW}[WARNING]${NC} $msg"
-    echo "[WARNING] $msg" >> "$LOG_FILE"
-}
+# common.sh owns the log family; colour and a per-script report file are set,
+# not reimplemented (see its header). Only error() is redefined, for the one
+# reason common.sh sanctions: here it must not exit, because run_step runs the
+# installer's phases in a child bash where the installer's exiting error()
+# applies and a failed phase is recorded rather than fatal.
+LOG_COLOR=true
 
 error() {
-    local msg="$*"
-    echo -e "${RED}[ERROR]${NC} $msg"
-    echo "[ERROR] $msg" >> "$LOG_FILE"
-}
-
-info() {
-    local msg="$*"
-    echo -e "${CYAN}[INFO]${NC} $msg"
-    echo "[INFO] $msg" >> "$LOG_FILE"
+    log "ERROR: $*" >&2
 }
 
 prompt() {
-    local msg="$*"
-    echo -e "${BOLD}${msg}${NC}"
+    echo -e "${BOLD}$*${NC}"
 }
 
 # The installer is the one owner of every install phase (chart versions,
@@ -156,6 +129,11 @@ EOF
 }
 
 # Check prerequisites
+# Deliberately not require_cmd (scripts/lib/common.sh): that exits on the
+# first missing tool, and someone rebuilding a cluster should learn everything
+# they need to install in one pass, not one round trip per tool. The probes for
+# velero further down are a different thing again -- an optional feature is
+# present or it is not, and neither is a prerequisite.
 check_prerequisites() {
     log "Checking prerequisites..."
 
@@ -344,7 +322,6 @@ reinstall_infrastructure() {
 
     FAILED_STEPS=()
 
-    run_step "Adding Helm repositories (add_helm_repos)" add_helm_repos
     run_step "Storage (setup_storage)" setup_storage
 
     # Optional: restore encrypted secrets BEFORE setup_secrets, because
@@ -369,6 +346,39 @@ reinstall_infrastructure() {
 
     info "Note: Some components may take time to become ready"
     report_step_results "Core infrastructure reinstallation"
+}
+
+# Reinstall the cluster's security posture: the installer's own security,
+# Pod Security Standards, PDB, quota, policy-as-code and NetworkPolicy phases,
+# in the installer's relative order.
+#
+# This runs AFTER services, not with the rest of the infrastructure, because
+# every one of these phases targets namespaces that services create. PDBs and
+# quotas go through kubectl_apply_rendered_file_existing_ns, which skips a
+# namespace that does not exist yet; NetworkPolicies and PSA labels would
+# likewise have nothing to attach to. Running it last is what the installer
+# does and for the same reason.
+#
+# Without this phase a recovered cluster comes back with its services running
+# and no static NetworkPolicies, no Kyverno policies, no PodDisruptionBudgets
+# and no ResourceQuotas -- silently, at the moment they are least likely to be
+# audited. Per-service isolation is not affected: install_service applies each
+# descriptor's own namespace and policies.
+reinstall_security() {
+    confirm "This will reapply cluster security policies. Continue?"
+
+    log "Reapplying the security posture via the installer's phases..."
+
+    FAILED_STEPS=()
+
+    run_step "Security: RBAC and static policies (setup_security)" setup_security
+    run_step "Pod Security Standards (setup_pod_security_standards)" setup_pod_security_standards
+    run_step "PodDisruptionBudgets (setup_pod_disruption_budgets)" setup_pod_disruption_budgets
+    run_step "ResourceQuotas (setup_resource_quotas)" setup_resource_quotas
+    run_step "Policy as code: Kyverno (setup_policy_as_code)" setup_policy_as_code
+    run_step "Static NetworkPolicies (setup_network_policies)" setup_network_policies
+
+    report_step_results "Security posture reinstallation"
 }
 
 # Reinstall monitoring stack: the installer's monitoring and logging phases.
@@ -433,6 +443,7 @@ full_recovery() {
     echo "2. Reinstall monitoring"
     echo "3. Restore from backup (if available)"
     echo "4. Reinstall critical services"
+    echo "5. Reapply the security posture"
     echo ""
 
     local failed_phases=0
@@ -452,6 +463,9 @@ full_recovery() {
     fi
 
     reinstall_critical_services || failed_phases=$((failed_phases+1))
+
+    # Last, so every namespace it targets exists. See reinstall_security.
+    reinstall_security || failed_phases=$((failed_phases+1))
 
     info "Check pod status: kubectl get pods -A"
     info "Review log file: $LOG_FILE"
@@ -492,9 +506,10 @@ print_menu() {
     echo "  4) Reinstall core infrastructure"
     echo "  5) Reinstall monitoring stack"
     echo "  6) Reinstall critical services"
-    echo "  7) Full cluster recovery"
-    echo "  8) Verify cluster health"
-    echo "  9) Exit"
+    echo "  7) Reapply the security posture"
+    echo "  8) Full cluster recovery"
+    echo "  9) Verify cluster health"
+    echo " 10) Exit"
     echo ""
 }
 
@@ -506,7 +521,7 @@ interactive_mode() {
 
     while true; do
         print_menu
-        read -r -p "Select option [1-9]: " choice
+        read -r -p "Select option [1-10]: " choice
 
         case $choice in
             1) list_available_backups || true ;;
@@ -515,9 +530,10 @@ interactive_mode() {
             4) reinstall_infrastructure || true ;;
             5) reinstall_monitoring || true ;;
             6) reinstall_critical_services || true ;;
-            7) full_recovery || true ;;
-            8) verify_health ;;
-            9)
+            7) reinstall_security || true ;;
+            8) full_recovery || true ;;
+            9) verify_health ;;
+            10)
                 log "Exiting disaster recovery"
                 exit 0
                 ;;
@@ -545,6 +561,7 @@ Commands:
   infrastructure      Reinstall core infrastructure
   monitoring          Reinstall monitoring stack
   services            Reinstall critical services
+  security            Reapply NetworkPolicies, PSA, PDBs, quotas and Kyverno
   full                Full cluster recovery
   health              Verify cluster health
   help                Show this help message
@@ -627,6 +644,12 @@ main() {
             check_prerequisites
             check_cluster
             reinstall_critical_services
+            ;;
+        security)
+            init_log
+            check_prerequisites
+            check_cluster
+            reinstall_security
             ;;
         full)
             init_log

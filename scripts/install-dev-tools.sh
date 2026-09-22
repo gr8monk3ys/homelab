@@ -19,15 +19,6 @@ TMP_DIR="$TOOLS_DIR/tmp"
 
 FORCE="${FORCE:-false}"
 
-die() {
-  log "ERROR: $*"
-  exit 1
-}
-
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
-}
-
 ensure_dirs() {
   mkdir -p "$BIN_DIR" "$TMP_DIR"
 }
@@ -35,7 +26,7 @@ ensure_dirs() {
 install_python_tools() {
   log "Installing Python tools into $VENV_DIR ..."
 
-  need_cmd python3
+  require_cmd python3
   if [[ "$FORCE" == "true" && -d "$VENV_DIR" ]]; then
     rm -rf "$VENV_DIR"
   fi
@@ -56,9 +47,9 @@ install_python_tools() {
 
 main() {
   local rc=0
-  need_cmd curl
-  need_cmd tar
-  need_cmd install
+  require_cmd curl
+  require_cmd tar
+  require_cmd install
 
   ensure_dirs
   install_python_tools

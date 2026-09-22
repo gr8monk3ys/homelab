@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: searxng
 namespace: searxng
 group: content
 url: search

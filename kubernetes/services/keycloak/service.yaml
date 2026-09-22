@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: keycloak
 namespace: keycloak
 group: core
 project: homelab-security

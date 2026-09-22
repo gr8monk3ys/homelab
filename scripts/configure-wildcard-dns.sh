@@ -9,13 +9,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "$SCRIPT_DIR/lib/common.sh"
 
-require_cmd() {
-    local cmd="$1"
-    if ! command -v "$cmd" &> /dev/null; then
-        error "Missing required command: $cmd"
-    fi
-}
-
 resolve_hostname_to_ip() {
     local hostname="$1"
 

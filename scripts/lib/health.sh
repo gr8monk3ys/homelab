@@ -60,14 +60,17 @@ if [[ -z "${HOMELAB_SERVICES_SOURCED:-}" ]]; then
 fi
 
 # The four infrastructure pieces that are not Helm releases, as
-# "<namespace>[,<fallback namespace>] <pod selector or -> <toggle>[=<default>]".
+# "<namespace>[,<fallback namespace>] <pod selector or -> <toggle>[=<default>] or -".
 # Every other piece is a row of HELM_INFRA_RELEASES (scripts/lib/helm.sh) and
 # is read from there, so a piece cannot be installed and go unchecked.
+# A "-" in the toggle column means the installer brings the piece up
+# unconditionally: setup_storage (local-path, MinIO) and setup_security
+# (CrowdSec) have no toggle, so these three are always expected.
 _health_infra_local_spec() {
     case "$1" in
-        local-path) echo "local-path-storage app=local-path-provisioner INSTALL_LOCAL_PATH" ;;
-        minio)      echo "minio-system app=minio INSTALL_MINIO" ;;
-        crowdsec)   echo "crowdsec app=crowdsec INSTALL_CROWDSEC" ;;
+        local-path) echo "local-path-storage app=local-path-provisioner -" ;;
+        minio)      echo "minio-system app=minio -" ;;
+        crowdsec)   echo "crowdsec app=crowdsec -" ;;
         argocd)     echo "argocd - ENABLE_GITOPS=false" ;;
         *)          return 1 ;;
     esac
@@ -93,19 +96,43 @@ _health_infra_spec() {
     echo "$namespaces ${selector:--} $(helm_infra_field "$piece" toggle)"
 }
 
-# infra_enabled <piece>: the piece's toggle, defaulting the way the installer
-# defaults it (on, unless the table's toggle column says otherwise).
-infra_enabled() {
-    local spec toggle default
+# _health_infra_toggle <piece> -> "<VAR> <default>", or rc 1 when the piece
+# has no toggle (a "-" toggle column) and is therefore always installed.
+_health_infra_toggle() {
+    local spec toggle default="true"
     spec="$(_health_infra_spec "$1")" || return 1
-    toggle="${spec##* }"
-    [[ -n "$toggle" ]] || return 0   # a piece with no toggle is always on
-    default="true"
+    read -r _ _ toggle _ <<< "$spec"
+    [[ -n "$toggle" && "$toggle" != "-" ]] || return 1
     if [[ "$toggle" == *=* ]]; then
         default="${toggle#*=}"
         toggle="${toggle%%=*}"
     fi
+    echo "$toggle $default"
+}
+
+# infra_enabled <piece>: the piece's toggle, defaulting the way the table
+# writes it (on, unless the toggle column says otherwise).
+infra_enabled() {
+    local pair toggle default
+    _health_infra_spec "$1" >/dev/null || return 1
+    pair="$(_health_infra_toggle "$1")" || return 0   # no toggle: always on
+    read -r toggle default <<< "$pair"
     [[ "${!toggle:-$default}" == "true" ]]
+}
+
+# infra_toggles_apply: give every infrastructure toggle its effective value,
+# from the environment or from the table that defines the piece it switches
+# (HELM_INFRA_RELEASES, or _health_infra_local_spec above). The installer
+# calls this instead of restating a default; see CONTEXT.md "Toggle" and
+# service_group_toggles_apply, which does the same for the service groups.
+infra_toggles_apply() {
+    local piece pair toggle default
+    for piece in "${HEALTH_INFRA[@]}"; do
+        pair="$(_health_infra_toggle "$piece")" || continue
+        read -r toggle default <<< "$pair"
+        printf -v "$toggle" '%s' "${!toggle:-$default}"
+        export "${toggle?}"
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -383,8 +410,12 @@ access_summary() {
     fi
     echo ""
     echo "  infrastructure:"
-    [[ "${INSTALL_MONITORING:-true}" == "true" ]] && echo "    grafana             https://grafana.$DOMAIN"
-    [[ "${ENABLE_GITOPS:-false}" == "true" ]]    && echo "    argocd              https://argocd.$DOMAIN"
+    if infra_enabled kube-prometheus-stack; then
+        echo "    grafana             https://grafana.$DOMAIN"
+    fi
+    if infra_enabled argocd; then
+        echo "    argocd              https://argocd.$DOMAIN"
+    fi
     echo "    minio               https://minio.$DOMAIN"
     for group in $(service_group_names); do
         line=""

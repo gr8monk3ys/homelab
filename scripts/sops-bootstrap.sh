@@ -23,19 +23,15 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/render.sh"
 source "$SCRIPT_DIR/lib/secrets.sh"
 
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || error "Missing required command: $1"
-}
-
 AGE_KEY_FILE="${AGE_KEY_FILE:-$REPO_ROOT/local/sops/age.key}"
 OUT_DIR="${OUT_DIR:-$SECRETS_SOPS_OUT_DIR}"
 ROTATE_SOPS_SECRETS="${ROTATE_SOPS_SECRETS:-false}"
 
 main() {
-  need_cmd openssl
-  need_cmd kubectl
-  need_cmd sops
-  need_cmd age-keygen
+  require_cmd openssl
+  require_cmd kubectl
+  require_cmd sops
+  require_cmd age-keygen
 
   cd "$REPO_ROOT"
 

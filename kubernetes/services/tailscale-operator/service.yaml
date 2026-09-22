@@ -5,7 +5,6 @@
 # operator-oauth (keys client_id, client_secret) that the ExternalSecret in
 # namespace.yaml creates from the user-supplied tailscale-oauth secret in the
 # secrets namespace (docs/credentials.md).
-name: tailscale-operator
 namespace: tailscale
 group: network
 optin: true

@@ -5,7 +5,8 @@ set -euo pipefail
 # decides what "healthy" means per service), plus the checks that are not
 # "is X healthy": node readiness, the storage class, generated-secret count,
 # MetalLB pools, Velero schedules, Helm releases, network-policy count and the
-# hardcoded-password scan of the manifests.
+# hardcoded-password scan of the manifests (scripts/secrets-check.sh, the
+# one scanner, sourced here).
 #
 # Critical (exit 1): cluster unreachable, no Ready node, storage class missing,
 # infrastructure unhealthy, hardcoded passwords. Everything else warns. Only
@@ -15,6 +16,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_COLOR="${LOG_COLOR:-true}"
 
 source "$SCRIPT_DIR/lib/health.sh"
+# The manifest credential scan: one scanner, two callers (CI runs
+# scripts/secrets-check.sh directly; check_security below reports it).
+# shellcheck source=scripts/secrets-check.sh
+source "$SCRIPT_DIR/secrets-check.sh"
 
 CRITICAL=0
 critical() {
@@ -85,8 +90,7 @@ check_backup_schedules() {
 
 check_helm_releases() {
     log "Checking Helm releases..."
-    if ! command -v helm &> /dev/null; then
-        warning "Helm is not installed"
+    if ! REQUIRE_CMD_SOFT=true require_cmd helm "skipping the Helm release check"; then
         return 0
     fi
     local releases
@@ -102,44 +106,17 @@ check_helm_releases() {
 check_security() {
     log "Checking security configuration..."
 
-    # Hardcoded passwords in manifests (show filenames only, not content).
-    # Skips SOPS-encrypted secrets and files that reference secrets indirectly
-    # (secretKeyRef/remoteRef/existingSecret). Flags only password-like keys
-    # that carry a non-empty inline value.
-    local files_with_passwords
-    files_with_passwords="$(
-        while IFS= read -r -d '' f; do
-            if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
-                continue
-            fi
-            if grep -E "^[[:space:]-]*[\"']?[A-Za-z0-9_.-]*[Pp]assword[\"']?:" "$f" 2>/dev/null | \
-                grep -vE ":[[:space:]]*(\"\"|'')?[[:space:]]*(#.*)?$" | grep -q .; then
-                echo "$f"
-            fi
-        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/secrets/sops/*" -print0 2>/dev/null)
-    )"
+    # Cluster-free: both scans live in scripts/secrets-check.sh, which CI runs
+    # on its own. Filenames only, never file content.
+    local files_with_passwords secret_files
+    files_with_passwords="$(hardcoded_password_files)"
     if [ -n "$files_with_passwords" ]; then
         critical "Potential hardcoded passwords in Kubernetes manifests; files to review:"
         echo "$files_with_passwords" | head -5
         return 1
     fi
 
-    # Inline Secret data in manifests (filenames only).
-    local secret_files
-    secret_files="$(
-        while IFS= read -r -d '' f; do
-            case "$f" in
-                *external-secret*) continue ;;
-                */secrets/sops/*) continue ;;
-            esac
-            if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
-                continue
-            fi
-            if grep -qE "^kind:[[:space:]]*Secret[[:space:]]*$" "$f" 2>/dev/null && grep -qE "^[[:space:]]*data:" "$f" 2>/dev/null; then
-                echo "$f"
-            fi
-        done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
-    )"
+    secret_files="$(inline_secret_data_files)"
     if [ -n "$secret_files" ]; then
         warning "YAML files with potential hardcoded secrets:"
         echo "$secret_files" | head -5

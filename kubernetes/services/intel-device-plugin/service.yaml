@@ -5,7 +5,6 @@
 # so the DaemonSet only schedules on nodes NFD has labelled
 # intel.feature.node.kubernetes.io/gpu=true. Advertises gpu.intel.com/i915
 # (and gpu.intel.com/xe) for Jellyfin, Immich, Frigate (OpenVINO) and friends.
-name: intel-device-plugin
 namespace: intel-device-plugins
 group: core
 optin: true

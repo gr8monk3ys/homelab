@@ -8,8 +8,7 @@
 # implementation. Nothing else in the repo needs to know how a service is
 # ordered, waited on, or gated.
 #
-#   name: paperless-ngx            # must equal the directory name
-#   namespace: paperless-ngx
+#   namespace: paperless-ngx       # the service's name is its directory name
 #   group: productivity            # see SERVICE_GROUPS below
 #   optin: true                    # optional; only installs when named in OPTIN_SERVICES
 #   priority: 50                   # optional; lower installs first within a group
@@ -235,9 +234,8 @@ install_service() {
     [[ -d "$dir" ]] || error "install_service: no such service directory: $dir"
     [[ -f "$desc" ]] || error "install_service: missing descriptor: $desc"
 
-    name="$(service_field "$dir" '.name')"
+    name="$(basename "$dir")"
     ns="$(service_field "$dir" '.namespace')"
-    [[ "$name" == "$(basename "$dir")" ]] || error "install_service: $desc names '$name' but lives in $(basename "$dir")"
     [[ -n "$ns" ]] || error "install_service: $desc has no namespace"
 
     log "Installing service $name (namespace $ns)..."
@@ -393,10 +391,6 @@ services_check() {
             echo "MISSING descriptor: kubernetes/services/$name/service.yaml"
             failures=$((failures + 1))
             continue
-        fi
-        if [[ "$(service_field "$name" '.name')" != "$name" ]]; then
-            echo "BAD name in $desc (expected $name)"
-            failures=$((failures + 1))
         fi
         if [[ -z "$(service_field "$name" '.namespace')" ]]; then
             echo "BAD namespace in $desc"

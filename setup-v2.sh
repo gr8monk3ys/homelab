@@ -21,7 +21,6 @@ source "$HOMELAB_DIR/scripts/lib/health.sh"
 # defaults <- config/homelab.yaml <- environment (see homelab_load_config).
 
 # Feature toggles (set env vars to "true"/"false")
-ENABLE_GITOPS="${ENABLE_GITOPS:-false}"
 # When true, apply `kubernetes/gitops/argocd/` after ArgoCD install. Those manifests contain placeholders by default.
 APPLY_GITOPS_MANIFESTS="${APPLY_GITOPS_MANIFESTS:-false}"
 # Every service group's toggle (ENABLE_MEDIA_SERVICES, ENABLE_AI_SERVICES,
@@ -32,22 +31,21 @@ APPLY_GITOPS_MANIFESTS="${APPLY_GITOPS_MANIFESTS:-false}"
 # app-of-apps read the same column.
 service_group_toggles_apply
 
+# Every infrastructure toggle's effective value, from the table that defines
+# the piece: HELM_INFRA_RELEASES (scripts/lib/helm.sh) for the Helm releases,
+# _health_infra_local_spec (scripts/lib/health.sh) for the rest. Those tables
+# are the only place an infrastructure default is written.
+infra_toggles_apply
+
 # Services marked `optin: true` in their service.yaml install only when named here
 # (space/comma separated) or when set to "all". `./scripts/services.sh list` shows them.
 OPTIN_SERVICES="${OPTIN_SERVICES:-}"
 
-INSTALL_METALLB="${INSTALL_METALLB:-true}"
-INSTALL_TRAEFIK="${INSTALL_TRAEFIK:-true}"
-INSTALL_CERT_MANAGER="${INSTALL_CERT_MANAGER:-true}"
-INSTALL_EXTERNAL_SECRETS="${INSTALL_EXTERNAL_SECRETS:-true}"
-INSTALL_EXTERNAL_DNS="${INSTALL_EXTERNAL_DNS:-false}"
 # INSTALL_MONITORING and INSTALL_LOGGING are the monitoring and logging
 # *group* toggles as well, so service_group_toggles_apply above has already
 # set them; only what they switch on beyond a group is listed here.
-INSTALL_BLACKBOX_EXPORTER="${INSTALL_BLACKBOX_EXPORTER:-true}"
 CONFIGURE_ALERTING="${CONFIGURE_ALERTING:-false}"
 INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
-INSTALL_VELERO="${INSTALL_VELERO:-true}"
 
 # Optional: include an encrypted backup of secret values in backup_configuration()
 BACKUP_SECRETS="${BACKUP_SECRETS:-false}"
@@ -59,7 +57,6 @@ BACKUP_SECRETS="${BACKUP_SECRETS:-false}"
 POD_SECURITY_MODE="${POD_SECURITY_MODE:-audit}"
 
 # Optional policy-as-code engine (Kyverno) + policy mode.
-INSTALL_KYVERNO="${INSTALL_KYVERNO:-false}"
 KYVERNO_POLICY_MODE="${KYVERNO_POLICY_MODE:-audit}" # audit|enforce
 
 # When true and Pi-hole is enabled, configure wildcard DNS for *.$DOMAIN to Traefik's LoadBalancer.
@@ -153,7 +150,6 @@ install_tools() {
         rm -rf "$tmpdir"
     fi
 
-    add_helm_repos
 
     success "Tools installation completed"
 }
@@ -162,10 +158,6 @@ install_tools() {
 # adds and updates the one repo a chart needs, so an unreachable repo fails
 # only that release and a run with every INSTALL_* Helm toggle off needs no
 # repo at all. Kept as a phase name for install_tools and disaster recovery.
-add_helm_repos() {
-    log "Helm repositories are added per chart at install time (HELM_REPOS in scripts/lib/helm.sh)."
-}
-
 setup_secrets() {
     log "Setting up secret management..."
 
@@ -204,8 +196,10 @@ setup_secrets() {
 setup_storage() {
     log "Setting up persistent storage..."
 
-    # Apply storage manifests via Kustomize
-    kubectl apply -k kubernetes/storage/
+    # Through the render seam, like everything else the installer applies.
+    # kubectl_apply_rendered_dir is maxdepth 1, so MinIO needs its own call.
+    kubectl_apply_rendered_dir kubernetes/storage
+    kubectl_apply_rendered_dir kubernetes/storage/minio
 
     # Wait for storage to be ready
     if kubectl get namespace local-path-storage &> /dev/null; then
@@ -409,30 +403,34 @@ setup_core_services() {
 
 setup_network_services() {
     log "Setting up network services..."
-
     install_service_group network
+    success "Network services setup completed"
+}
+
+# Wildcard DNS is cluster-wide configuration that happens to be applied through
+# Pi-hole, not a step in installing the network group. It runs as its own phase
+# so setup_network_services is nothing but its group, and so this can be re-run
+# on its own. It needs the network group installed, so it follows it in main().
+setup_wildcard_dns() {
     if [[ "$ENABLE_NETWORK_SERVICES" != "true" ]]; then
         return 0
     fi
 
-    if [[ "$CONFIGURE_WILDCARD_DNS" == "true" ]]; then
-        bash scripts/configure-wildcard-dns.sh || warning "Wildcard DNS configuration failed (continuing)."
-    else
+    if [[ "$CONFIGURE_WILDCARD_DNS" != "true" ]]; then
         warning "CONFIGURE_WILDCARD_DNS=false; leaving DNS configuration unchanged."
         warning "To enable later: ./scripts/configure-wildcard-dns.sh"
+        return 0
     fi
 
-    success "Network services setup completed"
+    log "Configuring wildcard DNS..."
+    bash scripts/configure-wildcard-dns.sh || warning "Wildcard DNS configuration failed (continuing)."
+    success "Wildcard DNS configuration completed"
 }
 
 setup_development_services() {
     log "Setting up development services..."
 
     install_service_group dev
-    if [[ "$ENABLE_DEV_SERVICES" == "true" ]]; then
-        warning "Drone was installed without a runner (secure default)."
-        warning "A Docker-socket runner manifest is preserved on the archive/legacy branch."
-    fi
 
     success "Development services setup completed"
 }
@@ -506,48 +504,13 @@ setup_security() {
 setup_network_policies() {
     log "Setting up network policies for service isolation..."
 
-    # Apply all network policies
-    kubectl_apply_rendered_file kubernetes/security/network-policies/namespace.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/egress-policies.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/database-policies.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/sensitive-services-policies.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/infrastructure-policies.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/media-services-policies.yaml
-    kubectl_apply_rendered_file kubernetes/security/network-policies/cross-namespace-policies.yaml
+    # Every static policy in the directory, namespace.yaml first. The
+    # per-namespace templates under templates/ are not applied here: a
+    # descriptor names the ones it wants and netpol.sh renders those, and
+    # kubectl_apply_rendered_dir is maxdepth 1, so it leaves them alone.
+    kubectl_apply_rendered_dir kubernetes/security/network-policies
 
     success "Network policies setup completed"
-}
-
-# kubectl_apply_rendered_file_existing_ns <file>: like kubectl_apply_rendered_file,
-# but documents whose namespace does not exist yet are skipped with a warning
-# (a disabled Helm release or service group never created it). Render mode
-# applies everything.
-kubectl_apply_rendered_file_existing_ns() {
-    local file="$1"
-    if [[ "$HOMELAB_APPLY_MODE" == "render" ]]; then
-        kubectl_apply_rendered_file "$file"
-        return 0
-    fi
-    local existing ns present="" missing=()
-    existing=" $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}') "
-    for ns in $(render_file "$file" | yq -r '.metadata.namespace // ""' | sort -u); do
-        [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || continue   # drops yq's --- separators
-        if [[ "$existing" == *" $ns "* ]]; then
-            present+="${present:+|}$ns"
-        else
-            missing+=("$ns")
-        fi
-    done
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        warning "$file: skipping documents for namespaces that do not exist: ${missing[*]}"
-        warning "Re-run ./setup-v2.sh after enabling the toggles that create them."
-    fi
-    if [[ -z "$present" ]]; then
-        warning "$file: nothing to apply yet"
-        return 0
-    fi
-    render_file "$file" | yq "select(.metadata.namespace | test(\"^($present)\$\"))" | \
-        apply_stream "$(_render_label "$file")"
 }
 
 setup_pod_disruption_budgets() {
@@ -800,6 +763,7 @@ main() {
     setup_core_services
     setup_media_services
     setup_network_services
+    setup_wildcard_dns
     setup_development_services
     setup_content_services
     setup_ai_services

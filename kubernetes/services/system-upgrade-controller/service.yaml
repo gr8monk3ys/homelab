@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: system-upgrade-controller
 namespace: system-upgrade
 group: core
 optin: true
