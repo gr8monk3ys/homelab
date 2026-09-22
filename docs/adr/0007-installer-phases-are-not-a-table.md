@@ -47,3 +47,16 @@ hold.
 - Revisit the whole question only if the preconditions move out of
   `setup-v2.sh` — if a phase's gate becomes a declaration rather than code,
   the row becomes expressible.
+
+## Update, 2026-09-22: the narrower move is done
+
+The open item in the second consequence above has been carried out. The ten
+`setup_*_services` wrappers are gone: `main()` now loops the `SERVICE_GROUPS`
+table through one phase, `setup_service_group <group>`, skipping `logging`
+(its one service, Loki, is installed by `setup_logging`, which has to run
+before the groups that log into it), and calls `setup_wildcard_dns` after the
+loop. Disaster recovery brings the core group back with
+`setup_service_group core`. The counts in this record (28 phases, 8 pure
+wrappers, 2 with residue) describe `main()` as it was when the decision was
+taken and are left as written. The decision itself is unchanged: the
+remaining phases differ in their preconditions and stay named function calls.

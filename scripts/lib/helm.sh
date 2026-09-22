@@ -15,6 +15,7 @@
 #       --set k=v                 passed through (repeatable)
 #       --wait-label <selector>   best-effort `kubectl wait` on pods with this label afterwards
 #       --no-wait                 skip helm's own --wait
+#   HELM_WAIT=false                 skip helm's own --wait for every release (CI envtest only)
 #       --timeout <seconds>       for --wait-label (default 300)
 #       A chart is local when it starts with ./, / or helm/ (repo-relative)
 #       and needs no repo at all; otherwise it is <repo>/<chart>, <repo> must
@@ -236,7 +237,10 @@ helm_release() {
     log "Installing $release (Helm chart $chart) into $ns..."
     local install_args=(--namespace "$ns" --create-namespace)
     [[ "$local_chart" == "true" ]] && install_args+=(--dependency-update)
-    [[ "$do_wait" == "true" ]] && install_args+=(--wait)
+    # HELM_WAIT=false drops helm's own --wait for every release. Only for an API
+    # server with no nodes (the envtest job in CI), where nothing ever becomes
+    # ready and --wait would sit out its five-minute timeout.
+    [[ "$do_wait" == "true" && "${HELM_WAIT:-true}" == "true" ]] && install_args+=(--wait)
     helm upgrade --install "$release" "$chart" "${install_args[@]}" "${args[@]}"
 
     if [[ -n "$wait_label" ]]; then

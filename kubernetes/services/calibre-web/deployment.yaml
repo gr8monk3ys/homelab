@@ -5,6 +5,11 @@ metadata:
   namespace: calibre-web
 spec:
   replicas: 1
+  # Single writer on a ReadWriteOnce volume: RWO pins the volume to one node,
+  # so a rolling update would briefly run two writers there, or stall across
+  # nodes. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: calibre-web
@@ -13,6 +18,14 @@ spec:
       labels:
         app: calibre-web
     spec:
+      # Shares the ReadWriteOnce config and books PVCs with calibre-server: must run on its node.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: calibre-server
+              topologyKey: kubernetes.io/hostname
       securityContext:
         # Note: LinuxServer.io images typically run as root internally
         # They use PUID/PGID for file ownership but process runs as root
@@ -147,6 +160,11 @@ metadata:
   namespace: calibre-web
 spec:
   replicas: 1
+  # Single writer on a ReadWriteOnce volume: RWO pins the volume to one node,
+  # so a rolling update would briefly run two writers there, or stall across
+  # nodes. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: calibre-server

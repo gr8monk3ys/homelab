@@ -30,7 +30,7 @@ LOG_FILE="${HOMELAB_DIR}/disaster-recovery-$(date +%Y%m%d-%H%M%S).log"
 SECRETS_BACKUP_FILE="${SECRETS_BACKUP_FILE:-}"
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 # Services reinstalled by `services` / step 4 of `full`. Names in the core
-# group (Nextcloud included) come back through setup_core_services; any other
+# group (Nextcloud included) come back through setup_service_group core; any other
 # name is installed from its descriptor regardless of its group toggle.
 CRITICAL_SERVICES="${CRITICAL_SERVICES:-vaultwarden nextcloud gitea home-assistant}"
 
@@ -322,7 +322,13 @@ reinstall_infrastructure() {
 
     FAILED_STEPS=()
 
-    run_step "Storage (setup_storage)" setup_storage
+    # The installer's relative order: ingress, secrets, storage, backup. Storage
+    # must follow secrets: MinIO's manifest carries an ExternalSecret, whose CRD
+    # only exists once setup_secrets has installed External Secrets. In the
+    # other order the ExternalSecret is rejected, MinIO never gets credentials,
+    # and Velero's backup target is that MinIO. test/dr-phases.sh holds DR to
+    # the installer's order.
+    run_step "Ingress: Traefik, cert-manager, issuers (setup_ingress)" setup_ingress
 
     # Optional: restore encrypted secrets BEFORE setup_secrets, because
     # generate-secrets.sh keeps any secret that already exists.
@@ -340,7 +346,7 @@ reinstall_infrastructure() {
     fi
 
     run_step "Secret management: ESO, ClusterSecretStore, generated secrets (setup_secrets)" setup_secrets
-    run_step "Ingress: Traefik, cert-manager, issuers (setup_ingress)" setup_ingress
+    run_step "Storage (setup_storage)" setup_storage
     info "MetalLB is not reinstalled by disaster recovery; run ./setup-v2.sh if the LoadBalancer is missing."
     run_step "Velero (setup_backup)" setup_backup
 
@@ -350,20 +356,17 @@ reinstall_infrastructure() {
 
 # Reinstall the cluster's security posture: the installer's own security,
 # Pod Security Standards, PDB, quota, policy-as-code and NetworkPolicy phases,
-# in the installer's relative order.
+# in the installer's relative order and at the installer's point: after the
+# infrastructure and monitoring, before services. These phases now touch only
+# infrastructure namespaces, which exist by then; each skips a namespace a
+# switched-off toggle never created. Everything that lives in a service's
+# namespace (its Pod Security labels, quota, PDB and policies) comes back with
+# the service itself, through install_service (docs/adr/0009).
 #
-# This runs AFTER services, not with the rest of the infrastructure, because
-# every one of these phases targets namespaces that services create. PDBs and
-# quotas go through kubectl_apply_rendered_file_existing_ns, which skips a
-# namespace that does not exist yet; NetworkPolicies and PSA labels would
-# likewise have nothing to attach to. Running it last is what the installer
-# does and for the same reason.
-#
-# Without this phase a recovered cluster comes back with its services running
-# and no static NetworkPolicies, no Kyverno policies, no PodDisruptionBudgets
-# and no ResourceQuotas -- silently, at the moment they are least likely to be
-# audited. Per-service isolation is not affected: install_service applies each
-# descriptor's own namespace and policies.
+# Without this stage a recovered cluster would come back with no static
+# NetworkPolicies, no Kyverno policies and no infrastructure PDBs, quotas or
+# Pod Security labels -- silently, at the moment they are least likely to be
+# audited.
 reinstall_security() {
     confirm "This will reapply cluster security policies. Continue?"
 
@@ -396,7 +399,7 @@ reinstall_monitoring() {
     report_step_results "Monitoring stack reinstallation"
 }
 
-# Reinstall critical services: setup_core_services covers the core group
+# Reinstall critical services: setup_service_group core covers the core group
 # (Nextcloud included); every other name in CRITICAL_SERVICES installs from
 # its descriptor.
 reinstall_critical_services() {
@@ -413,7 +416,7 @@ reinstall_critical_services() {
         core_names+="$name "
     done
 
-    run_step "Core services: the core group (setup_core_services)" setup_core_services
+    run_step "Core services: the core group (setup_service_group core)" setup_service_group core
 
     local service
     for service in "${services[@]}"; do
@@ -441,9 +444,9 @@ full_recovery() {
     prompt "Recovery Steps:"
     echo "1. Reinstall core infrastructure"
     echo "2. Reinstall monitoring"
-    echo "3. Restore from backup (if available)"
-    echo "4. Reinstall critical services"
-    echo "5. Reapply the security posture"
+    echo "3. Reapply the security posture"
+    echo "4. Restore from backup (if available)"
+    echo "5. Reinstall critical services"
     echo ""
 
     local failed_phases=0
@@ -454,6 +457,10 @@ full_recovery() {
     reinstall_monitoring || failed_phases=$((failed_phases+1))
     sleep 30  # Wait for monitoring
 
+    # The installer's point for these phases: after the infrastructure, before
+    # services. See reinstall_security.
+    reinstall_security || failed_phases=$((failed_phases+1))
+
     if kubectl get namespace "$BACKUP_NAMESPACE" &> /dev/null; then
         list_available_backups || true
         read -r -p "Enter backup name to restore (or press Enter to skip): " backup_name
@@ -463,9 +470,6 @@ full_recovery() {
     fi
 
     reinstall_critical_services || failed_phases=$((failed_phases+1))
-
-    # Last, so every namespace it targets exists. See reinstall_security.
-    reinstall_security || failed_phases=$((failed_phases+1))
 
     info "Check pod status: kubectl get pods -A"
     info "Review log file: $LOG_FILE"

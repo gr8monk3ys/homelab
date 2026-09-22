@@ -15,6 +15,10 @@
 #   kubectl_apply_rendered_file <file>
 #   kubectl_apply_rendered_dir <dir>   non-recursive; namespace.yaml first; skips service.yaml,
 #                                      kustomization.yaml and values files; ServiceMonitors only when the CRD exists
+#   apply_stream_existing_ns <label>   stdin -> apply_stream, minus documents for namespaces that do
+#                                      not exist; never creates a namespace (see its comment)
+#   kubectl_apply_rendered_file_existing_ns <file>
+#   kubectl_apply_rendered_dir_existing_ns <dir>
 #   crd_exists <crd-name>
 #
 # HOMELAB_APPLY_MODE selects the adapter behind apply_stream:
@@ -105,7 +109,9 @@ render_stream() {
     issuer_esc="$(escape_sed_replacement "$CERT_MANAGER_CLUSTER_ISSUER")"
     gitops_repo_url_esc="$(escape_sed_replacement "$GITOPS_REPO_URL")"
 
-    # Order matters: the email and repo URL contain the domain placeholder.
+    # Order matters for the email only: admin@homelab.local contains the domain
+    # placeholder, so it is replaced before the domain. The repo URL does not
+    # contain it (homelab.git, not homelab.local); its position is arbitrary.
     sed \
         -e "s/admin@homelab\\.local/${admin_email_esc}/g" \
         -e "s/https:\\/\\/github\\.com\\/your-username\\/homelab\\.git/${gitops_repo_url_esc}/g" \
@@ -172,10 +178,14 @@ kubectl_apply_rendered_file() {
     render_file "$file" | apply_stream "$(_render_label "$file")"
 }
 
-kubectl_apply_rendered_dir() {
+# _rendered_dir_stream <dir>: every manifest directly in <dir>, rendered, as one
+# stream with namespace.yaml first. Skips service.yaml, kustomization.yaml and
+# values files, and ServiceMonitors when the Prometheus Operator CRD is absent.
+# Prints nothing (and returns 1) when the directory holds no manifest.
+_rendered_dir_stream() {
     local dir="$1"
     if [[ ! -d "$dir" ]]; then
-        error "kubectl_apply_rendered_dir: directory not found: $dir"
+        error "rendered directory not found: $dir"
     fi
 
     local files=()
@@ -195,57 +205,86 @@ kubectl_apply_rendered_dir() {
         files+=("$file")
     done < <(find "$dir" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort)
 
-    if [ ${#files[@]} -eq 0 ]; then
+    [[ ${#files[@]} -gt 0 ]] || return 1
+
+    local f
+    for f in "${files[@]}"; do
+        [[ "$(basename "$f")" == "namespace.yaml" ]] || continue
+        render_file "$f"
+        echo "---"
+    done
+    for f in "${files[@]}"; do
+        [[ "$(basename "$f")" != "namespace.yaml" ]] || continue
+        render_file "$f"
+        echo "---"
+    done
+}
+
+kubectl_apply_rendered_dir() {
+    local dir="$1" stream
+    if ! stream="$(_rendered_dir_stream "$dir")"; then
         warning "No YAML files found under: $dir"
         return 0
     fi
-
-    # Namespaces first, then everything else, in one apply.
-    {
-        local f
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" == "namespace.yaml" ]]; then
-                render_file "$f"
-                echo "---"
-            fi
-        done
-        for f in "${files[@]}"; do
-            if [[ "$(basename "$f")" != "namespace.yaml" ]]; then
-                render_file "$f"
-                echo "---"
-            fi
-        done
-    } | apply_stream "$(_render_label "$dir")/all.yaml"
+    printf '%s\n' "$stream" | apply_stream "$(_render_label "$dir")/all.yaml"
 }
 
-# kubectl_apply_rendered_file_existing_ns <file>: like kubectl_apply_rendered_file,
-# but documents whose namespace does not exist yet are skipped with a warning
-# (a disabled Helm release or service group never created it). Render mode
-# applies everything.
-kubectl_apply_rendered_file_existing_ns() {
-    local file="$1"
+# apply_stream_existing_ns <label>: apply_stream for a rendered stream that
+# names namespaces the installer may not have created (a switched-off
+# toggle never created them). It never creates a namespace: a Namespace
+# document applies only if that namespace already exists (so labelling one
+# cannot conjure it), and a namespaced document only if its namespace exists.
+# Cluster-scoped documents always apply. What is skipped is named in a
+# warning. Render mode applies everything, so CI still sees every document.
+apply_stream_existing_ns() {
+    local label="$1" stream
+    stream="$(cat)"
     if [[ "$HOMELAB_APPLY_MODE" == "render" ]]; then
-        kubectl_apply_rendered_file "$file"
+        printf '%s\n' "$stream" | apply_stream "$label"
         return 0
     fi
-    local existing ns present="" missing=()
+
+    local existing named ns missing=()
     existing=" $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}') "
-    for ns in $(render_file "$file" | yq -r '.metadata.namespace // ""' | sort -u); do
-        [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || continue   # drops yq's --- separators
-        if [[ "$existing" == *" $ns "* ]]; then
-            present+="${present:+|}$ns"
-        else
-            missing+=("$ns")
-        fi
+    named="$(printf '%s\n' "$stream" | yq -N -r \
+        'select(. != null and .kind != null) | select(.kind == "Namespace") | .metadata.name // ""'
+        printf '%s\n' "$stream" | yq -N -r \
+        'select(. != null and .kind != null) | select(.kind != "Namespace") | .metadata.namespace // ""')"
+    for ns in $(printf '%s\n' "$named" | sort -u); do
+        [[ "$existing" == *" $ns "* ]] || missing+=("$ns")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        warning "$file: skipping documents for namespaces that do not exist: ${missing[*]}"
+        warning "$label: skipping documents for namespaces that do not exist: ${missing[*]}"
         warning "Re-run ./setup-v2.sh after enabling the toggles that create them."
     fi
-    if [[ -z "$present" ]]; then
-        warning "$file: nothing to apply yet"
+
+    local regex filtered
+    regex="^($(printf '%s' "${existing# }" | sed 's/ $//; s/ /|/g'))\$"
+    filtered="$(printf '%s\n' "$stream" | NS_RE="$regex" yq '
+        select(. != null and .kind != null) |
+        select(
+            (.kind == "Namespace" and (.metadata.name | test(strenv(NS_RE)))) or
+            (.kind != "Namespace" and (((.metadata.namespace // "") == "") or (.metadata.namespace | test(strenv(NS_RE)))))
+        )')"
+    if [[ -z "${filtered//[[:space:]-]/}" ]]; then
+        warning "$label: nothing to apply yet"
         return 0
     fi
-    render_file "$file" | yq "select(.metadata.namespace | test(\"^($present)\$\"))" | \
-        apply_stream "$(_render_label "$file")"
+    printf '%s\n' "$filtered" | apply_stream "$label"
+}
+
+# kubectl_apply_rendered_file_existing_ns <file> / kubectl_apply_rendered_dir_existing_ns <dir>:
+# the file and directory appliers, through apply_stream_existing_ns.
+kubectl_apply_rendered_file_existing_ns() {
+    local file="$1"
+    render_file "$file" | apply_stream_existing_ns "$(_render_label "$file")"
+}
+
+kubectl_apply_rendered_dir_existing_ns() {
+    local dir="$1" stream
+    if ! stream="$(_rendered_dir_stream "$dir")"; then
+        warning "No YAML files found under: $dir"
+        return 0
+    fi
+    printf '%s\n' "$stream" | apply_stream_existing_ns "$(_render_label "$dir")/all.yaml"
 }

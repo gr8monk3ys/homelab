@@ -50,11 +50,8 @@ INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
 # Optional: include an encrypted backup of secret values in backup_configuration()
 BACKUP_SECRETS="${BACKUP_SECRETS:-false}"
 
-# Pod Security Admission labeling mode:
-# - off: skip applying PSA labels
-# - audit: enforce=privileged, audit/warn set to desired target levels (safe migration)
-# - enforce: enforce desired levels (may block non-compliant pods)
-POD_SECURITY_MODE="${POD_SECURITY_MODE:-audit}"
+# POD_SECURITY_MODE (off|audit|enforce, default audit) is defined with the
+# transform that applies it, pod_security_mode_filter in scripts/lib/services.sh.
 
 # Optional policy-as-code engine (Kyverno) + policy mode.
 KYVERNO_POLICY_MODE="${KYVERNO_POLICY_MODE:-audit}" # audit|enforce
@@ -150,14 +147,9 @@ install_tools() {
         rm -rf "$tmpdir"
     fi
 
-
     success "Tools installation completed"
 }
 
-# Chart repos are not fetched up front: helm_release (scripts/lib/helm.sh)
-# adds and updates the one repo a chart needs, so an unreachable repo fails
-# only that release and a run with every INSTALL_* Helm toggle off needs no
-# repo at all. Kept as a phase name for install_tools and disaster recovery.
 setup_secrets() {
     log "Setting up secret management..."
 
@@ -391,26 +383,22 @@ setup_logging() {
     success "Logging setup completed"
 }
 
-setup_core_services() {
-    log "Setting up core services..."
-
-    # Authelia (first), Nextcloud (kind: helm), Vaultwarden, Gitea, Homepage
-    # (last), plus opt-ins such as Keycloak: all from their descriptors.
-    install_service_group core
-
-    success "Core services setup completed"
-}
-
-setup_network_services() {
-    log "Setting up network services..."
-    install_service_group network
-    success "Network services setup completed"
+# setup_service_group <group>: one phase per row of SERVICE_GROUPS
+# (scripts/lib/services.sh); main() runs them in that table's order. Install
+# order within a group is each descriptor's priority. Disaster recovery calls
+# `setup_service_group core` by name.
+setup_service_group() {
+    local group="$1"
+    log "Setting up the $group service group..."
+    install_service_group "$group"
+    success "The $group service group setup completed"
 }
 
 # Wildcard DNS is cluster-wide configuration that happens to be applied through
 # Pi-hole, not a step in installing the network group. It runs as its own phase
-# so setup_network_services is nothing but its group, and so this can be re-run
-# on its own. It needs the network group installed, so it follows it in main().
+# so the network group's phase is nothing but its group, and so this can be
+# re-run on its own. It needs the network group installed, so main() runs it
+# after the group loop.
 setup_wildcard_dns() {
     if [[ "$ENABLE_NETWORK_SERVICES" != "true" ]]; then
         return 0
@@ -422,23 +410,19 @@ setup_wildcard_dns() {
         return 0
     fi
 
+    # The wildcard record points *.$DOMAIN at Traefik's LoadBalancer IP. With
+    # Traefik switched off there is no such IP to wait for.
+    if ! infra_enabled traefik; then
+        warning "Traefik is not installed (INSTALL_TRAEFIK=false); skipping wildcard DNS."
+        return 0
+    fi
+
     log "Configuring wildcard DNS..."
-    bash scripts/configure-wildcard-dns.sh || warning "Wildcard DNS configuration failed (continuing)."
-    success "Wildcard DNS configuration completed"
-}
-
-setup_development_services() {
-    log "Setting up development services..."
-
-    install_service_group dev
-
-    success "Development services setup completed"
-}
-
-setup_content_services() {
-    log "Setting up content services..."
-    install_service_group content
-    success "Content services setup completed"
+    if bash scripts/configure-wildcard-dns.sh; then
+        success "Wildcard DNS configuration completed"
+    else
+        warning "Wildcard DNS configuration failed (continuing); run ./scripts/configure-wildcard-dns.sh once Traefik has an IP."
+    fi
 }
 
 setup_loadbalancer() {
@@ -504,11 +488,12 @@ setup_security() {
 setup_network_policies() {
     log "Setting up network policies for service isolation..."
 
-    # Every static policy in the directory, namespace.yaml first. The
-    # per-namespace templates under templates/ are not applied here: a
-    # descriptor names the ones it wants and netpol.sh renders those, and
-    # kubectl_apply_rendered_dir is maxdepth 1, so it leaves them alone.
-    kubectl_apply_rendered_dir kubernetes/security/network-policies
+    # The static policies for infrastructure namespaces, skipping any whose
+    # namespace a switched-off toggle never created. A service's own policies
+    # live in its directory and install with it (docs/adr/0009); the
+    # per-namespace templates under templates/ are rendered by netpol.sh, and
+    # the directory applier is maxdepth 1, so it leaves them alone.
+    kubectl_apply_rendered_dir_existing_ns kubernetes/security/network-policies
 
     success "Network policies setup completed"
 }
@@ -532,25 +517,20 @@ setup_resource_quotas() {
 }
 
 setup_pod_security_standards() {
-    log "Setting up Pod Security Standards for namespaces..."
+    log "Setting up Pod Security Standards for infrastructure namespaces..."
 
-    case "$POD_SECURITY_MODE" in
-        off)
-            warning "POD_SECURITY_MODE=off; skipping Pod Security Admission labels."
-            return 0
-            ;;
-        audit)
-            kubectl_apply_rendered_file kubernetes/security/pod-security-standards-audit.yaml
-            ;;
-        enforce)
-            kubectl_apply_rendered_file kubernetes/security/pod-security-standards-enforce.yaml
-            ;;
-        *)
-            error "Invalid POD_SECURITY_MODE: $POD_SECURITY_MODE (expected: off|audit|enforce)"
-            ;;
-    esac
+    if [[ "$POD_SECURITY_MODE" == "off" ]]; then
+        warning "POD_SECURITY_MODE=off; skipping Pod Security Admission labels."
+        return 0
+    fi
 
-    success "Pod Security Standards setup completed"
+    # Infrastructure namespaces only: a service's namespace.yaml carries its
+    # own levels, and install_service applies the same transform to it. Labels
+    # a namespace only if it exists; never creates one.
+    render_file kubernetes/security/pod-security-standards.yaml | pod_security_mode_filter | \
+        apply_stream_existing_ns kubernetes/security/pod-security-standards.yaml
+
+    success "Pod Security Standards setup completed (mode: $POD_SECURITY_MODE)"
 }
 
 setup_policy_as_code() {
@@ -576,41 +556,6 @@ setup_policy_as_code() {
     esac
 
     success "Kyverno policy engine setup completed"
-}
-
-setup_media_services() {
-    log "Setting up media services..."
-    install_service_group media
-    success "Media services setup completed"
-}
-
-setup_ai_services() {
-    log "Setting up AI services..."
-    install_service_group ai
-    success "AI services setup completed"
-}
-
-setup_productivity_services() {
-    log "Setting up productivity services..."
-    install_service_group productivity
-    success "Productivity services setup completed"
-}
-
-setup_home_services() {
-    log "Setting up home automation services..."
-    install_service_group home
-    success "Home automation services setup completed"
-}
-
-setup_communication_services() {
-    log "Setting up communication services..."
-    install_service_group communication
-    success "Communication services setup completed"
-}
-
-setup_monitoring_apps() {
-    # Opt-in services that live next to the monitoring stack (e.g. Gatus).
-    install_service_group monitoring
 }
 
 setup_gitops() {
@@ -654,15 +599,12 @@ run_health_checks() {
     # enabled infrastructure piece and catalogue service, from the same lists
     # the installer used.
     log "Running health checks..."
-    services_report_failures || true
     health_report --all --enabled-only || \
         warning "Some pieces are not ready yet (see the table above); re-run ./scripts/validate-setup.sh later."
 }
 
 get_access_info() {
     log "Retrieving access information..."
-    echo ""
-    echo "🎉 Homelab setup completed successfully!"
     echo ""
     access_summary
     echo ""
@@ -746,43 +688,47 @@ main() {
 
     # Platform services
     setup_backup
+    setup_monitoring
+    setup_logging
+
+    # Security posture for the infrastructure namespaces, now that they all
+    # exist: CrowdSec, Pod Security labels, PDBs, quotas, Kyverno and the static
+    # NetworkPolicies. Each skips a namespace a switched-off toggle never created
+    # and never creates one. Everything that lives in a service's namespace
+    # (its labels, quota, PDB, policies) installs with that service instead
+    # (docs/adr/0009), so none of this waits for the services below. Disaster
+    # recovery runs the same phases at the same point.
     setup_security
     setup_pod_security_standards
     setup_pod_disruption_budgets
     setup_resource_quotas
     setup_policy_as_code
-    setup_monitoring
-    setup_logging
-
-    # Applications: every kubernetes/services/<name>/service.yaml, by group.
-    # One phase per row of SERVICE_GROUPS (scripts/lib/services.sh), in that
-    # table's order, except the logging group: its one service (Loki) is
-    # installed by setup_logging above, which has to run before the groups
-    # that log into it. Each phase is a wrapper so disaster recovery can
-    # re-run one by name (scripts/disaster-recovery.sh).
-    setup_core_services
-    setup_media_services
-    setup_network_services
-    setup_wildcard_dns
-    setup_development_services
-    setup_content_services
-    setup_ai_services
-    setup_productivity_services
-    setup_home_services
-    setup_communication_services
-    setup_monitoring_apps
-
-    # Static NetworkPolicies target service namespaces, so they come after the
-    # services that create those namespaces. Per-namespace isolation was
-    # already applied by install_service from each descriptor.
     setup_network_policies
+
+    # Applications: every kubernetes/services/<name>/service.yaml, one phase per
+    # row of SERVICE_GROUPS (scripts/lib/services.sh), in that table's order,
+    # except the logging group: its one service (Loki) is installed by
+    # setup_logging above, which has to run before the groups that log into it.
+    local group
+    for group in $(service_group_names); do
+        if [[ "$group" == "logging" ]]; then
+            continue
+        fi
+        setup_service_group "$group"
+    done
+    setup_wildcard_dns
 
     setup_gitops
     run_health_checks
     backup_configuration
     get_access_info
 
-    success "Enhanced homelab setup completed successfully!"
+    # One failed service does not stop the rest (install_service_group), but
+    # the run is not a success either: list them and exit non-zero.
+    if ! services_report_failures; then
+        error "Setup finished, but ${#SERVICE_INSTALL_FAILURES[@]} service(s) did not install (listed above). The rest is installed; re-running ./setup-v2.sh is safe."
+    fi
+    success "🎉 Enhanced homelab setup completed successfully!"
     log "Total setup time: $SECONDS seconds"
 }
 

@@ -56,8 +56,8 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 | Velero | `INSTALL_VELERO` (true) | Backup schedules below |
 | ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
 | CrowdSec | always | Agent + Traefik bouncer, wired into the request path: Traefik writes the access logs the agent reads, and the bouncer middleware is enforced on the `websecure` entrypoint |
-| NetworkPolicies | always | Per-namespace isolation is declared in each service's `service.yaml` (`networkPolicies:`, rendered from `kubernetes/security/network-policies/templates/` by `scripts/lib/netpol.sh`); infrastructure namespaces, Nextcloud and the finer per-pod DB/egress rules stay in `kubernetes/security/network-policies/*.yaml` |
-| Pod Security Admission | `POD_SECURITY_MODE` (audit) | `audit` warns only; set `enforce` to block non-compliant pods |
+| NetworkPolicies | always | Per-namespace isolation is declared in each service's `service.yaml` (`networkPolicies:`, rendered from `kubernetes/security/network-policies/templates/` by `scripts/lib/netpol.sh`); a service's own per-pod and cross-namespace rules are in its `networkpolicies.yaml`; only infrastructure-namespace rules stay in `kubernetes/security/network-policies/*.yaml` (ADR-0009) |
+| Pod Security Admission | `POD_SECURITY_MODE` (audit) | Applies to every namespace: each service's levels are in its `namespace.yaml`, infrastructure's in `kubernetes/security/pod-security-standards.yaml`. `audit` warns only; set `enforce` to block non-compliant pods once the warnings are clean (`docs/runbooks/hardening.md`) |
 | Kyverno | `INSTALL_KYVERNO` (false) | Policy sets in `kubernetes/policy/kyverno/` (audit and enforce variants) |
 
 Every Helm-installed piece above is one row of `HELM_INFRA_RELEASES` in
@@ -186,9 +186,17 @@ are preserved on the `archive/legacy` branch.
 - Every credential flows `generate-secrets.sh` → `secrets` namespace →
   ExternalSecret → app namespace. If ESO is down, new pods can't get secrets.
 - Databases are a separate Deployment per app (Postgres for Immich/Gitea/n8n
-  etc., MySQL for Nextcloud, Redis where needed) — never sidecars. Each has
-  its own PVC and `strategy: Recreate`, so a rolling update never puts a
-  second writer on a ReadWriteOnce volume.
+  etc., Redis where needed) — never sidecars — each with its own PVC. The one
+  exception to "Deployment" is Nextcloud's MySQL, which comes from the Bitnami
+  subchart of `helm/nextcloud/` and is that chart's StatefulSet.
+- Every single-replica Deployment that mounts a ReadWriteOnce volume,
+  database or not, uses `strategy: Recreate`. ReadWriteOnce limits a volume
+  to one node, not one pod, so a rolling update would either run two writers
+  on the same node for a moment or stall when the new pod is scheduled
+  elsewhere; `./scripts/services.sh check` enforces the rule. Two Deployments
+  that share one ReadWriteOnce claim (wireguard and wireguard-ui, the two
+  calibre-web Deployments) carry required `podAffinity` so they land on the
+  same node.
 - Open WebUI depends on Ollama; the arr-stack shares a common storage PVC.
 
 ## Backups
@@ -225,10 +233,12 @@ dominate storage.
 
 ## Adding a new service
 
-Create `kubernetes/services/<name>/` with `namespace.yaml`, the workload
-manifests (plus `pdb.yaml` and `servicemonitor.yaml` where warranted), an
-ExternalSecret for credentials and a matching entry in
-`scripts/generate-secrets.sh`, and a `service.yaml` descriptor:
+Create `kubernetes/services/<name>/` with `namespace.yaml` (carrying the
+namespace's Pod Security labels at their enforce-mode levels), the workload
+manifests (plus `resourcequota.yaml`, `pdb.yaml`, `networkpolicies.yaml` and
+`servicemonitor.yaml` where warranted), an ExternalSecret for credentials and
+a matching `secret` row in `scripts/lib/secrets.sh`, and a `service.yaml`
+descriptor:
 
 ```yaml
 namespace: <name>
@@ -252,9 +262,18 @@ fetches from the internet (feeds, models, webhooks); it excludes private
 ranges, so it never opens the LAN or other namespaces. Leave the key out for
 a service that must talk to the LAN or the Kubernetes API (Home Assistant,
 Homepage) until a template expresses that. An unknown template name fails
-the install and `./scripts/ci.sh`. Cross-namespace rules (one app reaching
-another's database) are not templates; add them to
-`kubernetes/security/network-policies/*.yaml`.
+the install and `./scripts/ci.sh`. Per-pod and cross-namespace rules (one app
+reaching another's database) are not templates; put them in the service's
+own `networkpolicies.yaml`. A NetworkPolicy belongs to the service whose
+namespace it sits in, even when its selectors name other namespaces.
+
+Everything applied into the service's namespace lives in the service's
+directory and is applied by `install_service` when the service installs:
+the Pod Security labels in `namespace.yaml`, `resourcequota.yaml`,
+`pdb.yaml` and `networkpolicies.yaml`. Nothing goes into
+`kubernetes/security/`, which holds infrastructure namespaces only;
+`./scripts/services.sh check` fails if a file there names a service
+namespace (ADR-0009).
 
 Nothing in `setup-v2.sh` changes. `./scripts/ci.sh` fails on a directory
 without a descriptor, and renders every service through the same code path

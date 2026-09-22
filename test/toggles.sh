@@ -1,34 +1,39 @@
 #!/usr/bin/env bash
 # Assertions on the toggle algebra: which services install under which
-# ENABLE_*/INSTALL_*/OPTIN_SERVICES settings.
+# ENABLE_*/INSTALL_*/OPTIN_SERVICES settings, and which infrastructure pieces
+# the INSTALL_*/ENABLE_GITOPS toggles switch on.
 #
 # CI's render step calls `services.sh render` with no names, and that branch
 # renders every descriptor regardless of toggle, so it proves nothing about
 # what would actually install. This file is the gate for that: it drives the
-# public interface of scripts/lib/services.sh (service_enabled,
-# services_in_group, service_group_toggle, service_group_names) and pins the
-# numbers CLAUDE.md and the README state.
+# public interface of scripts/lib/services.sh (services_all, service_field,
+# service_enabled, services_in_group, service_group_names,
+# service_group_field, service_group_toggle) and of scripts/lib/health.sh
+# (infra_enabled), and pins the numbers CLAUDE.md and the README state.
 #
 # No cluster, no framework, no tools beyond yq (which reads the descriptors).
 # Run it directly or through scripts/ci.sh.
 set -uo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The toggles are read from the environment, so no toggle may leak in.
-for _var in ENABLE_MEDIA_SERVICES ENABLE_NETWORK_SERVICES ENABLE_DEV_SERVICES \
-            ENABLE_CONTENT_SERVICES ENABLE_AI_SERVICES ENABLE_PRODUCTIVITY_SERVICES \
-            ENABLE_HOME_SERVICES ENABLE_COMMUNICATION_SERVICES INSTALL_MONITORING \
-            INSTALL_LOGGING OPTIN_SERVICES; do
-    unset "$_var"
-done
-unset _var
-
 # shellcheck source=scripts/lib/common.sh
 source "$TEST_DIR/../scripts/lib/common.sh"
 # shellcheck source=scripts/lib/render.sh
 source "$TEST_DIR/../scripts/lib/render.sh"
 # shellcheck source=scripts/lib/services.sh
 source "$TEST_DIR/../scripts/lib/services.sh"
+# shellcheck source=scripts/lib/health.sh
+source "$TEST_DIR/../scripts/lib/health.sh"
+
+# The toggles are read from the environment at call time, so none may leak in:
+# every group toggle SERVICE_GROUPS names, the infrastructure toggles asserted
+# below, and the opt-in list (services.sh already copied it when sourced).
+for _grp in $(service_group_names); do
+    _var="$(service_group_field "$_grp" toggle)"
+    [[ "$_var" == "-" ]] || unset "$_var"
+done
+unset INSTALL_KYVERNO ENABLE_GITOPS _grp _var
+OPTIN_SERVICES=""
 
 FAILURES=0
 ok()   { echo "  ok    $*"; }
@@ -122,6 +127,25 @@ for svc in $(services_in_group media); do
 done
 assert_eq "$((default_enabled - media_enabled))" \
     "$(ENABLE_MEDIA_SERVICES=false enabled_count)" "default with the media group off"
+
+echo "infrastructure toggles:"
+
+# infra_enabled <piece> as a word, for assert_eq.
+infra_state() { if infra_enabled "$1"; then echo true; else echo false; fi; }
+
+# Toggles with a default of false in their table row.
+assert_eq "false" "$(infra_state kyverno)"                          "kyverno by default"
+assert_eq "true"  "$(INSTALL_KYVERNO=true infra_state kyverno)"     "kyverno with INSTALL_KYVERNO=true"
+assert_eq "false" "$(infra_state argocd)"                           "argocd by default"
+assert_eq "true"  "$(ENABLE_GITOPS=true infra_state argocd)"        "argocd with ENABLE_GITOPS=true"
+# No toggle column: the installer always brings these up.
+for piece in local-path minio crowdsec; do
+    assert_eq "true" "$(infra_state "$piece")"                      "$piece (no toggle)"
+    assert_eq "true" "$(INSTALL_KYVERNO=false ENABLE_GITOPS=false infra_state "$piece")" \
+        "$piece with unrelated toggles off"
+done
+# A piece that is not in the table is not infrastructure.
+assert_eq "false" "$(infra_state nosuchpiece)"                      "an unknown piece"
 
 if [[ $FAILURES -ne 0 ]]; then
     echo "toggle algebra: $FAILURES assertion(s) failed"

@@ -14,18 +14,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: traefik
 ---
-# Pi-hole - DNS (critical for name resolution)
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: pihole-pdb
-  namespace: pihole
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: pihole
----
 # CrowdSec Agent - Security monitoring
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -88,27 +76,3 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: external-secrets
----
-# Authelia - Authentication (critical for protected services)
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: authelia-pdb
-  namespace: authelia
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: authelia
----
-# Vaultwarden - Password manager (critical for users)
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: vaultwarden-pdb
-  namespace: vaultwarden
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: vaultwarden

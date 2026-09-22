@@ -10,22 +10,17 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$SCRIPT_DIR/lib/common.sh"
 
-die() {
-  log "ERROR: $*"
-  exit 1
-}
-
 AGE_KEY_FILE="${AGE_KEY_FILE:-$REPO_ROOT/local/sops/age.key}"
 ARGOCD_NS="${ARGOCD_NS:-argocd}"
 
 main() {
   require_cmd kubectl
 
-  kubectl get ns "$ARGOCD_NS" >/dev/null 2>&1 || die "Namespace $ARGOCD_NS not found (install ArgoCD first)"
-  kubectl -n "$ARGOCD_NS" get deploy argocd-repo-server >/dev/null 2>&1 || die "argocd-repo-server deployment not found"
+  kubectl get ns "$ARGOCD_NS" >/dev/null 2>&1 || error "Namespace $ARGOCD_NS not found (install ArgoCD first)"
+  kubectl -n "$ARGOCD_NS" get deploy argocd-repo-server >/dev/null 2>&1 || error "argocd-repo-server deployment not found"
 
   if [[ ! -f "$AGE_KEY_FILE" ]]; then
-    die "Missing age key file: $AGE_KEY_FILE (run: ./scripts/sops-bootstrap.sh)"
+    error "Missing age key file: $AGE_KEY_FILE (run: ./scripts/sops-bootstrap.sh)"
   fi
 
   log "Creating/updating Secret ${ARGOCD_NS}/sops-age ..."

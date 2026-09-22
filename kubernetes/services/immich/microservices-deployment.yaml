@@ -8,6 +8,11 @@ metadata:
     app: immich-microservices
 spec:
   replicas: 1
+  # Single writer on a ReadWriteOnce volume: RWO pins the volume to one node,
+  # so a rolling update would briefly run two writers there, or stall across
+  # nodes. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: immich-microservices
@@ -16,6 +21,14 @@ spec:
       labels:
         app: immich-microservices
     spec:
+      # Shares the ReadWriteOnce uploads and library PVCs with immich-server: must run on its node.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: immich-server
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

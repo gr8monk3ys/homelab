@@ -179,7 +179,8 @@ deploy_core_services() {
     for service in "${services[@]}"; do
         if [ -d "$HOMELAB_DIR/kubernetes/services/$service" ]; then
             # Same code path as setup-v2.sh: rendered, ordered, waited on.
-            if ! (install_service "$service"); then
+            run_isolated install_service "$service"
+            if [[ "$RUN_ISOLATED_STATUS" -ne 0 ]]; then
                 log "WARNING: Failed to deploy $service"
                 failed_services+=("$service")
             fi

@@ -23,8 +23,12 @@ The category a service belongs to (core, media, network, content, productivity, 
 _Avoid_: category, stack, tier
 
 **Toggle**:
-An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece. Nothing restates a default.
+An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece, and, for ArgoCD (not a Helm release), the `argocd` row of `_health_infra_local_spec` in `scripts/lib/health.sh` (`ENABLE_GITOPS`). The other rows there (local-path, MinIO, CrowdSec) have no toggle: those pieces are always installed. Nothing restates a default.
 _Avoid_: flag, feature flag, option
+
+**Service namespace**:
+The namespace a service's descriptor names. Everything applied into it lives in the service's directory: the Namespace with its Pod Security labels (`namespace.yaml`), its quota (`resourcequota.yaml`), its disruption budgets (`pdb.yaml`) and its NetworkPolicies (`networkPolicies:` templates plus `networkpolicies.yaml`), all applied by `install_service` when the service installs. Nothing under `kubernetes/security/` names one (ADR-0009).
+_Avoid_: app namespace, tenant
 
 **Opt-in service**:
 A service whose descriptor says `optin: true`; it installs only when named in `OPTIN_SERVICES`, even if its group is on.
@@ -47,7 +51,7 @@ _Avoid_: template, substitute
 _Avoid_: bootstrap script, deploy script
 
 **Installer phase**:
-One `setup_*` function in the installer that brings up one piece of infrastructure or one service group; disaster recovery re-runs them.
+One `setup_*` function in the installer that brings up one piece of infrastructure, or `setup_service_group <group>` for one service group; disaster recovery re-runs them in the installer's order.
 _Avoid_: stage, section
 
 **Infrastructure**:

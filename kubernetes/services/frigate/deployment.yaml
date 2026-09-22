@@ -9,9 +9,9 @@
 #   - /media/frigate holds recordings. 200Gi is a starting point for two
 #     cameras at medium retention; size it for your cameras.
 #   - MQTT points at Mosquitto in the home-assistant namespace, so
-#     ENABLE_HOME_SERVICES=true must have installed it. The cross-namespace
-#     NetworkPolicy pair lives in
-#     kubernetes/security/network-policies/cross-namespace-policies.yaml.
+#     ENABLE_HOME_SERVICES=true must have installed it. Frigate's egress half
+#     of the cross-namespace NetworkPolicy pair is networkpolicies.yaml here;
+#     the ingress half is kubernetes/services/home-assistant/networkpolicies.yaml.
 #
 # See docs/runbooks/storage-and-hardware.md.
 apiVersion: v1

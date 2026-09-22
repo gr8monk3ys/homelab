@@ -89,6 +89,11 @@ metadata:
   namespace: gitea
 spec:
   replicas: 1
+  # Single writer on a ReadWriteOnce volume: RWO pins the volume to one node,
+  # so a rolling update would briefly run two writers there, or stall across
+  # nodes. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: gitea
