@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: ollama
 namespace: ollama
 group: ai
 url: ai

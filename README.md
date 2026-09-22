@@ -1,11 +1,17 @@
 # Homelab
 
 **Status: verified against a live Kubernetes API, not yet on a real node.**
-Every check in `scripts/ci.sh` passes, every service in the catalogue has been
-applied through the installer's own code path to a real `kube-apiserver`
-(with the External Secrets, Traefik, cert-manager and Prometheus Operator CRDs
-loaded) and the installer has run end to end against it with the Helm-based
-infrastructure disabled. What has not happened yet: pods scheduling on a real
+Every check in `scripts/ci.sh` passes, and 58 of the 64 services in the
+catalogue have been applied through the installer's own code path to a real
+`kube-apiserver` (with the External Secrets, Traefik, cert-manager and
+Prometheus Operator CRDs loaded), with the installer running end to end
+against it. That run had the Helm-based infrastructure disabled, which is
+exactly why 58 and not 64: the six `kind: helm` services — `longhorn`,
+`nextcloud`, `node-feature-discovery`, `nvidia-device-plugin`,
+`tailscale-operator`, `volsync` — were never applied, and the Helm install
+path itself is unverified. `helm_release` in `scripts/lib/helm.sh` installs
+those six services and all nine infrastructure charts, and it has never run
+against an API server. What has not happened yet: pods scheduling on a real
 K3s node and staying up. Deploy a subset, verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
@@ -55,7 +61,8 @@ No credential is committed, not as a default and not as an example. Two paths:
   gitignored.
 
 `scripts/validate-setup.sh` greps the rendered cluster state for hardcoded
-passwords as one of its checks. `docs/credentials.md` lists every secret name.
+passwords as one of its checks. `docs/credentials.md` documents how to read any of them:
+`scripts/generate-secrets.sh --list` prints the whole table.
 
 ## Stack
 

@@ -19,17 +19,12 @@ die() {
   exit 1
 }
 
-require_cmd() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    if [[ "${CI:-}" == "true" ]]; then
-      die "Missing required command in CI: $cmd"
-    fi
-    warn "Missing command: $cmd (skipping related checks)"
-    return 1
-  fi
-  return 0
-}
+# The dependency check is require_cmd from scripts/lib/common.sh. Outside CI a
+# missing tool only skips the checks that need it; in CI it is an error, so
+# REQUIRE_CMD_SOFT (which warns and returns 1) is on everywhere but CI.
+if [[ "${CI:-}" != "true" ]]; then
+  export REQUIRE_CMD_SOFT=true
+fi
 
 run_bash_syntax() {
   log "Bash syntax check (bash -n)..."
@@ -50,7 +45,7 @@ run_bash_syntax() {
 }
 
 run_shellcheck() {
-  if ! require_cmd shellcheck; then
+  if ! require_cmd shellcheck "skipping related checks"; then
     return 0
   fi
 
@@ -71,7 +66,7 @@ run_shellcheck() {
 }
 
 run_yamllint() {
-  if ! require_cmd yamllint; then
+  if ! require_cmd yamllint "skipping related checks"; then
     return 0
   fi
 
@@ -87,7 +82,7 @@ run_yamllint() {
 }
 
 run_kubeconform() {
-  if ! require_cmd kubeconform; then
+  if ! require_cmd kubeconform "skipping related checks"; then
     return 0
   fi
 
@@ -127,7 +122,7 @@ run_services_check() {
   # The service catalogue is the installer's interface, so CI tests through it:
   # every kubernetes/services/<name>/ has a valid service.yaml, and every service
   # renders (with non-default placeholders) into manifests kubeconform accepts.
-  if ! require_cmd yq; then
+  if ! require_cmd yq "skipping related checks"; then
     return 0
   fi
 
@@ -137,10 +132,15 @@ run_services_check() {
   log "argocd check (generated app-of-apps is current)..."
   "$REPO_ROOT/scripts/services.sh" argocd --check
 
-  log "secrets check (producer vs ExternalSecret consumers)..."
+  log "secrets check (producer vs ExternalSecret consumers, credentials in manifests)..."
   "$REPO_ROOT/scripts/secrets-check.sh"
 
-  if ! require_cmd kubeconform; then
+  # What actually installs under the toggles; the render below deliberately
+  # ignores them, so this is the only gate on the toggle algebra.
+  log "toggle algebra (service_enabled under the ENABLE_*/OPTIN_SERVICES toggles)..."
+  "$REPO_ROOT/test/toggles.sh"
+
+  if ! require_cmd kubeconform "skipping related checks"; then
     return 0
   fi
 
@@ -192,7 +192,7 @@ run_services_check() {
 }
 
 run_helm_lint() {
-  if ! require_cmd helm; then
+  if ! require_cmd helm "skipping related checks"; then
     return 0
   fi
 
@@ -224,7 +224,7 @@ run_helm_lint() {
 }
 
 run_helm_remote_smoke() {
-  if ! require_cmd helm; then
+  if ! require_cmd helm "skipping related checks"; then
     return 0
   fi
 
@@ -256,7 +256,7 @@ run_helm_remote_smoke() {
 }
 
 run_kustomize_build() {
-  if ! require_cmd kustomize; then
+  if ! require_cmd kustomize "skipping related checks"; then
     return 0
   fi
 

@@ -2,7 +2,6 @@
 # Service descriptor: the install interface read by scripts/lib/services.sh.
 # The NVIDIA device plugin is Helm-chart-managed; it advertises nvidia.com/gpu
 # on nodes where the NVIDIA container toolkit is installed.
-name: nvidia-device-plugin
 namespace: nvidia-device-plugin
 group: core
 optin: true

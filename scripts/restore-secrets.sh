@@ -10,10 +10,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 AGE_IDENTITY_FILE="${AGE_IDENTITY_FILE:-$HOMELAB_DIR/.secrets/agekey.txt}"
 
-require_cmd() {
-  command -v "$1" &>/dev/null || error "Missing required tool: $1"
-}
-
 main() {
   local backup_file="${1:-}"
   if [[ -z "$backup_file" ]]; then

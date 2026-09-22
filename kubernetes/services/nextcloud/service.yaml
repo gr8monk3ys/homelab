@@ -3,7 +3,6 @@
 # Nextcloud is Helm-chart-managed (helm/nextcloud/), so this descriptor names
 # the chart instead of listing manifest steps; install_service renders the
 # values file and calls helm_release (scripts/lib/helm.sh).
-name: nextcloud
 namespace: nextcloud
 group: core
 project: homelab-productivity

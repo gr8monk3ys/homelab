@@ -140,9 +140,11 @@ setup_storage() {
         return 0
     fi
 
-    # Storage + MinIO (kustomize bundle).
-    kubectl apply -k "$HOMELAB_DIR/kubernetes/storage/" || \
+    # Storage + MinIO, through the render seam the installer uses.
+    kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage" || \
         log "WARNING: Failed to apply kubernetes/storage/ (some components may already exist in Kind)"
+    kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/minio" || \
+        log "WARNING: Failed to apply kubernetes/storage/minio/ (some components may already exist in Kind)"
 
     log "Storage setup completed"
 }

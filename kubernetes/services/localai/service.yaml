@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: localai
 namespace: localai
 group: ai
 optin: true

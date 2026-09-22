@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: actual-budget
 namespace: actual-budget
 group: productivity
 optin: true

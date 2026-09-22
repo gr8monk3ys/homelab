@@ -34,7 +34,7 @@ README status line.
 - `scripts/` — secrets, backup/restore, validation, DR; `tools/versions.env` pins every tool and chart version
 - two tables carry "what is enabled": `SERVICE_GROUPS` in `scripts/lib/services.sh` (group → toggle, default, ArgoCD project, in install order) and `HELM_INFRA_RELEASES` in `scripts/lib/helm.sh` (release → chart, namespace, toggle, health check). Add a row; never restate a default elsewhere
 - `CONTEXT.md` — the glossary (service, descriptor, group, opt-in, placeholder, render); `docs/adr/` — decisions; `docs/research/` — research notes
-- `docs/credentials.md` lists every generated secret; `docs/runbooks/` are day-2 docs
+- `docs/credentials.md` documents how to read every generated secret (`generate-secrets.sh --list` is the authoritative list, not the doc); `docs/runbooks/` are day-2 docs
 - `archive/legacy` branch — the removed `legacy/` and `extras/` trees
 
 ## Rules

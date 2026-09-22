@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: drone
 namespace: drone
 group: dev
 url: drone

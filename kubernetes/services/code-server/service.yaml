@@ -1,6 +1,5 @@
 ---
 # Service descriptor: the install interface read by scripts/lib/services.sh.
-name: code-server
 namespace: code-server
 group: dev
 optin: true

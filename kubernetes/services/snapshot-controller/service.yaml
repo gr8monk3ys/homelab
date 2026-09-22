@@ -4,7 +4,6 @@
 # (client/config/crd/*.yaml and deploy/kubernetes/snapshot-controller/*.yaml),
 # with the namespace changed from kube-system to snapshot-controller and a
 # restricted-profile securityContext added; nothing else edited.
-name: snapshot-controller
 namespace: snapshot-controller
 group: core
 optin: true

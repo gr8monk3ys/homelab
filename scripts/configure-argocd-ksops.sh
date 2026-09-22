@@ -15,15 +15,11 @@ die() {
   exit 1
 }
 
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
-}
-
 AGE_KEY_FILE="${AGE_KEY_FILE:-$REPO_ROOT/local/sops/age.key}"
 ARGOCD_NS="${ARGOCD_NS:-argocd}"
 
 main() {
-  need_cmd kubectl
+  require_cmd kubectl
 
   kubectl get ns "$ARGOCD_NS" >/dev/null 2>&1 || die "Namespace $ARGOCD_NS not found (install ArgoCD first)"
   kubectl -n "$ARGOCD_NS" get deploy argocd-repo-server >/dev/null 2>&1 || die "argocd-repo-server deployment not found"

@@ -217,3 +217,35 @@ kubectl_apply_rendered_dir() {
         done
     } | apply_stream "$(_render_label "$dir")/all.yaml"
 }
+
+# kubectl_apply_rendered_file_existing_ns <file>: like kubectl_apply_rendered_file,
+# but documents whose namespace does not exist yet are skipped with a warning
+# (a disabled Helm release or service group never created it). Render mode
+# applies everything.
+kubectl_apply_rendered_file_existing_ns() {
+    local file="$1"
+    if [[ "$HOMELAB_APPLY_MODE" == "render" ]]; then
+        kubectl_apply_rendered_file "$file"
+        return 0
+    fi
+    local existing ns present="" missing=()
+    existing=" $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}') "
+    for ns in $(render_file "$file" | yq -r '.metadata.namespace // ""' | sort -u); do
+        [[ "$ns" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || continue   # drops yq's --- separators
+        if [[ "$existing" == *" $ns "* ]]; then
+            present+="${present:+|}$ns"
+        else
+            missing+=("$ns")
+        fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        warning "$file: skipping documents for namespaces that do not exist: ${missing[*]}"
+        warning "Re-run ./setup-v2.sh after enabling the toggles that create them."
+    fi
+    if [[ -z "$present" ]]; then
+        warning "$file: nothing to apply yet"
+        return 0
+    fi
+    render_file "$file" | yq "select(.metadata.namespace | test(\"^($present)\$\"))" | \
+        apply_stream "$(_render_label "$file")"
+}

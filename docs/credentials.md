@@ -47,10 +47,22 @@ Read the in-namespace copy (only after ESO has synced it):
 kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' | base64 -d && echo
 ```
 
-## Service Cheat Sheet (Source Secrets)
+## The full list
 
-These are the secrets the table creates in the `secrets` namespace
-(`scripts/generate-secrets.sh --list` prints all of them with their keys):
+```bash
+scripts/generate-secrets.sh --list
+```
+
+That is the authoritative answer, and it needs no cluster: it prints all 53
+generated secrets with their keys and policies, straight from the table this
+doc describes. **This page does not list them all** — it never will, because
+a hand-copied list drifts the day someone adds a `secret` line. What follows
+is the handful you actually reach for, with the notes that are not obvious
+from the table.
+
+## Service Cheat Sheet (the ones you reach for)
+
+Thirteen of the 53, in the `secrets` namespace:
 
 - Grafana admin: `grafana-admin` (`username`, `password`)
 - Nextcloud admin: `nextcloud-admin` (`username`, `password`)
@@ -96,6 +108,16 @@ with `kubectl -n home-assistant create secret generic home-assistant-token --fro
 reads, or a consumed name nothing generates, fails the check, as does a
 committed `kubernetes/secrets/sops/secrets/*.sops.yaml` that has no table
 entry (or vice versa). `--list` prints the sets.
+
+**The doc recipe is an escape hatch, not a consumer.** Because
+`script_doc_refs` in that script scans `docs/` alongside `scripts/`, a plain
+`kubectl get secret -n secrets <name>` line *in a Markdown file* counts as a
+consumer and clears the ORPHAN side of the check. So if a secret ever loses
+its real `ExternalSecret`, adding a line to this page would silence the
+check instead of fixing the cluster. Use it only for secrets whose consumer
+genuinely is a human at a terminal (the Gitea bootstrap admin and the
+Authelia plaintext recovery credential above are the real cases). A secret
+an app needs gets an `ExternalSecret`, not a paragraph.
 
 ## Notes
 

@@ -8,6 +8,11 @@ metadata:
     app: paperless-redis
 spec:
   replicas: 1
+  # A database on a ReadWriteOnce volume cannot roll: the new pod would
+  # have to attach the volume the old pod still holds. Recreate stops the
+  # old pod first, so there is never a second writer on the data directory.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: paperless-redis
