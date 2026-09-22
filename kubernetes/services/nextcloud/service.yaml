@@ -16,5 +16,5 @@ values: helm/nextcloud/values.yaml
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 # allow-external-https: Nextcloud fetches apps, updates and federation peers from the internet.
-# The Nextcloud pod -> MySQL rule stays in kubernetes/security/network-policies/ (per-pod, not a template).
+# The Nextcloud pod -> MySQL rules are per-pod, not templates: networkpolicies.yaml in this directory.
 networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

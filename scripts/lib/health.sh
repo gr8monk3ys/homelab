@@ -22,6 +22,14 @@
 #                              carry the namespace, the toggle and the health
 #                              selector; only the four pieces that are not Helm
 #                              releases are described here (ADR-0006).
+#   infra_enabled <piece>      whether the installer brings <piece> up: its
+#                              toggle (defaulted from the row that defines the
+#                              piece), or always, for a piece with no toggle.
+#   infra_toggles_apply        sets every infrastructure toggle to its effective
+#                              value (environment, else the defining row's
+#                              default); setup-v2.sh calls it once at start-up.
+#                              It lives here because this is the one module that
+#                              joins HELM_INFRA_RELEASES and the non-Helm rows.
 #   health_report [--services|--infra|--all] [--enabled-only]
 #                              a table plus a summary line; --enabled-only keeps
 #                              services service_enabled says install and infra

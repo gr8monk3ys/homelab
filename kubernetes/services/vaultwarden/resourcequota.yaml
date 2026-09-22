@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: resource-quota
+  namespace: vaultwarden
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 512Mi
+    limits.cpu: "1"
+    limits.memory: 1Gi
+    persistentvolumeclaims: "2"
+    requests.storage: 10Gi
+    pods: "5"

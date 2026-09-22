@@ -4,3 +4,7 @@ metadata:
   name: pihole
   labels:
     name: pihole
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline

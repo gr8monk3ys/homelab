@@ -117,13 +117,25 @@ Use the interactive helper when you need to restore from Velero backups:
 ./scripts/disaster-recovery.sh
 ```
 
-Its reinstall options (`infrastructure`, `monitoring`, `services`, and steps of
-`full`) run the installer's own phases from `setup-v2.sh` (`setup_storage`,
-`setup_secrets`, `setup_ingress`, `setup_backup`, `setup_monitoring`,
-`setup_logging`, `setup_core_services`), so a recovery cannot diverge from a
-fresh install; the same `INSTALL_*`/`ENABLE_*` toggles apply. MetalLB is not
-reinstalled by DR. `CRITICAL_SERVICES` (default `vaultwarden nextcloud gitea
-home-assistant`) picks the services step 4 brings back.
+Its reinstall options (`infrastructure`, `monitoring`, `security`,
+`services`, and the steps of `full`) run the installer's own phases from
+`setup-v2.sh`, so a recovery cannot diverge from a fresh install; the same
+`INSTALL_*`/`ENABLE_*`/`POD_SECURITY_MODE` settings apply. A full recovery
+runs them in the installer's order:
+
+1. Infrastructure: `setup_ingress`, then the optional secrets restore (below),
+   then `setup_secrets`, `setup_storage` and `setup_backup`.
+2. Monitoring: `setup_monitoring`, `setup_logging`.
+3. Security posture: CrowdSec (`setup_security`), then the Pod Security, PodDisruptionBudget, ResourceQuota,
+   Kyverno and static NetworkPolicy phases. These cover infrastructure
+   namespaces only and skip any that do not exist; a service's own labels,
+   quota, PDB and policies come back with the service (ADR-0009). Also
+   available on its own as `./scripts/disaster-recovery.sh security` or the
+   menu's "Reapply the security posture" item.
+4. Services: `setup_service_group core`, then the services named in
+   `CRITICAL_SERVICES` (default `vaultwarden nextcloud gitea home-assistant`).
+
+MetalLB is not reinstalled by DR.
 
 To include a secrets restore as part of the run (optional; it runs before the
 installer generates secrets, so restored values are kept):

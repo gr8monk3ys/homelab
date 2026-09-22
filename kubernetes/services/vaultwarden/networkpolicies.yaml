@@ -1,0 +1,49 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# Vaultwarden - Password manager, highly sensitive
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vaultwarden-policy
+  namespace: vaultwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: vaultwarden
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow traffic from Traefik ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS for push notifications and updates
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

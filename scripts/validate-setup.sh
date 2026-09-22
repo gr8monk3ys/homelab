@@ -5,8 +5,8 @@ set -euo pipefail
 # decides what "healthy" means per service), plus the checks that are not
 # "is X healthy": node readiness, the storage class, generated-secret count,
 # MetalLB pools, Velero schedules, Helm releases, network-policy count and the
-# hardcoded-password scan of the manifests (scripts/secrets-check.sh, the
-# one scanner, sourced here).
+# hardcoded-password scan of the manifests (scripts/lib/credentials.sh, the
+# one scanner; CI runs the same scan through scripts/secrets-check.sh).
 #
 # Critical (exit 1): cluster unreachable, no Ready node, storage class missing,
 # infrastructure unhealthy, hardcoded passwords. Everything else warns. Only
@@ -16,10 +16,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_COLOR="${LOG_COLOR:-true}"
 
 source "$SCRIPT_DIR/lib/health.sh"
-# The manifest credential scan: one scanner, two callers (CI runs
-# scripts/secrets-check.sh directly; check_security below reports it).
-# shellcheck source=scripts/secrets-check.sh
-source "$SCRIPT_DIR/secrets-check.sh"
+# The manifest credential scan: one scanner, two callers (CI runs it through
+# scripts/secrets-check.sh; check_security below reports it).
+# shellcheck source=scripts/lib/credentials.sh
+source "$SCRIPT_DIR/lib/credentials.sh"
 
 CRITICAL=0
 critical() {
@@ -106,13 +106,14 @@ check_helm_releases() {
 check_security() {
     log "Checking security configuration..."
 
-    # Cluster-free: both scans live in scripts/secrets-check.sh, which CI runs
-    # on its own. Filenames only, never file content.
-    local files_with_passwords secret_files
-    files_with_passwords="$(hardcoded_password_files)"
-    if [ -n "$files_with_passwords" ]; then
-        critical "Potential hardcoded passwords in Kubernetes manifests; files to review:"
-        echo "$files_with_passwords" | head -5
+    # Cluster-free: both scans live in scripts/lib/credentials.sh, which CI
+    # runs through scripts/secrets-check.sh. File and YAML path only, never
+    # a value.
+    local password_findings secret_files
+    password_findings="$(credential_findings)"
+    if [ -n "$password_findings" ]; then
+        critical "Potential hardcoded passwords in Kubernetes manifests; to review:"
+        echo "$password_findings" | head -5
         return 1
     fi
 

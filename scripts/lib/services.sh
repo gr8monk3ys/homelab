@@ -30,16 +30,20 @@
 #   versionVar: FOO_CHART_VERSION  # optional; the tools/versions.env variable pinning the chart
 #
 # Rules the implementation applies to every service:
-#   1. namespace.yaml is applied first.
+#   1. namespace.yaml is applied first, through pod_security_mode_filter:
+#      the file carries the namespace's Pod Security labels at their
+#      enforce-mode levels, and POD_SECURITY_MODE relaxes or removes them.
 #   2. steps run in order; a wait is best-effort (warns, continues).
 #   3. every other *.yaml in the directory is applied afterwards, sorted,
 #      except service.yaml, values files, and ServiceMonitors when the
-#      Prometheus Operator CRD is absent.
+#      Prometheus Operator CRD is absent. This is where everything else that
+#      lives in the service's namespace goes (resourcequota.yaml, pdb.yaml,
+#      networkpolicies.yaml): a service's namespace carries everything
+#      applied into it (docs/adr/0009), so none of it waits on a central file.
 #   4. the descriptor's `networkPolicies:` templates are rendered into the
 #      namespace (scripts/lib/netpol.sh).
-#   A kind: helm service replaces 2 and 3 with one helm_release
-#   (scripts/lib/helm.sh); its directory holds only the descriptor and an
-#   optional namespace.yaml.
+#   A kind: helm service replaces 2 with one helm_release
+#   (scripts/lib/helm.sh), then applies 3 and 4 as usual.
 #
 # Requires scripts/lib/common.sh and scripts/lib/render.sh; sources
 # scripts/lib/helm.sh itself.
@@ -59,6 +63,41 @@ if [[ -z "${HOMELAB_RENDER_SOURCED:-}" ]]; then
 fi
 # shellcheck source=scripts/lib/helm.sh
 source "$HOMELAB_LIB_DIR/helm.sh"
+
+# Pod Security Admission mode, for every namespace the installer labels:
+#   audit    enforce=privileged; audit and warn at the levels the file names
+#            (the safe-migration default: nothing is rejected, violations are
+#            reported; switch to enforce once the warnings are clean)
+#   enforce  the labels exactly as the file names them
+#   off      no Pod Security labels at all
+# The levels themselves live with each namespace (a service's namespace.yaml;
+# kubernetes/security/pod-security-standards.yaml for infrastructure).
+POD_SECURITY_MODE="${POD_SECURITY_MODE:-audit}"
+
+# pod_security_mode_filter: stdin -> stdout. Rewrites the Pod Security labels
+# on every Namespace document for POD_SECURITY_MODE; every other document
+# passes through unchanged. This is not a render placeholder (docs/adr/0008):
+# it applies only to Namespace documents, and only on the way to a cluster.
+pod_security_mode_filter() {
+    case "$POD_SECURITY_MODE" in
+        enforce)
+            cat
+            ;;
+        audit)
+            yq '(select(.kind == "Namespace" and .metadata.labels["pod-security.kubernetes.io/enforce"] != null) | .metadata.labels) |= (
+                    .["pod-security.kubernetes.io/audit"] = (.["pod-security.kubernetes.io/audit"] // .["pod-security.kubernetes.io/enforce"]) |
+                    .["pod-security.kubernetes.io/warn"] = (.["pod-security.kubernetes.io/warn"] // .["pod-security.kubernetes.io/enforce"]) |
+                    .["pod-security.kubernetes.io/enforce"] = "privileged")'
+            ;;
+        off)
+            yq '(select(.kind == "Namespace" and .metadata.labels != null) | .metadata.labels) |=
+                    with_entries(select(.key | test("^pod-security\\.kubernetes\\.io/") | not))'
+            ;;
+        *)
+            error "Invalid POD_SECURITY_MODE: $POD_SECURITY_MODE (expected: off|audit|enforce)"
+            ;;
+    esac
+}
 
 SERVICES_DIR="${SERVICES_DIR:-$HOMELAB_DIR/kubernetes/services}"
 
@@ -227,6 +266,31 @@ service_enabled() {
 # install_service <name|dir>
 # Renders and applies one service per the rules above. In render mode
 # (HOMELAB_APPLY_MODE=render) nothing touches a cluster.
+# _install_service_rest <dir> <has-servicemonitor-crd> "<stepped files>": rule 3,
+# every other manifest in the service directory, in one apply.
+_install_service_rest() {
+    local dir="$1" has_servicemonitor_crd="$2" stepped="$3"
+    local rest=() file base
+    while IFS= read -r file; do
+        base="$(basename "$file")"
+        case "$base" in
+            namespace.yaml|service.yaml|values.yaml|*.values.yaml) continue ;;
+            servicemonitor.yaml|servicemonitor.yml)
+                [[ "$has_servicemonitor_crd" == "true" ]] || continue ;;
+        esac
+        [[ "$stepped" == *" $base "* ]] && continue
+        rest+=("$file")
+    done < <(find "$dir" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort)
+
+    [[ ${#rest[@]} -gt 0 ]] || return 0
+    {
+        for file in "${rest[@]}"; do
+            render_file "$file"
+            echo "---"
+        done
+    } | apply_stream "$(_render_label "$dir")/rest.yaml"
+}
+
 install_service() {
     local name dir desc ns
     dir="$(service_dir "$1")"
@@ -245,14 +309,17 @@ install_service() {
         has_servicemonitor_crd="true"
     fi
 
-    # 1. Namespace first.
+    # 1. Namespace first, its Pod Security labels set for POD_SECURITY_MODE.
     if [[ -f "$dir/namespace.yaml" ]]; then
-        kubectl_apply_rendered_file "$dir/namespace.yaml"
+        render_file "$dir/namespace.yaml" | pod_security_mode_filter | \
+            apply_stream "$(_render_label "$dir/namespace.yaml")"
     fi
 
-    # kind: helm: the chart is the whole install; then isolation as usual.
+    # kind: helm: the chart replaces the steps; the rest of the directory
+    # (quota, PDB, policies) and isolation follow as usual.
     if [[ "$(service_field "$dir" '.kind' manifests)" == "helm" ]]; then
         _install_service_helm "$dir" "$name" "$ns"
+        _install_service_rest "$dir" "$has_servicemonitor_crd" " "
         if declare -F install_service_network_policies >/dev/null; then
             install_service_network_policies "$dir" "$ns"
         fi
@@ -286,26 +353,7 @@ install_service() {
     done
 
     # 3. Everything else, sorted.
-    local rest=() base
-    while IFS= read -r file; do
-        base="$(basename "$file")"
-        case "$base" in
-            namespace.yaml|service.yaml|values.yaml|*.values.yaml) continue ;;
-            servicemonitor.yaml|servicemonitor.yml)
-                [[ "$has_servicemonitor_crd" == "true" ]] || continue ;;
-        esac
-        [[ "$stepped" == *" $base "* ]] && continue
-        rest+=("$file")
-    done < <(find "$dir" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort)
-
-    if [ ${#rest[@]} -gt 0 ]; then
-        {
-            for file in "${rest[@]}"; do
-                render_file "$file"
-                echo "---"
-            done
-        } | apply_stream "$(_render_label "$dir")/rest.yaml"
-    fi
+    _install_service_rest "$dir" "$has_servicemonitor_crd" "$stepped"
 
     # 4. Namespace isolation, from the descriptor's networkPolicies: list
     #    (scripts/lib/netpol.sh, when sourced).
@@ -340,11 +388,14 @@ install_service_group() {
     fi
     for name in $(services_in_group "$group"); do
         if service_enabled "$name"; then
-            # One service per subshell: install_service calls error() on a bad
-            # descriptor, an unreachable chart repo or a rejected manifest, and
-            # a single service must not take the rest of the catalogue with it.
-            # Failures are collected and reported by services_report_failures.
-            if ! (install_service "$name"); then
+            # One service per subshell, errexit on: any failure inside it (a bad
+            # descriptor, an unreachable chart repo, a rejected manifest, a
+            # failed Helm release) fails that service, and a single service must
+            # not take the rest of the catalogue with it. Failures are collected
+            # and reported by services_report_failures. See run_isolated for why
+            # this is not `if ! (install_service ...)`.
+            run_isolated install_service "$name"
+            if [[ "$RUN_ISOLATED_STATUS" -ne 0 ]]; then
                 warning "Service $name failed to install; continuing with the rest."
                 SERVICE_INSTALL_FAILURES+=("$name")
             fi
@@ -382,6 +433,65 @@ service_groups_check() {
 }
 
 # services_check: every directory has a valid descriptor, every step file exists.
+# _services_check_rollout <dir>: a single-replica Deployment that mounts a
+# ReadWriteOnce claim must use strategy Recreate (ReadWriteOnce restricts a
+# volume to one node, not one pod: a rolling update would run two writers on
+# one node, or stall when the new pod lands on another). A claim mounted by
+# several Deployments needs all but one of them to carry a required
+# podAffinity, so they land on the same node. A claim not declared in the
+# service directory is treated as ReadWriteOnce. Prints one line per problem.
+_services_check_rollout() {
+    local dir="$1" name f claims rwx="" line dep replicas strategy affinity claim
+    name="$(basename "$dir")"
+    for f in "$dir"/*.yaml; do
+        rwx+=" $(yq -N -r 'select(.kind == "PersistentVolumeClaim") | select(.spec.accessModes | contains(["ReadWriteOnce"]) | not) | .metadata.name' "$f" 2>/dev/null | tr '\n' ' ')"
+    done
+    declare -A mounters=() unpinned=()
+    local reported=" "
+    for f in "$dir"/*.yaml; do
+        while IFS=' ' read -r dep replicas strategy affinity claims; do
+            [[ -n "$dep" && -n "$claims" ]] || continue
+            for claim in ${claims//,/ }; do
+                [[ "$rwx" == *" $claim "* ]] && continue
+                mounters[$claim]=$(( ${mounters[$claim]:-0} + 1 ))
+                [[ "$affinity" -gt 0 ]] || unpinned[$claim]=$(( ${unpinned[$claim]:-0} + 1 ))
+                if [[ "$replicas" -le 1 && "$strategy" != "Recreate" && "$reported" != *" $dep "* ]]; then
+                    echo "BAD rollout in kubernetes/services/$name/$(basename "$f"): Deployment $dep mounts ReadWriteOnce claim $claim without strategy: Recreate"
+                    reported+="$dep "
+                fi
+            done
+        done < <(yq -N -r 'select(.kind == "Deployment") | [
+                    .metadata.name,
+                    (.spec.replicas // 1),
+                    (.spec.strategy.type // "RollingUpdate"),
+                    ((.spec.template.spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution // []) | length),
+                    ([.spec.template.spec.volumes[]? | select(has("persistentVolumeClaim")) | .persistentVolumeClaim.claimName] | join(","))
+                 ] | join(" ")' "$f" 2>/dev/null)
+    done
+    for claim in "${!mounters[@]}"; do
+        if [[ "${mounters[$claim]}" -gt 1 && "${unpinned[$claim]:-0}" -gt 1 ]]; then
+            echo "BAD sharing in kubernetes/services/$name: ReadWriteOnce claim $claim is mounted by ${mounters[$claim]} Deployments, ${unpinned[$claim]} of them without a required podAffinity to co-locate"
+        fi
+    done
+    return 0
+}
+
+# _services_check_security_locality: nothing under kubernetes/security/ may name
+# a service's namespace; what lives in a service namespace lives in the service
+# directory (docs/adr/0009). The per-namespace policy templates are exempt.
+_services_check_security_locality() {
+    local service_ns f hit
+    service_ns=" $(for d in "$SERVICES_DIR"/*/; do service_field "$(basename "$d")" '.namespace'; done | tr '\n' ' ') "
+    while IFS= read -r f; do
+        for hit in $(yq -N -r 'select(. != null and .kind != null) | (select(.kind == "Namespace") | .metadata.name), (select(.kind != "Namespace") | .metadata.namespace // "")' "$f" 2>/dev/null | sort -u); do
+            if [[ "$service_ns" == *" $hit "* ]]; then
+                echo "BAD locality in ${f#"$HOMELAB_DIR"/}: names service namespace '$hit'; move it into that service's directory (docs/adr/0009)"
+            fi
+        done
+    done < <(find "$HOMELAB_DIR/kubernetes/security" -name '*.yaml' -not -path '*/network-policies/templates/*' | sort)
+    return 0
+}
+
 services_check() {
     local d name desc failures=0 count i file when kind chart values
     for d in "$SERVICES_DIR"/*/; do
@@ -445,6 +555,19 @@ services_check() {
             failures=$((failures + 1))
         fi
     done
+    local problems
+    for d in "$SERVICES_DIR"/*/; do
+        problems="$(_services_check_rollout "$d")"
+        if [[ -n "$problems" ]]; then
+            echo "$problems"
+            failures=$((failures + $(printf '%s\n' "$problems" | wc -l)))
+        fi
+    done
+    problems="$(_services_check_security_locality)"
+    if [[ -n "$problems" ]]; then
+        echo "$problems"
+        failures=$((failures + $(printf '%s\n' "$problems" | wc -l)))
+    fi
     local group_failures=0
     service_groups_check || group_failures=$?
     failures=$((failures + group_failures))

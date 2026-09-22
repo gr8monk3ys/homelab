@@ -37,8 +37,10 @@ catalogue is a menu, not a target. Pick the handful you actually want.
   reaches a cluster goes through `scripts/lib/render.sh`; nothing is applied
   raw.
 - **Isolation.** Each descriptor lists the NetworkPolicy templates it wants
-  (or `[]` with a reason). Cross-namespace rules live in
-  `kubernetes/security/network-policies/`.
+  (or `[]` with a reason). Everything else applied into a service's namespace
+  (Pod Security labels, quota, PDB, per-pod and cross-namespace policies)
+  lives in the service's directory and installs with it;
+  `kubernetes/security/` holds infrastructure namespaces only (ADR-0009).
 - **Secrets.** One table in `scripts/lib/secrets.sh` feeds two adapters: live
   Kubernetes Secrets (`generate-secrets.sh`) or SOPS-encrypted files for
   GitOps (`sops-bootstrap.sh`). `scripts/secrets-check.sh` fails CI when an
@@ -81,7 +83,8 @@ passwords as one of its checks. `docs/credentials.md` documents how to read any 
 
 Security posture, honestly stated: pod security contexts, drop-ALL
 capabilities, and resource limits are enforced in the manifests themselves;
-Pod Security Admission defaults to `audit` (warns, does not block), Kyverno is
+Pod Security Admission defaults to `audit` in every namespace (warns, does not
+block; switch to `enforce` once the warnings are clean), Kyverno is
 opt-in, NetworkPolicies default-deny the 28 service namespaces whose
 descriptor declares `networkPolicies:` (Homepage and Home Assistant are left
 open because they need the kube API and the LAN), and the CrowdSec Traefik bouncer is enforced on the `websecure`
@@ -152,7 +155,7 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | `INSTALL_VELERO` / `INSTALL_METALLB` | `true` | Backups / LoadBalancer IPs |
 | `INSTALL_EXTERNAL_DNS` | `false` | Cloudflare DNS automation (needs API token) |
 | `INSTALL_KYVERNO` | `false` | Policy engine (`KYVERNO_POLICY_MODE=audit\|enforce`) |
-| `POD_SECURITY_MODE` | `audit` | PSA labels: `off` / `audit` / `enforce` |
+| `POD_SECURITY_MODE` | `audit` | PSA labels on every namespace: `off` / `audit` / `enforce` (`docs/runbooks/hardening.md`) |
 | `CONFIGURE_ALERTING` | `false` | Alertmanager notification routing |
 | `BACKUP_SECRETS` | `false` | Age-encrypted secret export during install |
 
@@ -265,7 +268,7 @@ config/homelab.yaml          # domain/email/timezone/issuer/GitOps URL (env vars
 kubernetes/
   ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
   secrets/                   # ExternalSecrets + SOPS store
-  security/                  # CrowdSec + NetworkPolicies (static rules + per-namespace templates)
+  security/                  # CrowdSec + infrastructure-namespace PSA/quotas/PDBs/NetworkPolicies + policy templates
   policy/kyverno/            # optional policy-as-code (audit + enforce sets)
   services/<name>/           # one directory per application
   gitops/argocd/             # optional ArgoCD app-of-apps

@@ -7,11 +7,17 @@ This repo supports two layers of hardening:
 
 ## Pod Security Admission (PSA)
 
-`setup-v2.sh` supports three modes via `POD_SECURITY_MODE`:
+`setup-v2.sh` supports three modes via `POD_SECURITY_MODE`, and the mode
+applies to every namespace the installer creates, infrastructure and services
+alike:
 
-- `off`: do not apply PSA labels.
-- `audit` (default): safe migration mode (no blocking, but sets audit/warn levels).
-- `enforce`: enforce target levels (may block non-compliant pods).
+- `off`: remove the `pod-security.kubernetes.io/*` labels; nothing is
+  enforced, audited or warned.
+- `audit` (default): safe migration mode. `enforce` is set to `privileged`
+  (nothing is blocked) and `audit`/`warn` stay at each namespace's target
+  level, so violations are reported.
+- `enforce`: apply the target levels as written (may block non-compliant
+  pods).
 
 Examples:
 
@@ -20,9 +26,41 @@ POD_SECURITY_MODE=audit ./setup-v2.sh
 POD_SECURITY_MODE=enforce ./setup-v2.sh
 ```
 
-Files:
-- Audit mode: `kubernetes/security/pod-security-standards-audit.yaml`
-- Enforce mode: `kubernetes/security/pod-security-standards-enforce.yaml`
+Where the target levels live (ADR-0009):
+- A service's levels are in its own `kubernetes/services/<name>/namespace.yaml`,
+  written at their enforce-mode values. `install_service` applies the mode as a
+  transform on that Namespace when the service installs, so a switched-off
+  service gets no namespace at all.
+- Infrastructure namespaces are in `kubernetes/security/pod-security-standards.yaml`;
+  the Pod Security phase applies the same transform to it and skips any
+  namespace that does not exist.
+- The GitOps path (ArgoCD applies directories as committed, unrendered) gets
+  the enforce-mode labels as written.
+
+### Promote from audit to enforce
+
+No pod has yet run on a real node, so none of the target levels is verified.
+Stay on `audit` until its warnings are clean, then switch to `enforce`.
+
+See what `audit` reports:
+
+```bash
+# warn: printed by kubectl whenever an apply or a pod creation would violate
+# the namespace's level, e.g. when re-running the installer
+./setup-v2.sh 2>&1 | grep -i 'would violate PodSecurity'
+
+# dry-run a level against the pods already running in one namespace
+kubectl label --dry-run=server --overwrite ns <ns> pod-security.kubernetes.io/enforce=<level>
+
+# audit: recorded in the API server audit log (K3s: enable it with
+# --kube-apiserver-arg=audit-log-path=... and an audit policy) as the
+# pod-security.kubernetes.io/audit-violations annotation
+```
+
+When nothing is reported, re-run with `POD_SECURITY_MODE=enforce ./setup-v2.sh`.
+If a workload is then rejected, fix its security context or lower that
+namespace's level in its `namespace.yaml`, with a comment saying why (see the
+`loki` namespace).
 
 ## Kyverno (Policy-As-Code)
 

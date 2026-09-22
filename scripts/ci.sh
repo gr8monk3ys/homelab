@@ -10,21 +10,17 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$SCRIPT_DIR/lib/common.sh"
 
-warn() {
-  log "WARNING: $*"
+# have <cmd>: the dependency check, through require_cmd (scripts/lib/common.sh).
+# In CI a missing tool is an error (require_cmd exits); outside CI it only
+# skips the checks that need it: REQUIRE_CMD_SOFT, set for this one call,
+# turns the exit into a warning and rc 1, and the caller returns.
+have() {
+  if [[ "${CI:-}" == "true" ]]; then
+    require_cmd "$1"
+  else
+    REQUIRE_CMD_SOFT=true require_cmd "$1" "skipping related checks"
+  fi
 }
-
-die() {
-  log "ERROR: $*"
-  exit 1
-}
-
-# The dependency check is require_cmd from scripts/lib/common.sh. Outside CI a
-# missing tool only skips the checks that need it; in CI it is an error, so
-# REQUIRE_CMD_SOFT (which warns and returns 1) is on everywhere but CI.
-if [[ "${CI:-}" != "true" ]]; then
-  export REQUIRE_CMD_SOFT=true
-fi
 
 run_bash_syntax() {
   log "Bash syntax check (bash -n)..."
@@ -45,7 +41,7 @@ run_bash_syntax() {
 }
 
 run_shellcheck() {
-  if ! require_cmd shellcheck "skipping related checks"; then
+  if ! have shellcheck; then
     return 0
   fi
 
@@ -66,12 +62,12 @@ run_shellcheck() {
 }
 
 run_yamllint() {
-  if ! require_cmd yamllint "skipping related checks"; then
+  if ! have yamllint; then
     return 0
   fi
 
   log "yamllint..."
-  [[ -f "$REPO_ROOT/.yamllint.yaml" ]] || die "Missing .yamllint.yaml"
+  [[ -f "$REPO_ROOT/.yamllint.yaml" ]] || error "Missing .yamllint.yaml"
 
   yamllint -c "$REPO_ROOT/.yamllint.yaml" \
     "$REPO_ROOT/.github" \
@@ -82,7 +78,7 @@ run_yamllint() {
 }
 
 run_kubeconform() {
-  if ! require_cmd kubeconform "skipping related checks"; then
+  if ! have kubeconform; then
     return 0
   fi
 
@@ -105,7 +101,7 @@ run_kubeconform() {
   )
 
   if [[ ${#files[@]} -eq 0 ]]; then
-    warn "No Kubernetes YAML manifests found under kubernetes/ (unexpected)"
+    warning "No Kubernetes YAML manifests found under kubernetes/ (unexpected)"
     return 0
   fi
 
@@ -122,7 +118,7 @@ run_services_check() {
   # The service catalogue is the installer's interface, so CI tests through it:
   # every kubernetes/services/<name>/ has a valid service.yaml, and every service
   # renders (with non-default placeholders) into manifests kubeconform accepts.
-  if ! require_cmd yq "skipping related checks"; then
+  if ! have yq; then
     return 0
   fi
 
@@ -140,7 +136,16 @@ run_services_check() {
   log "toggle algebra (service_enabled under the ENABLE_*/OPTIN_SERVICES toggles)..."
   "$REPO_ROOT/test/toggles.sh"
 
-  if ! require_cmd kubeconform "skipping related checks"; then
+  log "render rules (render_stream placeholders, metacharacters, rule order)..."
+  "$REPO_ROOT/test/render.sh"
+
+  log "credential scan coverage (fixtures generated at run time)..."
+  "$REPO_ROOT/test/credentials.sh"
+
+  log "disaster recovery phase order (against setup-v2.sh main())..."
+  "$REPO_ROOT/test/dr-phases.sh"
+
+  if ! have kubeconform; then
     return 0
   fi
 
@@ -174,7 +179,7 @@ run_services_check() {
 
   if grep -rl "homelab\.local" "$render_dir" >/dev/null; then
     grep -rl 'homelab\.local' "$render_dir" | sed "s|^$render_dir/|  |"
-    die "Rendered manifests above still contain the homelab.local placeholder"
+    error "Rendered manifests above still contain the homelab.local placeholder"
   fi
 
   local files=()
@@ -192,7 +197,7 @@ run_services_check() {
 }
 
 run_helm_lint() {
-  if ! require_cmd helm "skipping related checks"; then
+  if ! have helm; then
     return 0
   fi
 
@@ -209,9 +214,9 @@ run_helm_lint() {
 
       if ! (cd "$tmp_chart" && helm dependency build >/dev/null); then
         if [[ "${CI:-}" == "true" ]]; then
-          die "helm dependency build failed for $chart"
+          error "helm dependency build failed for $chart"
         fi
-        warn "helm dependency build failed for $chart (continuing with lint)"
+        warning "helm dependency build failed for $chart (continuing with lint)"
       fi
 
       helm lint "$tmp_chart"
@@ -219,12 +224,12 @@ run_helm_lint() {
     fi
   done
   if [[ "$found" != "true" ]]; then
-    warn "No Helm charts found under helm/*"
+    warning "No Helm charts found under helm/*"
   fi
 }
 
 run_helm_remote_smoke() {
-  if ! require_cmd helm "skipping related checks"; then
+  if ! have helm; then
     return 0
   fi
 
@@ -247,16 +252,17 @@ run_helm_remote_smoke() {
   homelab_load_config >/dev/null
 
   # helm_template_all warns and skips a chart it cannot fetch; here that is a failure in CI.
-  if ! (HOMELAB_APPLY_MODE=render HOMELAB_RENDER_DIR="$render_dir" helm_template_all); then
+  HOMELAB_APPLY_MODE=render HOMELAB_RENDER_DIR="$render_dir" run_isolated helm_template_all
+  if [[ "$RUN_ISOLATED_STATUS" -ne 0 ]]; then
     if [[ "${CI:-}" == "true" ]]; then
-      die "helm template failed for one or more charts (see warnings above)"
+      error "helm template failed for one or more charts (see warnings above)"
     fi
-    warn "helm template skipped one or more charts (chart repos unreachable?)"
+    warning "helm template skipped one or more charts (chart repos unreachable?)"
   fi
 }
 
 run_kustomize_build() {
-  if ! require_cmd kustomize "skipping related checks"; then
+  if ! have kustomize; then
     return 0
   fi
 
@@ -285,7 +291,7 @@ run_docs_check() {
     fi
   done
   if [[ ${#missing[@]} -ne 0 ]]; then
-    die "Missing required docs: ${missing[*]}"
+    error "Missing required docs: ${missing[*]}"
   fi
 }
 

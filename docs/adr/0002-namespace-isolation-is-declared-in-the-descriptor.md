@@ -19,12 +19,18 @@ per-pod rules such as one app reaching another's database (Nextcloud, once
 the static exception because it had no descriptor, now declares its
 isolation like any other service through its `kind: helm` descriptor).
 
+> **Superseded in part by ADR-0009 (2026-09-22).** The sentence above that
+> static files hold cross-namespace or per-pod rules no longer holds: the
+> static files now hold only infrastructure-namespace rules, and a policy that
+> sits in a service namespace lives in that service's `networkpolicies.yaml`.
+
 ## Consequences
 
 - Policies are additive: `allow-same-namespace` already permits an app to
   reach its own database, so the finer per-pod DB egress rules that remain
   in the static files are redundant within a namespace and can be retired
-  when they are next touched.
+  when they are next touched. (Since ADR-0009 those rules live in each
+  service's `networkpolicies.yaml`, not in the static files.)
 - A service that must reach the LAN or the Kubernetes API (Home Assistant,
   Homepage) omits the key and stays open until a template expresses that
   need; adding such a template is the intended extension point.

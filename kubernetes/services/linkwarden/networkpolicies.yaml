@@ -1,0 +1,97 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# Linkwarden PostgreSQL - Only allow connections from linkwarden app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkwarden-postgres-policy
+  namespace: linkwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: linkwarden-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: linkwarden
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-egress
+  namespace: linkwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: linkwarden
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: linkwarden-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Linkwarden needs external access to fetch bookmarked pages
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-http-egress
+  namespace: linkwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: linkwarden
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# Linkwarden - Bookmark manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkwarden-policy
+  namespace: linkwarden
+spec:
+  podSelector:
+    matchLabels:
+      app: linkwarden
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from Traefik
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000

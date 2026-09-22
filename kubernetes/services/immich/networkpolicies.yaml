@@ -1,0 +1,142 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# Immich PostgreSQL - Only allow connections from immich services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-postgres-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: immich-server
+        - podSelector:
+            matchLabels:
+              app: immich-microservices
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Immich Redis - Only allow connections from immich services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-redis-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: immich-server
+        - podSelector:
+            matchLabels:
+              app: immich-microservices
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-services-egress
+  namespace: immich
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow all internal Immich communication
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432  # Postgres
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 3003  # ML service
+---
+# Immich server
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-server-policy
+  namespace: immich
+spec:
+  podSelector:
+    matchLabels:
+      app: immich-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3001
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: immich-machine-learning
+      ports:
+        - protocol: TCP
+          port: 3003

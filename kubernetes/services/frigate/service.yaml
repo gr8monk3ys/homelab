@@ -9,5 +9,5 @@ description: Local NVR with object detection; publishes to Mosquitto in the home
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 # Frigate also needs MQTT to the home-assistant namespace and RTSP to cameras
 # on the LAN: both are cross-namespace or off-cluster, so they live in
-# kubernetes/security/network-policies/cross-namespace-policies.yaml.
+# networkpolicies.yaml in this directory (and the ingress half in home-assistant's).
 networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

@@ -1,0 +1,112 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# Gitea PostgreSQL - Only allow connections from gitea
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-postgres-policy
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gitea
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-egress
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: gitea-db
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Gitea needs external access for repository mirroring and webhooks
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-egress
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 22  # SSH for git operations
+---
+# Gitea - Git server (source code)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-policy
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from Traefik
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow Prometheus to scrape /metrics (ServiceMonitor on the web port)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow Git over SSH (exposed directly via the gitea-ssh LoadBalancer)
+    - ports:
+        - protocol: TCP
+          port: 22

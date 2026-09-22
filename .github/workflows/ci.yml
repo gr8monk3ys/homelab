@@ -17,7 +17,7 @@ jobs:
   lint:
     name: Lint And Validate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -30,3 +30,9 @@ jobs:
 
       - name: bash -n, shellcheck, yamllint, kubeconform, helm lint, kustomize build
         run: ./scripts/ci.sh
+
+      # The default ./setup-v2.sh against a real etcd + kube-apiserver (no
+      # kubelet, so it tests order and preconditions, not running pods). The one
+      # check that applies manifests instead of rendering them.
+      - name: Default install against a live API server
+        run: ./test/e2e-default-install.sh

@@ -18,6 +18,8 @@
 #   require_cmd <cmd> [hint]  the one dependency check; exits unless
 #                             REQUIRE_CMD_SOFT=true, which warns and returns 1
 #   detect_os / detect_arch   normalised uname
+#   run_isolated <cmd...>     run cmd with errexit on in a subshell; sets
+#                             RUN_ISOLATED_STATUS; call as a plain statement
 #
 # A script that needs different semantics (a non-exiting error()) defines
 # its own function after sourcing; the later definition wins. Colour and a
@@ -76,6 +78,33 @@ error() {
     # To stderr, so a caller that silences stdout (CI, >/dev/null) still sees why.
     _log_line "0;31" "ERROR: $*" >&2
     exit 1
+}
+
+# run_isolated <command> [args...]: run a command in a subshell with errexit on,
+# so ANY failing command inside it fails it -- not only an explicit error() --
+# without ending the caller. Sets RUN_ISOLATED_STATUS to the exit status and
+# returns 0. Use it for "one failure must not take the rest down" loops.
+#
+# Call it as a plain statement. Never write `if ! (cmd)` or `cmd || ...` for
+# this: bash ignores errexit inside if/while conditions, `!` and &&/|| lists,
+# all the way down into subshells and functions, so `if ! (install_service x)`
+# ran install_service with errexit OFF and reported a failed Helm release as
+# installed. run_isolated detects being called in such a context and refuses.
+run_isolated() {
+    local restore=""
+    [[ $- == *e* ]] && restore=1
+    set +e
+    # Probe: where bash ignores errexit, this subshell survives `false`.
+    ( set -e; false; exit 0 )
+    if [[ $? -eq 0 ]]; then
+        [[ -z "$restore" ]] || set -e
+        error "run_isolated $1: called inside a condition (if/!/&&/||), where bash ignores errexit; call it as a plain statement"
+    fi
+    ( set -e; "$@" )
+    # shellcheck disable=SC2034  # read by the caller
+    RUN_ISOLATED_STATUS=$?
+    [[ -z "$restore" ]] || set -e
+    return 0
 }
 
 # require_cmd <command> [hint]

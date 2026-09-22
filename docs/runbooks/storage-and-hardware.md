@@ -68,9 +68,9 @@ spec:
 ```
 
 The mover pod runs in the application's namespace, so that namespace needs
-egress to MinIO. Add it to
-`kubernetes/security/network-policies/cross-namespace-policies.yaml` rather
-than opening the namespace.
+egress to MinIO. Add that egress rule to the service's own
+`kubernetes/services/<name>/networkpolicies.yaml` (ADR-0009) rather than
+opening the namespace.
 
 Velero backs up Kubernetes objects and, with its own plugins, volumes;
 VolSync backs up file contents with deduplication and retention. Running

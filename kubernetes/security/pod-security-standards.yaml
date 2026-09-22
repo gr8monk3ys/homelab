@@ -1,0 +1,60 @@
+---
+# =============================================================================
+# Pod Security Standards - infrastructure namespaces
+# =============================================================================
+# Labels that enforce Pod Security Standards on infrastructure namespaces.
+# Modes: enforce, audit, warn
+# Levels: privileged, baseline, restricted
+#
+# - privileged: Unrestricted (for system components)
+# - baseline: Prevents known privilege escalations
+# - restricted: Heavily restricted, follows security best practices
+#
+# A service's namespace carries its own labels in
+# kubernetes/services/<name>/namespace.yaml, applied when the service installs;
+# only namespaces no service descriptor names belong here.
+# =============================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
+  labels:
+    name: external-dns
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crowdsec
+  labels:
+    name: crowdsec
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    name: velero
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    name: kyverno
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline

@@ -14,15 +14,17 @@
 #            match the table one-to-one
 #   HARDCODED  a manifest carries a credential inline (CLAUDE.md rule one)
 #
-# It is also the one manifest credential scanner. That scan needs no cluster,
-# so it lives here (CI runs this script) and scripts/validate-setup.sh sources
-# this file to reuse the same two functions for its operator-facing report.
+# The HARDCODED scan (and the inline-Secret-data warning) is
+# scripts/lib/credentials.sh, the one manifest credential scanner; CI runs it
+# through this script and scripts/validate-setup.sh reports the same scan.
 #
 # Usage: scripts/secrets-check.sh [--list]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=scripts/lib/credentials.sh
+source "$SCRIPT_DIR/lib/credentials.sh"
 
 GENERATOR="$HOMELAB_DIR/scripts/generate-secrets.sh"
 SOPS_DIR="$HOMELAB_DIR/kubernetes/secrets/sops/secrets"
@@ -82,48 +84,6 @@ script_doc_refs() {
     } 2>/dev/null | sort -u
 }
 
-# --- manifest credential scan (cluster-free; two callers) -------------------
-#
-# CLAUDE.md rule one: "Never commit a credential, not even as an example."
-# Both functions print one filename per line (never file content) and are the
-# only copy of this scan; scripts/validate-setup.sh sources this file and
-# reports them as an operator-facing check.
-
-# hardcoded_password_files: password-like keys that carry a non-empty inline
-# value. Skips SOPS-encrypted secrets and files that reference a secret
-# indirectly (secretKeyRef/remoteRef/existingSecret).
-hardcoded_password_files() {
-    local f
-    while IFS= read -r -d '' f; do
-        if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
-            continue
-        fi
-        if grep -E "^[[:space:]-]*[\"']?[A-Za-z0-9_.-]*[Pp]assword[\"']?:" "$f" 2>/dev/null | \
-            grep -vE ":[[:space:]]*(\"\"|'')?[[:space:]]*(#.*)?$" | grep -q .; then
-            echo "$f"
-        fi
-    done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -not -path "*/secrets/sops/*" -print0 2>/dev/null)
-}
-
-# inline_secret_data_files: `kind: Secret` manifests with a `data:` block that
-# do not defer to an external store. A warning, not a failure: a Secret with
-# inline data is not necessarily a committed credential.
-inline_secret_data_files() {
-    local f
-    while IFS= read -r -d '' f; do
-        case "$f" in
-            *external-secret*) continue ;;
-            */secrets/sops/*) continue ;;
-        esac
-        if grep -qE "secretKeyRef|remoteRef|existingSecret" "$f" 2>/dev/null; then
-            continue
-        fi
-        if grep -qE "^kind:[[:space:]]*Secret[[:space:]]*$" "$f" 2>/dev/null && grep -qE "^[[:space:]]*data:" "$f" 2>/dev/null; then
-            echo "$f"
-        fi
-    done < <(find "$HOMELAB_DIR/kubernetes" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
-}
-
 print_set() { # <label> <newline-separated names>
     echo "== $1"
     [[ -n "$2" ]] && sed 's/^/  /' <<<"$2"
@@ -177,12 +137,12 @@ secrets_check_main() {
         sed 's/^/  /' <<<"$sops_drift"
     fi
 
-    local pw_files inline_files
-    pw_files="$(hardcoded_password_files)"
-    if [[ -n "$pw_files" ]]; then
+    local pw_findings inline_files
+    pw_findings="$(credential_findings)"
+    if [[ -n "$pw_findings" ]]; then
         rc=1
         echo "HARDCODED: a password-like key carries an inline value in these manifests (CLAUDE.md: never commit a credential; use an ExternalSecret):"
-        sed 's/^/  /' <<<"$pw_files"
+        sed 's/^/  /' <<<"$pw_findings"
     fi
     inline_files="$(inline_secret_data_files)"
     if [[ -n "$inline_files" ]]; then
@@ -196,7 +156,4 @@ secrets_check_main() {
     return $rc
 }
 
-# Sourced (scripts/validate-setup.sh) this file is just the two scanners.
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    secrets_check_main "$@"
-fi
+secrets_check_main "$@"
