@@ -15,7 +15,7 @@ README status line.
 ./setup-v2.sh                    # idempotent installer; generates secrets first
 ./scripts/validate-setup.sh      # cluster health + hardcoded-password check
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
-./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, helm lint, kustomize build
+./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, toggle algebra, secrets drift + credential scan, helm lint, kustomize build
 ./scripts/services.sh list       # the catalogue; `check` validates descriptors, `render <dir>` renders without a cluster
 ./test/setup-kind.sh             # throwaway KinD cluster; test/validate.sh k8s
 ```
@@ -43,7 +43,7 @@ README status line.
 - A new service is `kubernetes/services/<name>/` plus its `service.yaml`; CI fails on a directory without one. Never add a per-service block to `setup-v2.sh`.
 - Every script sources `scripts/lib/common.sh`; anything that applies repo manifests goes through `scripts/lib/render.sh` (never raw `kubectl apply -f` on a repo path).
 - Containers: `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot` where the image allows.
-- Databases are separate StatefulSets, never sidecars.
+- Databases are a separate workload per app, never a sidecar. They are Deployments with their own PVC and `strategy: Recreate`, not StatefulSets: on a ReadWriteOnce volume a rolling update cannot roll, and nothing here needs the stable network identity or ordinal scaling a StatefulSet buys. `kind: StatefulSet` appears nowhere under `kubernetes/services/`.
 - `config/homelab.yaml` holds only the six keys `homelab_load_config` reads (domain, timezone, email, environment, cluster issuer, GitOps repo URL); env vars override it. `ENVIRONMENT` is parsed but unused. Versions live in `tools/versions.env`, and what installs is chosen by the `ENABLE_*`/`INSTALL_*`/`OPTIN_SERVICES` toggles.
 - No kustomize overlay: the descriptor catalogue is the desired state (`docs/adr/0003-no-kustomize-overlay.md`). The only kustomizations are the ArgoCD app-of-apps and the SOPS store.
 - `ansible/` is host prep for K3s nodes (`just ansible-prep`, before `setup-v2.sh`); see `ansible/README.md`.

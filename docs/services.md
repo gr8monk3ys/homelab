@@ -185,9 +185,10 @@ are preserved on the `archive/legacy` branch.
   cert-manager.
 - Every credential flows `generate-secrets.sh` → `secrets` namespace →
   ExternalSecret → app namespace. If ESO is down, new pods can't get secrets.
-- Databases are separate StatefulSet-style Deployments per app (Postgres for
-  Immich/Gitea/n8n etc., MySQL for Nextcloud, Redis where needed) — never
-  sidecars.
+- Databases are a separate Deployment per app (Postgres for Immich/Gitea/n8n
+  etc., MySQL for Nextcloud, Redis where needed) — never sidecars. Each has
+  its own PVC and `strategy: Recreate`, so a rolling update never puts a
+  second writer on a ReadWriteOnce volume.
 - Open WebUI depends on Ollama; the arr-stack shares a common storage PVC.
 
 ## Backups
