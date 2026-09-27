@@ -21,6 +21,11 @@ spec:
       labels:
         app: authelia
     spec:
+      # Authelia reads every AUTHELIA_* environment variable as configuration.
+      # Service links would inject AUTHELIA_PORT=tcp://<ip>:9091 (from the
+      # `authelia` Service), which it maps to the deprecated `port` key; that
+      # collides with server.address and Authelia exits on startup (#39).
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -68,9 +73,11 @@ spec:
         - name: secrets
           mountPath: /secrets
           readOnly: true
+        # The whole volume, not a subPath: a subPath to a file that does not
+        # exist yet is created as a directory, and /config is not writable for
+        # the notifier's file. SQLite and notification.txt live here (#40).
         - name: data
-          mountPath: /config/db.sqlite3
-          subPath: db.sqlite3
+          mountPath: /data
         resources:
           requests:
             memory: "128Mi"

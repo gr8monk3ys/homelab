@@ -38,6 +38,10 @@ spec:
           value: "1000"
         - name: PGID
           value: "1000"
+        # /app/config is a read-only ConfigMap; file logging would mkdir /app/config/logs
+        # and turn every request into a 500. Log to stdout only.
+        - name: LOG_TARGETS
+          value: stdout
         ports:
         - containerPort: 3000
           name: http

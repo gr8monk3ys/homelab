@@ -4,6 +4,7 @@ namespace: paperless-ngx
 group: productivity
 url: docs
 description: Document management
+requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 steps:
   - apply: postgres-deployment.yaml
     wait: app=paperless-postgres

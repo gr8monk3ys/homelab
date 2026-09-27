@@ -5,6 +5,7 @@ group: productivity
 optin: true
 url: budget
 description: Personal finance
+requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace]

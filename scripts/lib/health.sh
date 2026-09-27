@@ -350,18 +350,34 @@ _health_print() {
 # Reports
 # ---------------------------------------------------------------------------
 
-# health_report [--services|--infra|--all] [--enabled-only]
+# health_report [--services|--infra|--all] [--enabled-only] [--only "<names>"]
+#   --enabled-only  check what the toggles say setup-v2.sh installs
+#   --only          check exactly the named services and infrastructure pieces
+#                   (a harness that installed a subset says what it installed;
+#                   everything else is skipped, not failed)
 health_report() {
-    local scope="all" enabled_only=false arg
-    for arg in "$@"; do
-        case "$arg" in
+    local scope="all" enabled_only=false only="" only_set=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             --services)     scope="services" ;;
             --infra)        scope="infra" ;;
             --all)          scope="all" ;;
             --enabled-only) enabled_only=true ;;
-            *) echo "health_report: unknown option $arg" >&2; return 1 ;;
+            --only)
+                [[ $# -ge 2 ]] || { echo "health_report: --only needs a list" >&2; return 1; }
+                only=" $2 "; only_set=true; shift ;;
+            *) echo "health_report: unknown option $1" >&2; return 1 ;;
         esac
+        shift
     done
+    # _health_selected <name>: 0 when the report should check it.
+    _health_selected() {
+        if [[ "$only_set" == "true" ]]; then
+            [[ "$only" == *" $1 "* ]]
+            return
+        fi
+        return 0
+    }
 
     if ! _health_cluster; then
         echo "FAIL cluster: $HEALTH_REASON"
@@ -372,7 +388,7 @@ health_report() {
     printf '%-4s %-16s %-21s %s\n' STATE KIND NAME DETAIL
     if [[ "$scope" != "services" ]]; then
         for name in "${HEALTH_INFRA[@]}"; do
-            if [[ "$enabled_only" == "true" ]] && ! infra_enabled "$name"; then
+            if ! _health_selected "$name" || { [[ "$enabled_only" == "true" ]] && ! infra_enabled "$name"; }; then
                 skipped=$((skipped + 1))
                 continue
             fi
@@ -383,7 +399,7 @@ health_report() {
     fi
     if [[ "$scope" != "infra" ]]; then
         for name in $(services_all); do
-            if [[ "$enabled_only" == "true" ]] && ! service_enabled "$name"; then
+            if ! _health_selected "$name" || { [[ "$enabled_only" == "true" ]] && ! service_enabled "$name"; }; then
                 skipped=$((skipped + 1))
                 continue
             fi
@@ -392,7 +408,11 @@ health_report() {
             if [[ "$rc" -eq 0 ]]; then ok=$((ok + 1)); else failed=$((failed + 1)); fi
         done
     fi
-    echo "health: $ok ok, $failed failed, $skipped skipped (disabled)"
+    if [[ "$only_set" == "true" ]]; then
+        echo "health: $ok ok, $failed failed, $skipped skipped (not installed by this run)"
+    else
+        echo "health: $ok ok, $failed failed, $skipped skipped (disabled)"
+    fi
     [[ "$failed" -eq 0 ]]
 }
 

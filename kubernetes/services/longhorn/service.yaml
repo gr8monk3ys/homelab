@@ -8,6 +8,7 @@ optin: true
 priority: 10
 url: longhorn
 description: Longhorn distributed block storage (snapshots, backups to MinIO); needs open-iscsi on the host
+requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 kind: helm
 chart: longhorn/longhorn
 release: longhorn
