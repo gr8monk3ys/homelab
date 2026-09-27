@@ -51,6 +51,11 @@ spec:
               key: password
         - name: POSTGRES_DB
           value: "gitea"
+        # local-path volumes are root-owned, so the non-root postgres user
+        # cannot chmod the mount point itself. Keep the cluster in a
+        # subdirectory that initdb creates (and therefore owns).
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: gitea-db-data
           mountPath: /var/lib/postgresql/data
@@ -120,7 +125,10 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: gitea
-        image: gitea/gitea:1.22.6
+        # The -rootless image runs as uid 1000 without s6/root setup; the
+        # standard image needs root to start s6-svscan and cannot run under
+        # runAsNonRoot with all capabilities dropped.
+        image: gitea/gitea:1.22.6-rootless
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -129,13 +137,13 @@ spec:
         ports:
         - containerPort: 3000
           name: web
-        - containerPort: 22
+        - containerPort: 2222
           name: ssh
         env:
-        - name: USER_UID
-          value: "1000"
-        - name: USER_GID
-          value: "1000"
+        - name: GITEA__server__SSH_PORT
+          value: "22"
+        - name: GITEA__server__SSH_LISTEN_PORT
+          value: "2222"
         - name: GITEA__database__DB_TYPE
           value: "postgres"
         - name: GITEA__database__HOST
@@ -165,7 +173,7 @@ spec:
           value: "true"
         volumeMounts:
         - name: gitea-data
-          mountPath: /data
+          mountPath: /var/lib/gitea
         - name: gitea-config
           mountPath: /etc/gitea
         resources:
@@ -285,7 +293,7 @@ spec:
     targetPort: 3000
     name: http
   - port: 22
-    targetPort: 22
+    targetPort: ssh
     name: ssh
   type: ClusterIP
 ---
@@ -302,7 +310,7 @@ spec:
     app: gitea
   ports:
   - port: 22
-    targetPort: 22
+    targetPort: ssh
     name: ssh
   type: LoadBalancer
 ---
