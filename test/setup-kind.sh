@@ -31,6 +31,20 @@ source "$SCRIPT_DIR/../scripts/lib/helm.sh"
 source "$SCRIPT_DIR/../scripts/lib/health.sh"
 homelab_load_config
 
+# What this run actually installed (infrastructure pieces as named in
+# HEALTH_INFRA, then catalogue services). Recorded in the homelab-harness
+# ConfigMap so report_health and test/validate.sh check exactly this set rather
+# than everything the default toggles would install (#37). KinD ships
+# local-path-provisioner, so it is always present.
+HARNESS_INSTALLED=(local-path)
+
+record_harness() {
+    kubectl create configmap homelab-harness -n kube-system \
+        --from-literal=installed="${HARNESS_INSTALLED[*]}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    log "Recorded harness contents: ${HARNESS_INSTALLED[*]}"
+}
+
 check_requirements() {
     log "Checking requirements for Kind testing..."
 
@@ -80,6 +94,22 @@ create_cluster() {
     # Wait for cluster to be ready
     kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
+    # Every catalogue PVC asks for the K3s class name `local-path`; KinD ships
+    # the same provisioner as `standard`. Without the alias, any service with a
+    # volume stays Pending whenever KIND_ENABLE_STORAGE=false (#38).
+    if ! kubectl get storageclass local-path >/dev/null 2>&1; then
+        kubectl apply -f - >/dev/null <<'EOF'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+EOF
+        log "Created the local-path StorageClass alias (KinD's provisioner)"
+    fi
+
     log "Kind cluster created successfully"
 }
 
@@ -87,12 +117,16 @@ setup_ingress() {
     log "Setting up ingress controller..."
 
     # KinD has no LoadBalancer: Traefik is reached through the node ports the
-    # kind config maps to the host (30080/30443). Everything else about the
-    # release is the table's row.
+    # kind config maps to the host (30080/30443). The harness does not run
+    # CrowdSec, so the websecure entrypoint's bouncer middleware would not
+    # exist and Traefik would drop every HTTPS route (#38); leave it off here.
+    # Everything else about the release is the table's row.
     helm_infra_release traefik \
         --set service.type=NodePort \
         --set ports.web.nodePort=30080 \
-        --set ports.websecure.nodePort=30443
+        --set ports.websecure.nodePort=30443 \
+        --set 'ports.websecure.http.middlewares=null'
+    HARNESS_INSTALLED+=(traefik)
 
     log "Ingress controller setup completed"
 }
@@ -103,6 +137,7 @@ setup_cert_manager() {
     helm_infra_release cert-manager
 
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/ingress/cert-manager"
+    HARNESS_INSTALLED+=(cert-manager)
 
     log "cert-manager setup completed"
 }
@@ -128,6 +163,7 @@ setup_external_secrets() {
 
     # Generate (or create-missing) all source-of-truth secrets.
     bash "$HOMELAB_DIR/scripts/generate-secrets.sh"
+    HARNESS_INSTALLED+=(external-secrets)
 
     log "External Secrets setup completed"
 }
@@ -143,8 +179,11 @@ setup_storage() {
     # Storage + MinIO, through the render seam the installer uses.
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage" || \
         log "WARNING: Failed to apply kubernetes/storage/ (some components may already exist in Kind)"
-    kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/minio" || \
+    if kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/minio"; then
+        HARNESS_INSTALLED+=(minio)
+    else
         log "WARNING: Failed to apply kubernetes/storage/minio/ (some components may already exist in Kind)"
+    fi
 
     log "Storage setup completed"
 }
@@ -159,8 +198,11 @@ deploy_core_services() {
     # is deployed. KIND_ENABLE_NEXTCLOUD=false leaves Nextcloud out.
     local services=()
     if [[ -n "$KIND_SERVICES" ]]; then
-        IFS=' ' read -r -a services <<<"$KIND_SERVICES"
-        log "Using KIND_SERVICES override: ${services[*]}"
+        # Each named service brings what its descriptor `requires:`, first (#35).
+        local requested=()
+        read -r -a requested <<<"$KIND_SERVICES"
+        read -r -a services <<<"$(services_with_requires "${requested[@]}")"
+        log "Using KIND_SERVICES override: $KIND_SERVICES -> ${services[*]}"
     else
         local group name
         for group in $KIND_SERVICE_GROUPS; do
@@ -183,6 +225,8 @@ deploy_core_services() {
             if [[ "$RUN_ISOLATED_STATUS" -ne 0 ]]; then
                 log "WARNING: Failed to deploy $service"
                 failed_services+=("$service")
+            else
+                HARNESS_INSTALLED+=("$service")
             fi
         fi
     done
@@ -209,8 +253,11 @@ setup_monitoring() {
 
     # A monitoring stack that will not come up in KinD is a warning, not a
     # failed harness; the rest of the cluster is still worth testing.
-    helm_infra_release kube-prometheus-stack || \
+    if helm_infra_release kube-prometheus-stack; then
+        HARNESS_INSTALLED+=(kube-prometheus-stack)
+    else
         log "WARNING: kube-prometheus-stack Helm install failed"
+    fi
 
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/monitoring/uptime-kuma" || \
         log "WARNING: Failed to deploy uptime-kuma"
@@ -227,9 +274,10 @@ report_health() {
     log "Reporting cluster health (scripts/lib/health.sh)..."
 
     # Best-effort: the harness answers "did it deploy", not "is it all green".
-    # health_report reads the catalogue, so it needs no list of its own.
-    if health_report --all --enabled-only; then
-        log "All enabled services and infrastructure are healthy"
+    # It checks exactly what this run installed (HARNESS_INSTALLED), not what
+    # the installer's default toggles would have installed (#37).
+    if health_report --all --only "${HARNESS_INSTALLED[*]}"; then
+        log "Everything this run installed is healthy"
     else
         log "Some services may still be starting. Check with: kubectl get pods -A"
     fi
@@ -284,6 +332,7 @@ main() {
             setup_storage
             setup_monitoring
             deploy_core_services
+            record_harness
             report_health
             show_access_info
             ;;

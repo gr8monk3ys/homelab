@@ -51,7 +51,7 @@ KIND_CONFIG=./test/kind-config-smoke.yaml \
 | `KIND_ENABLE_STORAGE` | `true` | apply `kubernetes/storage/` |
 | `KIND_ENABLE_MONITORING` | `true` | install kube-prometheus-stack and uptime-kuma |
 | `KIND_ENABLE_NEXTCLOUD` | `true` | include the Nextcloud catalogue service |
-| `KIND_SERVICES` | unset | explicit service list; overrides the groups |
+| `KIND_SERVICES` | unset | explicit service list, plus whatever each descriptor `requires:` (installed first); overrides the groups |
 | `KIND_SERVICE_GROUPS` | `core network content` | groups to deploy when `KIND_SERVICES` is unset |
 
 ### Access information
@@ -68,5 +68,14 @@ catalogue rather than a list kept here.
 ./test/validate.sh k8s        # descriptors plus cluster health
 ./test/validate.sh connectivity
 ```
+
+`setup-kind.sh` records what it actually installed in the `homelab-harness`
+ConfigMap (`kube-system`), and `validate.sh k8s` checks exactly that set: a
+smoke run that installs only Homepage (and the Authelia it requires) is judged
+on those, not on everything the default toggles would install. Against a
+cluster the harness did not build, it falls back to the toggles.
+
+Traefik is published on the host at `http://localhost:30080` and
+`https://localhost:30443` (both KinD configs map those NodePorts).
 
 `./test/test-runner.sh help` wraps both scripts.

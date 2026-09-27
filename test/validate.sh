@@ -41,9 +41,18 @@ check_service_health() {
 }
 
 check_kubernetes_resources() {
-    log "Checking Kubernetes resources (catalogue-enabled services and installed infrastructure)..."
-    local rc=0
-    health_report --all --enabled-only || rc=$?
+    local rc=0 installed=""
+    # test/setup-kind.sh records what it installed; check exactly that. Against
+    # a cluster the harness did not build, fall back to the toggles (#37).
+    installed="$(kubectl get configmap homelab-harness -n kube-system \
+        -o jsonpath='{.data.installed}' 2>/dev/null || true)"
+    if [[ -n "$installed" ]]; then
+        log "Checking what the KinD harness installed: $installed"
+        health_report --all --only "$installed" || rc=$?
+    else
+        log "Checking Kubernetes resources (catalogue-enabled services and installed infrastructure)..."
+        health_report --all --enabled-only || rc=$?
+    fi
     case "$rc" in
         0) success "Every enabled service and infrastructure piece is healthy" ;;
         2) fail "Cannot access Kubernetes cluster" ;;
