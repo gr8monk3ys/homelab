@@ -23,6 +23,12 @@ spec:
       containers:
       - name: uptime-kuma
         image: louislam/uptime-kuma:1.23.15
+        # The image's extra/entrypoint.sh always chowns /app/data before
+        # dropping privileges, which fails as UID 1000 with every capability
+        # dropped (crash loop, #43). fsGroup already makes the volume writable,
+        # so start the server directly under the image's init.
+        command: ["/usr/bin/dumb-init", "--"]
+        args: ["node", "server/server.js"]
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
