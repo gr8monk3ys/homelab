@@ -6,11 +6,11 @@ metadata:
     {{- include "nextcloud.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  # Recreate: the data/config volumes are ReadWriteOnce with a single writer,
+  # and the namespace ResourceQuota (limits.memory 4Gi, limits.cpu 2) has no
+  # room for a surge pod next to the running one plus MySQL.
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    type: Recreate
   selector:
     matchLabels:
       {{- include "nextcloud.selectorLabels" . | nindent 6 }}
@@ -87,10 +87,26 @@ spec:
                   key: password
             - name: NEXTCLOUD_TRUSTED_DOMAINS
               value: "{{ join " " .Values.nextcloud.trustedDomains }}"
-            - name: APACHE_DISABLE_REWRITE_IP
-              value: "1"
+            # No APACHE_DISABLE_REWRITE_IP: it makes the entrypoint run
+            # `a2disconf remoteip`, which cannot write /etc/apache2 as the
+            # non-root UID 33 and aborts startup. The image's remoteip.conf
+            # already trusts only private-range proxies (Traefik).
             - name: TRUSTED_PROXIES
               value: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+          {{- if .Values.nextcloud.startupProbe.enabled }}
+          # First start copies Nextcloud into the volume and runs the
+          # installer before Apache listens; hold liveness off until then.
+          startupProbe:
+            httpGet:
+              path: /status.php
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.nextcloud.domain }}
+            periodSeconds: {{ .Values.nextcloud.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.nextcloud.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.nextcloud.startupProbe.failureThreshold }}
+          {{- end }}
           {{- if .Values.nextcloud.livenessProbe.enabled }}
           livenessProbe:
             httpGet:

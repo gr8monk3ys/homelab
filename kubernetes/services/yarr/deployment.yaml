@@ -26,7 +26,10 @@ spec:
           type: RuntimeDefault
       containers:
       - name: yarr
-        image: nkanaev/yarr:v2.4
+        # Official image published by the yarr repo to GHCR; the old
+        # docker.io/nkanaev/yarr:v2.4 tag does not exist. Static binary with
+        # no USER set, so it runs fine as the non-root UID above.
+        image: ghcr.io/nkanaev/yarr:v2.9
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
