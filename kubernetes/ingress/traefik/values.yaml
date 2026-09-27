@@ -10,6 +10,26 @@ deployment:
       hostPath:
         path: /var/log/traefik
         type: DirectoryOrCreate
+  # The kubelet creates that hostPath as root:root 0755, and Traefik runs as the
+  # chart's non-root user (65532) with every capability dropped, so without this
+  # it cannot open access.log and CrowdSec sees no traffic (#36). fsGroup does not
+  # apply to hostPath. Hand the directory to Traefik's user before it starts;
+  # CrowdSec (UID 1000) keeps read access through 0755.
+  initContainers:
+    - name: traefik-log-dir
+      image: busybox:1.37.0
+      command: ["sh", "-c", "chmod 0755 /var/log/traefik && chown 65532:65532 /var/log/traefik"]
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+          add: [CHOWN]
+      volumeMounts:
+        - name: traefik-logs
+          mountPath: /var/log/traefik
 
 additionalVolumeMounts:
   - name: traefik-logs
