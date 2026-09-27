@@ -10,6 +10,10 @@ metadata:
     component: agent
 spec:
   replicas: 1
+  # Single replica on a ReadWriteOnce PVC: Recreate, per the repo rule. A
+  # rolling update also cannot fit two agents in the namespace memory quota.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: crowdsec
@@ -27,6 +31,61 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # The image's entrypoint installs hub items, registers the local agent
+      # and bouncer, and rewrites config.yaml, all under /etc/crowdsec. With
+      # read-only subPath mounts and a non-root user it could do none of that
+      # and the agent crash-looped, so the bouncer failed closed and every
+      # HTTPS request got 403 (#42). /etc/crowdsec is now a writable emptyDir,
+      # seeded with the image's /staging/etc/crowdsec (hub, patterns, ...) and
+      # then this repo's config files on top. The entrypoint only copies
+      # /staging itself when no config.yaml exists, so it must happen here.
+      initContainers:
+      - name: seed-etc
+        image: crowdsecurity/crowdsec:v1.6.0
+        # The credential files live on the data PVC (configmap.yaml). cscli loads
+        # both while the entrypoint is still creating them, so, as the image's own
+        # /staging templates do, start them empty on first run.
+        # (The /staging credential templates are root-only and not needed here.)
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          for f in /staging/etc/crowdsec/*; do
+            case "$(basename "$f")" in *_api_credentials.yaml) ;; *) cp -R "$f" /seed/ ;; esac
+          done
+          cp /config/config.yaml /config/profiles.yaml /config/simulation.yaml /acquis/acquis.yaml /seed/
+          touch /data/local_api_credentials.yaml /data/online_api_credentials.yaml
+          # The entrypoint symlinks missing GeoIP databases to root-owned /staging
+          # copies, which the hub update then cannot overwrite. Real copies can be.
+          for db in /staging/var/lib/crowdsec/data/*.mmdb; do
+            t="/data/$(basename "$db")"
+            [ -L "$t" ] && rm -f "$t"
+            [ -e "$t" ] || cp "$db" "$t"
+          done
+        resources:   # the namespace ResourceQuota requires them on every container
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        volumeMounts:
+        - name: etc
+          mountPath: /seed
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: acquis
+          mountPath: /acquis
+          readOnly: true
+        - name: data
+          mountPath: /data
       containers:
       - name: crowdsec
         image: crowdsecurity/crowdsec:v1.6.0
@@ -36,6 +95,13 @@ spec:
             drop:
               - ALL
         env:
+        # The entrypoint registers the Traefik bouncer with this key; without it
+        # the bouncer's key is unknown to the Local API and every check fails.
+        - name: BOUNCER_KEY_traefik
+          valueFrom:
+            secretKeyRef:
+              name: crowdsec-config
+              key: bouncer-api-key
         - name: COLLECTIONS
           value: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/whitelist-good-actors"
         - name: SCENARIOS
@@ -56,18 +122,8 @@ spec:
         - containerPort: 6060
           name: metrics
         volumeMounts:
-        - name: config
-          mountPath: /etc/crowdsec/config.yaml
-          subPath: config.yaml
-        - name: config
-          mountPath: /etc/crowdsec/profiles.yaml
-          subPath: profiles.yaml
-        - name: config
-          mountPath: /etc/crowdsec/simulation.yaml
-          subPath: simulation.yaml
-        - name: acquis
-          mountPath: /etc/crowdsec/acquis.yaml
-          subPath: acquis.yaml
+        - name: etc
+          mountPath: /etc/crowdsec
         - name: data
           mountPath: /var/lib/crowdsec/data
         - name: traefik-logs
@@ -93,6 +149,8 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:
+      - name: etc
+        emptyDir: {}
       - name: config
         configMap:
           name: crowdsec-config
