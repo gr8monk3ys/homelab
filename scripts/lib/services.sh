@@ -15,6 +15,10 @@
 #   project: homelab-security      # optional; ArgoCD AppProject (default: by group)
 #   url: docs                      # optional; host prefix under DOMAIN, for the access summary
 #   description: Document management
+#   requires: [authelia]           # optional; services that must already be installed
+#                                  # (install_service refuses without them; `services check`
+#                                  # requires it for any other service's Traefik middleware
+#                                  # the manifests reference)
 #   steps:                         # optional; ordered files with waits and conditions
 #     - apply: postgres-deployment.yaml
 #       wait: app=paperless-postgres   # kubectl wait pods -l <wait> in the namespace
@@ -242,6 +246,31 @@ services_in_group() {
     done | sort | awk '{print $2}'
 }
 
+# service_requires <name>: the descriptor's requires: list, one per line.
+service_requires() {
+    yq -r '.requires // [] | .[]' "$(service_descriptor "$1")" 2>/dev/null || true
+}
+
+# services_with_requires <name>...: the names plus everything they require,
+# requirements first, each once. For callers that pick services by hand
+# (the KinD harness's KIND_SERVICES); group installs already order by priority.
+services_with_requires() {
+    local -a _swr_order=()
+    _swr_visit() {
+        local n="$1" r
+        [[ " ${_swr_order[*]} " == *" $n "* ]] && return 0
+        for r in $(service_requires "$n"); do
+            _swr_visit "$r"
+        done
+        _swr_order+=("$n")
+    }
+    local name
+    for name in "$@"; do
+        _swr_visit "$name"
+    done
+    echo "${_swr_order[*]}"
+}
+
 service_is_optin_selected() {
     local name="$1" sel
     [[ "$OPTIN_SERVICES" == "all" ]] && return 0
@@ -303,6 +332,19 @@ install_service() {
     [[ -n "$ns" ]] || error "install_service: $desc has no namespace"
 
     log "Installing service $name (namespace $ns)..."
+
+    # Requirements first: a service whose Ingress routes through another
+    # service's middleware is unreachable without it (#35). Refuse rather than
+    # leave it half-wired.
+    if [[ "$HOMELAB_APPLY_MODE" != "render" ]]; then
+        local req req_ns
+        for req in $(service_requires "$dir"); do
+            req_ns="$(service_field "$req" '.namespace' "$req")"
+            if ! kubectl get namespace "$req_ns" >/dev/null 2>&1; then
+                error "install_service: $name requires $req (namespace $req_ns not found); install $req first"
+            fi
+        done
+    fi
 
     local has_servicemonitor_crd="false"
     if crd_exists "servicemonitors.monitoring.coreos.com"; then
@@ -494,6 +536,14 @@ _services_check_security_locality() {
 
 services_check() {
     local d name desc failures=0 count i file when kind chart values
+    # namespace -> service, for resolving `<namespace>-<name>@kubernetescrd`
+    # middleware references to the service that provides them (#35).
+    local -A _ns_owner=()
+    local _svc _svc_ns
+    for _svc in $(services_all); do
+        _svc_ns="$(service_field "$_svc" '.namespace')"
+        [[ -n "$_svc_ns" ]] && _ns_owner["$_svc_ns"]="$_svc"
+    done
     for d in "$SERVICES_DIR"/*/; do
         name="$(basename "$d")"
         desc="$d/service.yaml"
@@ -548,6 +598,31 @@ services_check() {
                 failures=$((failures + 1))
             fi
         done
+        # Requirements name real services, and every other service's Traefik
+        # middleware the manifests route through is a declared requirement:
+        # otherwise a selective install leaves the Ingress without its
+        # middleware and Traefik drops the route (#35).
+        local reqs req own_ns mw best owner_ns
+        reqs=" $(service_requires "$name" | tr '\n' ' ') "
+        for req in $reqs; do
+            if [[ ! -f "$SERVICES_DIR/$req/service.yaml" ]]; then
+                echo "BAD requires in $desc: no service '$req'"
+                failures=$((failures + 1))
+            fi
+        done
+        own_ns="$(service_field "$name" '.namespace')"
+        while IFS= read -r mw; do
+            [[ -n "$mw" ]] || continue
+            best=""
+            for owner_ns in "${!_ns_owner[@]}"; do
+                [[ "$mw" == "$owner_ns"-* && ${#owner_ns} -gt ${#best} ]] && best="$owner_ns"
+            done
+            [[ -n "$best" && "$best" != "$own_ns" ]] || continue
+            if [[ "$reqs" != *" ${_ns_owner[$best]} "* ]]; then
+                echo "MISSING requires: [${_ns_owner[$best]}] in $desc (its manifests use middleware $mw)"
+                failures=$((failures + 1))
+            fi
+        done < <(grep -rhoE '[a-z0-9][a-z0-9-]*@kubernetescrd' "$d" --include='*.yaml' --include='*.yml' 2>/dev/null | sed 's/@kubernetescrd$//' | sort -u)
         # Isolation is a decision every descriptor makes explicitly: a list of
         # templates, or [] with a comment saying why the namespace stays open.
         if [[ "$(yq -r '.networkPolicies | type' "$desc" 2>/dev/null)" != "!!seq" ]]; then

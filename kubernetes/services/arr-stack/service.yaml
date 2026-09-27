@@ -4,6 +4,7 @@ namespace: arr-stack
 group: media
 url: sonarr
 description: Sonarr, Radarr, Prowlarr, Bazarr
+requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 steps:
   - apply: shared-storage.yaml
 

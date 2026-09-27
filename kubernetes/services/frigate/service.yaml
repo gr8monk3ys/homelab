@@ -5,6 +5,7 @@ group: home
 optin: true
 url: frigate
 description: Local NVR with object detection; publishes to Mosquitto in the home-assistant namespace
+requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 # Frigate also needs MQTT to the home-assistant namespace and RTSP to cameras
