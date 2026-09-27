@@ -22,3 +22,9 @@ ingress:
 gitops:
   # Used by the ArgoCD bootstrap manifests (kubernetes/gitops/argocd/*).
   repo_url: "https://github.com/your-username/homelab.git"  # GITOPS_REPO_URL
+
+ai:
+  # Where Open WebUI finds Ollama. The default is the in-cluster ollama
+  # service; point it at a GPU host's Ollama instead, e.g. under Docker
+  # Desktop / k3d: "http://host.docker.internal:11434".
+  ollama_url: "http://ollama.ollama.svc.cluster.local:11434"  # OLLAMA_URL

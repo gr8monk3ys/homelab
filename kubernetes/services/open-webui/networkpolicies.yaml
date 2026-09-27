@@ -66,3 +66,11 @@ spec:
       ports:
         - protocol: TCP
           port: 11434
+    # ...or an Ollama outside the cluster (OLLAMA_URL, e.g. a GPU host). Only
+    # the Ollama port, to any address: the host's IP is environment-specific.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 11434

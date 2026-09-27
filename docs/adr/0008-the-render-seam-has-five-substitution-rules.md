@@ -35,3 +35,13 @@ justify it and every descriptor free to diverge.
   per-service escape.
 - Revisit when a real descriptor needs a value the seam cannot express and
   the alternative is hardcoding it. Point at that descriptor in the revision.
+
+## Revision (2026-09-27): a sixth rule, OLLAMA_URL
+
+`open-webui` hardcoded the in-cluster Ollama URL, but a homelab whose GPU sits
+in a host outside the cluster (the first real deployment: k3d on a desktop
+with the GPU on the Windows host) needs Open WebUI pointed there instead.
+That is a cluster-wide value, so it became a sixth rule exactly as the
+consequences above prescribe: `http://ollama.ollama.svc.cluster.local:11434`
+-> `OLLAMA_URL`, from `ai.ollama_url` in `config/homelab.yaml`. There are
+still no per-service values.

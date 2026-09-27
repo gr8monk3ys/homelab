@@ -39,7 +39,7 @@ One ordered entry in a descriptor: a file to apply, optionally a pod label to wa
 _Avoid_: phase, stage
 
 **Placeholder**:
-A literal that manifests carry in git and that is replaced at install time: `homelab.local`, `admin@homelab.local`, `value: "UTC"`, the `homelab-ca` issuer, the example GitOps repo URL.
+A literal that manifests carry in git and that is replaced at install time: `homelab.local`, `admin@homelab.local`, `value: "UTC"`, the `homelab-ca` issuer, the example GitOps repo URL, the in-cluster Ollama URL.
 _Avoid_: template variable, default
 
 **Render**:

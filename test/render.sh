@@ -5,7 +5,7 @@
 #
 # Drives the interface only: set DOMAIN / ADMIN_EMAIL / TIMEZONE /
 # CERT_MANAGER_CLUSTER_ISSUER / GITOPS_REPO_URL, feed render_stream a line,
-# compare. Covers the five placeholder rules, replacement values carrying sed
+# compare. Covers the six placeholder rules, replacement values carrying sed
 # metacharacters (& and /), and the rule order (the email placeholder
 # contains the domain placeholder, so the email rule must run first; the repo
 # URL placeholder does not, so its place in the order is not observable).
@@ -16,7 +16,7 @@ set -uo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # render.sh captures these as env overrides when sourced; none may leak in.
-unset DOMAIN ADMIN_EMAIL TIMEZONE CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL ENVIRONMENT
+unset DOMAIN ADMIN_EMAIL TIMEZONE CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL OLLAMA_URL ENVIRONMENT
 # shellcheck source=scripts/lib/common.sh
 source "$TEST_DIR/../scripts/lib/common.sh"
 # shellcheck source=scripts/lib/render.sh
@@ -38,8 +38,9 @@ expect_render() {
 }
 
 # The effective values render_stream reads (what homelab_load_config exports).
-set_config() { # <domain> <email> <timezone> <issuer> <repo url>
+set_config() { # <domain> <email> <timezone> <issuer> <repo url> [ollama url]
     DOMAIN="$1" ADMIN_EMAIL="$2" TIMEZONE="$3" CERT_MANAGER_CLUSTER_ISSUER="$4" GITOPS_REPO_URL="$5"
+    OLLAMA_URL="${6:-http://ollama.ollama.svc.cluster.local:11434}"
 }
 
 echo "render rules:"
@@ -62,6 +63,11 @@ expect_render '  issuerRef: {name: homelab-ca}' '  issuerRef: {name: homelab-ca}
 # 5. the GitOps repository URL
 expect_render "  repoURL: https://github.com/your-username/homelab.git" \
               "  repoURL: https://git.example.test/me/infra.git" "GitOps repo URL"
+# 6. the Ollama URL
+set_config "lab.example.test" "ops@mail.example.test" "Europe/Amsterdam" \
+    "letsencrypt-prod" "https://git.example.test/me/infra.git" "http://gpu.example.test:11434"
+expect_render '  value: "http://ollama.ollama.svc.cluster.local:11434"' \
+              '  value: "http://gpu.example.test:11434"' "Ollama URL"
 
 # Nothing else changes.
 expect_render "  image: nginx:1.27" "  image: nginx:1.27" "untouched line"
