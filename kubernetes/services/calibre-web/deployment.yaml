@@ -27,19 +27,34 @@ spec:
                   app: calibre-server
               topologyKey: kubernetes.io/hostname
       securityContext:
-        # Note: LinuxServer.io images typically run as root internally
-        # They use PUID/PGID for file ownership but process runs as root
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: calibre-web
         image: lscr.io/linuxserver/calibre-web:0.6.23
+        # Security exception (namespace enforces baseline, not restricted):
+        # the LinuxServer.io s6 init must start as root, remap user abc to
+        # PUID/PGID (usermod/groupmod), chown /config, then drop to abc via
+        # setgroups/setuid before the app starts. With every capability dropped
+        # it dies with "s6-applyuidgid: unable to set supplementary group
+        # list" and never listens on 8083. This image has no non-root mode
+        # (started as 1000:1000 its init-adduser fails on /etc/group and
+        # lsiown), and there is no maintained non-root calibre-web image. So
+        # ALL is still dropped and only the baseline-allowed capabilities the
+        # init needs are added back; privilege escalation stays off and the
+        # app itself runs as uid 1000.
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
+            add:
+              - CHOWN
+              - DAC_OVERRIDE
+              - FOWNER
+              - SETGID
+              - SETUID
         ports:
         - containerPort: 8083
         env:
@@ -47,10 +62,12 @@ spec:
           value: "1000"
         - name: PGID
           value: "1000"
+        # DOCKER_MODS=linuxserver/mods:universal-calibre is deliberately not
+        # set: it downloads several hundred MB of calibre binaries on every
+        # container start (slower than any probe allows, and a network
+        # dependency at boot). Ebook conversion is served by calibre-server.
         - name: TZ
           value: "UTC"
-        - name: DOCKER_MODS
-          value: "linuxserver/mods:universal-calibre"
         - name: OAUTHLIB_RELAX_TOKEN_SCOPE
           value: "1"
         volumeMounts:
@@ -65,18 +82,23 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        # First start initialises app.db in /config; allow up to 5 minutes
+        # before liveness can restart it.
+        startupProbe:
+          tcpSocket:
+            port: 8083
+          periodSeconds: 10
+          failureThreshold: 30
         livenessProbe:
           httpGet:
             path: /
             port: 8083
-          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /
             port: 8083
-          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
       volumes:
