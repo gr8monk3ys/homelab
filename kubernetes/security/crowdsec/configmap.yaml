@@ -58,7 +58,9 @@ data:
     api:
       client:
         insecure_skip_verify: false
-        credentials_path: /etc/crowdsec/local_api_credentials.yaml
+        # Credentials the image's entrypoint generates at start live on the
+        # data PVC so they survive restarts (/etc/crowdsec is scratch).
+        credentials_path: /var/lib/crowdsec/data/local_api_credentials.yaml
       server:
         log_level: info
         listen_uri: 0.0.0.0:8080
@@ -70,7 +72,7 @@ data:
           - 172.16.0.0/12
           - 192.168.0.0/16
         online_client:
-          credentials_path: /etc/crowdsec/online_api_credentials.yaml
+          credentials_path: /var/lib/crowdsec/data/online_api_credentials.yaml
     prometheus:
       enabled: true
       level: full

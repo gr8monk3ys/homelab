@@ -59,13 +59,15 @@ spec:
             drop:
               - ALL
         env:
-        - name: DATABASE_URL
-          value: "postgresql://linkwarden:$(DB_PASSWORD)@linkwarden-postgres:5432/linkwarden"
+        # DB_PASSWORD must come before DATABASE_URL: $(VAR) only expands
+        # variables defined earlier in this list.
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: linkwarden-db-password
               key: password
+        - name: DATABASE_URL
+          value: "postgresql://linkwarden:$(DB_PASSWORD)@linkwarden-postgres:5432/linkwarden"
         - name: NEXTAUTH_SECRET
           valueFrom:
             secretKeyRef:
@@ -75,14 +77,17 @@ spec:
           value: "https://bookmarks.homelab.local"
         - name: NEXT_PUBLIC_DISABLE_REGISTRATION
           value: "true"
+        # The image's working directory (the app itself) is /data, and
+        # STORAGE_FOLDER is resolved relative to it, so the volume goes on
+        # /data/data. Mounting it on /data would hide the application.
         - name: STORAGE_FOLDER
-          value: "/data/archives"
+          value: "data"
         ports:
         - containerPort: 3000
           name: http
         volumeMounts:
         - name: data
-          mountPath: /data
+          mountPath: /data/data
         resources:
           requests:
             memory: "256Mi"
@@ -90,18 +95,22 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        # Linkwarden has no /api/health endpoint (404); /api/v1/logins is a
+        # small unauthenticated JSON route that answers once the app is up.
         livenessProbe:
           httpGet:
-            path: /api/health
+            path: /api/v1/logins
             port: 3000
           initialDelaySeconds: 60
           periodSeconds: 30
+          timeoutSeconds: 5
         readinessProbe:
           httpGet:
-            path: /api/health
+            path: /api/v1/logins
             port: 3000
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
       volumes:
       - name: data
         persistentVolumeClaim:

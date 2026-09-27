@@ -1,4 +1,7 @@
 ---
+# Sized to fit every pod in the namespace at once (app + database + redis)
+# plus the PVCs declared here. A quota smaller than the sum blocks the
+# database pod from being (re)created while the app pod holds the quota.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -7,9 +10,9 @@ metadata:
 spec:
   hard:
     requests.cpu: "1"
-    requests.memory: 1Gi
-    limits.cpu: "2"
-    limits.memory: 2Gi
-    persistentvolumeclaims: "5"
-    requests.storage: 50Gi
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    persistentvolumeclaims: "8"
+    requests.storage: 200Gi
     pods: "10"

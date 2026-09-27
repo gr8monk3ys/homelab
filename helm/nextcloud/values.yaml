@@ -32,6 +32,14 @@ nextcloud:
       cpu: "1000m"
 
   # Health checks
+  # Startup budget of 10 minutes: a fresh install took ~2.5 min, longer than
+  # the liveness delay, and was killed mid-install.
+  startupProbe:
+    enabled: true
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
+
   livenessProbe:
     enabled: true
     initialDelaySeconds: 60
@@ -66,6 +74,15 @@ nextcloud:
 
 mysql:
   enabled: true
+  # Bitnami removed its images from docker.io/bitnami, so the chart's default
+  # docker.io/bitnami/mysql:8.0.34-debian-11-r75 no longer resolves. The same
+  # build is preserved read-only under docker.io/bitnamilegacy. STOPGAP: that
+  # repo gets no updates (and MySQL 8.0 is itself EOL); replace the Bitnami
+  # subchart with a StatefulSet on the official mysql:8.4 LTS image.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/mysql
+    tag: 8.0.34-debian-11-r75
   # Add a stable app label so NetworkPolicies can target MySQL pods.
   commonLabels:
     app: nextcloud-mysql
@@ -79,10 +96,39 @@ mysql:
   primary:
     podLabels:
       app: nextcloud-mysql
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault
+    # Chart default (runAsUser 1001, runAsNonRoot) plus the repo baseline.
+    # readOnlyRootFilesystem stays off: the Bitnami entrypoint writes its
+    # runtime config under /opt/bitnami/mysql.
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
     persistence:
       enabled: true
       size: 20Gi
       storageClass: "local-path"
+
+    # Chart defaults (~2 min startup budget, 1s liveness timeout) are too
+    # tight on a busy single-node cluster: mysqld was killed mid-startup.
+    startupProbe:
+      enabled: true
+      failureThreshold: 30
+      timeoutSeconds: 5
+    livenessProbe:
+      enabled: true
+      timeoutSeconds: 5
+    readinessProbe:
+      enabled: true
+      timeoutSeconds: 5
 
     resources:
       requests:
@@ -92,15 +138,42 @@ mysql:
         memory: "1Gi"
         cpu: "500m"
 
+    # This value replaces the chart's whole my.cnf, so it must carry the
+    # Bitnami paths (socket, datadir, pid, plugins); without them mysqld never
+    # opens the socket the probes use. Tuning lines are appended at the end.
+    # (query_cache_size was dropped: MySQL 8.0 removed it and refuses to start.)
     configuration: |-
       [mysqld]
-      innodb_buffer_pool_size = 512M
-      max_connections = 100
-      query_cache_size = 32M
-      character_set_server = utf8mb4
-      collation_server = utf8mb4_unicode_ci
-      slow_query_log = 1
-      long_query_time = 2
+      default_authentication_plugin=mysql_native_password
+      skip-name-resolve
+      explicit_defaults_for_timestamp
+      basedir=/opt/bitnami/mysql
+      plugin_dir=/opt/bitnami/mysql/lib/plugin
+      port=3306
+      socket=/opt/bitnami/mysql/tmp/mysql.sock
+      datadir=/bitnami/mysql/data
+      tmpdir=/opt/bitnami/mysql/tmp
+      max_allowed_packet=16M
+      bind-address=*
+      pid-file=/opt/bitnami/mysql/tmp/mysqld.pid
+      log-error=/opt/bitnami/mysql/logs/mysqld.log
+      innodb_buffer_pool_size=512M
+      max_connections=100
+      character_set_server=utf8mb4
+      collation_server=utf8mb4_unicode_ci
+      slow_query_log=1
+      long_query_time=2
+
+      [client]
+      port=3306
+      socket=/opt/bitnami/mysql/tmp/mysql.sock
+      default-character-set=utf8mb4
+      plugin_dir=/opt/bitnami/mysql/lib/plugin
+
+      [manager]
+      port=3306
+      socket=/opt/bitnami/mysql/tmp/mysql.sock
+      pid-file=/opt/bitnami/mysql/tmp/mysqld.pid
 
 service:
   type: ClusterIP

@@ -75,6 +75,14 @@ metadata:
   namespace: searxng
 spec:
   replicas: 1
+  # The namespace ResourceQuota (limits.cpu 1) cannot hold a surge pod next
+  # to the running one plus Redis, so a default rolling update deadlocks.
+  # Replace the pod in place instead (brief downtime on a single replica).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: searxng
@@ -83,15 +91,21 @@ spec:
       labels:
         app: searxng
     spec:
+      # The image's /etc/searxng and /var/cache/searxng are owned by the
+      # built-in searxng user (977:977); run as it so the entrypoint's
+      # ownership checks pass without root.
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        runAsUser: 977
+        runAsGroup: 977
+        fsGroup: 977
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: searxng
-        image: searxng/searxng:2024.12.16-92484e39c
+        # SearXNG prunes old tags from Docker Hub (the previous 2024.12.16 tag
+        # is gone); bump this to a current dated tag when upgrading.
+        image: docker.io/searxng/searxng:2026.9.25-12f8b6515
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -108,11 +122,17 @@ spec:
             secretKeyRef:
               name: searxng-secret
               key: secret-key
-        - name: SEARXNG_REDIS_URL
+        # SearXNG 2025+ renamed its Redis settings to Valkey (same protocol,
+        # so the existing Redis backend still works).
+        - name: SEARXNG_VALKEY_URL
           value: "redis://searxng-redis:6379"
         volumeMounts:
         - name: searxng-config
           mountPath: /etc/searxng
+        # Writable data/cache dir the image declares as a volume; needed with
+        # readOnlyRootFilesystem.
+        - name: cache
+          mountPath: /var/cache/searxng
         - name: tmp
           mountPath: /tmp
         resources:
@@ -140,6 +160,8 @@ spec:
       - name: searxng-config
         configMap:
           name: searxng-config
+      - name: cache
+        emptyDir: {}
       - name: tmp
         emptyDir: {}
 ---
@@ -190,7 +212,7 @@ data:
       base_url: "https://search.homelab.local"
       public_instance: false
 
-    redis:
+    valkey:
       url: "redis://searxng-redis:6379"
 
     ui:
@@ -246,8 +268,11 @@ data:
       - name: github
         engine: github
         shortcut: gh
+      # The standalone stackoverflow engine was removed upstream; Stack
+      # Overflow is served by the stackexchange engine.
       - name: stackoverflow
-        engine: stackoverflow
+        engine: stackexchange
+        api_site: 'stackoverflow'
         shortcut: so
 ---
 apiVersion: v1

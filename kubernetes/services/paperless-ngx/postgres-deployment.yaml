@@ -43,6 +43,11 @@ spec:
               key: password
         - name: POSTGRES_DB
           value: "paperless"
+        # local-path volumes are root-owned, so the non-root postgres user
+        # cannot chmod the mount point itself. Keep the cluster in a
+        # subdirectory that initdb creates (and therefore owns).
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         ports:
         - containerPort: 5432
           name: postgres
