@@ -7,7 +7,10 @@ metadata:
   labels:
     app: immich-machine-learning
 spec:
-  replicas: 1
+  # No `replicas:` on purpose (the API server defaults it to 1): when
+  # IMMICH_ML_URL points at a machine-learning service outside the cluster
+  # (a GPU host), scale this to 0 and a re-install leaves it there
+  # (docs/runbooks/storage-and-hardware.md, "A GPU outside the cluster").
   strategy:
     type: Recreate
   selector:

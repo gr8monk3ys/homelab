@@ -202,6 +202,42 @@ kubectl get nodes -o json | jq '.items[].status.allocatable' # or -o yaml
 kubectl describe node <name> | grep -A5 Allocatable
 ```
 
+## A GPU outside the cluster
+
+When the GPU sits in a host the cluster does not schedule onto (K3s in
+Docker Desktop via k3d, with the GPU on the Windows host), run the GPU
+workload as a plain container on that host and point the cluster at it.
+Two services support this, each through a render rule (ADR-0008) with a key
+in `config/homelab.yaml` and an environment override:
+
+| Client | Variable (config key) | Host container | Egress the repo allows |
+|---|---|---|---|
+| Open WebUI | `OLLAMA_URL` (`ai.ollama_url`) | Ollama, port 11434 | open-webui -> any address, TCP 11434 |
+| Immich server | `IMMICH_ML_URL` (`ai.immich_ml_url`) | `immich-machine-learning:<server version>-cuda`, port 3003 | immich-server -> any address, TCP 3003 |
+
+Under Docker Desktop, pods reach the host at `host.docker.internal`, and a
+port published on `127.0.0.1` only is still reachable that way, so the
+container need not be exposed on the LAN. For Immich:
+
+```bash
+# Tag must match the immich-server image (kubernetes/services/immich/server-deployment.yaml).
+docker run -d --name immich-machine-learning-gpu --restart unless-stopped \
+  --gpus all -p 127.0.0.1:3003:3003 -v immich-ml-model-cache:/cache \
+  ghcr.io/immich-app/immich-machine-learning:v3.2.2-cuda
+
+IMMICH_ML_URL=http://host.docker.internal:3003 ./scripts/services.sh install immich
+kubectl -n immich scale deployment immich-machine-learning --replicas=0
+```
+
+The in-cluster `immich-machine-learning` Deployment carries no `replicas:`,
+so a later re-install leaves it at 0; scale it back to 1 (and unset
+`IMMICH_ML_URL`) to return to the CPU service. The models (CLIP, face
+detection and recognition) take roughly 1-2 GiB of VRAM while loaded, and
+Immich unloads them after `MACHINE_LEARNING_MODEL_TTL` seconds idle (300 by
+default). If the host container is down, smart search, face detection and
+duplicate detection fail and their jobs retry; uploads and browsing still
+work.
+
 ## Frigate
 
 Frigate needs three things beyond the manifests: cameras it can reach over
