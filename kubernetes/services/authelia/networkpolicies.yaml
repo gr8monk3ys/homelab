@@ -77,6 +77,17 @@ spec:
       ports:
         - protocol: TCP
           port: 9091
+    # Prometheus scrapes the telemetry listener
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9959
   egress:
     # Allow DNS
     - to:

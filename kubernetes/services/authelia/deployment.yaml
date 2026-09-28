@@ -169,6 +169,11 @@ spec:
   - name: http
     port: 9091
     targetPort: 9091
+  # telemetry.metrics (config-secret.yaml) serves /metrics on its own
+  # listener, 0.0.0.0:9959; 9091/metrics is the login page.
+  - name: metrics
+    port: 9959
+    targetPort: 9959
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1

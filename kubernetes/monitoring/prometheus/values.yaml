@@ -62,6 +62,32 @@ grafana:
       root_url: https://grafana.homelab.local
     security:
       allow_embedding: true
+  # Requests and limits for Grafana, its dashboard/datasource sidecars (one
+  # `sidecar.resources` covers both) and the init container that chowns the
+  # PVC: the monitoring ResourceQuota refuses a pod without them.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  sidecar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 96Mi
+      limits:
+        cpu: 100m
+        memory: 192Mi
+  initChownData:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
 alertmanager:
   alertmanagerSpec:
@@ -77,6 +103,13 @@ alertmanager:
           resources:
             requests:
               storage: 10Gi
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 
 nodeExporter:
   enabled: true
@@ -120,12 +153,44 @@ prometheusOperator:
         limits:
           cpu: 100m
           memory: 64Mi
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  # The config-reloader sidecar (and its init container) the operator injects
+  # into the Prometheus and Alertmanager pods.
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+# K3s runs the controller manager, scheduler and kube-proxy inside the k3s
+# binary with their metrics bound to 127.0.0.1, and a single-server K3s keeps
+# its state in SQLite (kine), not etcd. Nothing answers on 10257/10259/10249/
+# 2381 from a pod, so these ServiceMonitors (and their always-firing
+# "...Down" alerts) are off. The API server, kubelet (with cAdvisor) and
+# CoreDNS are scraped as usual.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
 
 defaultRules:
   create: true
   rules:
     alertmanager: true
-    etcd: true
+    etcd: false  # no etcd to scrape, see kubeEtcd above
     configReloaders: true
     general: true
     k8s: true
@@ -133,14 +198,14 @@ defaultRules:
     kubeApiserverAvailability: true
     kubeApiserverSlos: true
     kubelet: true
-    kubeProxy: true
+    kubeProxy: false  # embedded in K3s, see kubeProxy above
     kubePrometheusGeneral: true
     kubePrometheusNodeRecording: true
     kubernetesApps: true
     kubernetesResources: true
     kubernetesStorage: true
     kubernetesSystem: true
-    kubeScheduler: true
+    kubeScheduler: false  # embedded in K3s, see kubeScheduler above
     kubeStateMetrics: true
     network: true
     node: true
