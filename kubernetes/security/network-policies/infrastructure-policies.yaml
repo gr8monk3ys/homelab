@@ -357,3 +357,27 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+---
+# Prometheus egress to Immich's metrics ports (8081 API, 8082 microservices;
+# kubernetes/services/immich/servicemonitor.yaml). A separate policy, not two
+# more ports in prometheus-policy above: NetworkPolicies add up, and Immich's
+# own namespace still admits only Prometheus on these ports.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-immich-metrics-egress
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8082

@@ -91,9 +91,17 @@ spec:
           value: "/data"
         - name: TZ
           value: "UTC"
+        # Prometheus metrics on 8081 (API) and 8082 (microservices), scraped
+        # by servicemonitor.yaml. Off unless this names what to include.
+        - name: IMMICH_TELEMETRY_INCLUDE
+          value: "all"
         ports:
         - containerPort: 2283
           name: http
+        - containerPort: 8081
+          name: metrics-api
+        - containerPort: 8082
+          name: metrics-micro
         volumeMounts:
         - name: uploads
           mountPath: /data
