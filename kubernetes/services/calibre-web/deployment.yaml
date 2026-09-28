@@ -301,6 +301,9 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    # The calibre web desktop (KasmVNC) has no login of its own: gate it
+    # behind Authelia like the arr apps.
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
     cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
