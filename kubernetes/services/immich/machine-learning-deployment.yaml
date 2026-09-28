@@ -43,7 +43,7 @@ spec:
         volumeMounts:
         - name: cache
           mountPath: /cache
-        - name: models
+        - name: home-cache
           mountPath: /.cache
         resources:
           requests:
@@ -69,10 +69,10 @@ spec:
       volumes:
       - name: cache
         persistentVolumeClaim:
-          claimName: immich-thumbs-pvc
-      - name: models
-        persistentVolumeClaim:
           claimName: immich-models-pvc
+      - name: home-cache
+        emptyDir:
+          sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -88,33 +88,7 @@ spec:
     targetPort: 3003
   type: ClusterIP
 ---
-# Storage PVCs
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: immich-uploads-pvc
-  namespace: immich
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 500Gi
-  storageClassName: local-path
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: immich-library-pvc
-  namespace: immich
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 500Gi
-  storageClassName: local-path
----
+# Downloaded models: SSD.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -126,17 +100,4 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  storageClassName: local-path
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: immich-thumbs-pvc
-  namespace: immich
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 50Gi
   storageClassName: local-path

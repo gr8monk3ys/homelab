@@ -1,0 +1,28 @@
+---
+# Bulk storage: large, slow, cheap disks (HDDs, a RAID, a NAS mount) for
+# files that are big and written sequentially: media, downloads, the photo
+# library, object-store data blocks. Never a database: Postgres, SQLite,
+# Redis and metadata stores stay on local-path (the SSD).
+#
+# The contract with the host, the same on a real node and on k3d:
+#   - the bulk disk is mounted at /mnt/bulk on the node (inside the node
+#     container, for k3d), with one directory per consumer created up front
+#     (the PVs below use hostPath type Directory, so a missing mount fails
+#     loudly instead of filling the node's root disk);
+#   - that node carries the label homelab.io/bulk=true.
+#
+# There is no provisioner: every bulk volume is a static PersistentVolume
+# declared next to the service that uses it (kubernetes/services/<name>/),
+# pre-bound to its claim with claimRef, pinned to the bulk node with
+# nodeAffinity, and kept on delete (Retain). Static volumes keep the paths on
+# the disk predictable (a media server outside the cluster can read
+# /mnt/bulk/data/media), and let two namespaces share one tree, which
+# hardlinks between downloads and the library need. See
+# docs/runbooks/storage-and-hardware.md.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: bulk
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain

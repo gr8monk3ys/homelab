@@ -2,8 +2,14 @@
 # qBittorrent - BitTorrent Client for arr-stack
 # https://www.qbittorrent.org/
 #
-# Default credentials: admin / adminadmin (change immediately!)
-# Configure download paths to match arr-stack shared storage
+# First login: qBittorrent 4.6.1+ has no default password; it prints a
+# temporary one for user admin to the pod log on first start
+# (kubectl -n qbittorrent logs deploy/qbittorrent). Change it in the Web UI.
+#
+# Downloads land in the shared media tree (bulk-storage.yaml) at /data,
+# the same path Sonarr and Radarr see, so imports are hardlinks. In
+# Options > Downloads set the default save path to /data/torrents and use
+# categories "tv" and "movies" (saving to /data/torrents/tv, .../movies).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,27 +29,32 @@ spec:
       labels:
         app: qbittorrent
     spec:
+      # The home-operations image runs as any non-root UID with a read-only
+      # root filesystem; the LinuxServer.io image needs root and setuid.
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: qbittorrent
-        image: lscr.io/linuxserver/qbittorrent:4.6.7
+        image: ghcr.io/home-operations/qbittorrent:5.2.3
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
         env:
-        - name: PUID
-          value: "1000"
-        - name: PGID
-          value: "1000"
         - name: TZ
           value: "UTC"
-        - name: WEBUI_PORT
+        - name: QBT_WEBUI_PORT
           value: "8080"
+        - name: QBT_TORRENTING_PORT
+          value: "6881"
         ports:
         - containerPort: 8080
           name: webui
@@ -56,8 +67,10 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
-        - name: downloads
-          mountPath: /downloads
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "256Mi"
@@ -81,10 +94,14 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: qbittorrent-config-pvc
-      - name: downloads
+      - name: data
         persistentVolumeClaim:
-          claimName: qbittorrent-downloads-pvc
+          claimName: media-data
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
 ---
+# Config and resume data: SSD, never bulk.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -96,19 +113,6 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: local-path
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: qbittorrent-downloads-pvc
-  namespace: qbittorrent
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 500Gi
   storageClassName: local-path
 ---
 apiVersion: v1

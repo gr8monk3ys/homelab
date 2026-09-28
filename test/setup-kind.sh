@@ -181,7 +181,9 @@ setup_storage() {
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage" || \
         log "WARNING: Failed to apply kubernetes/storage/ (some components may already exist in Kind)"
     kubectl -n garage-system delete job garage-bootstrap --ignore-not-found >/dev/null 2>&1 || true
-    if kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/garage"; then
+    # A KinD node has no bulk disk, so Garage's data claim is always the local-path one.
+    if kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/garage" &&
+        kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/storage/garage/data/local-path.yaml"; then
         HARNESS_INSTALLED+=(garage)
     else
         log "WARNING: Failed to apply kubernetes/storage/garage/ (some components may already exist in Kind)"

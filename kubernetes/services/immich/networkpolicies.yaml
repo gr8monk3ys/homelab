@@ -21,9 +21,6 @@ spec:
         - podSelector:
             matchLabels:
               app: immich-server
-        - podSelector:
-            matchLabels:
-              app: immich-microservices
       ports:
         - protocol: TCP
           port: 5432
@@ -53,9 +50,6 @@ spec:
         - podSelector:
             matchLabels:
               app: immich-server
-        - podSelector:
-            matchLabels:
-              app: immich-microservices
       ports:
         - protocol: TCP
           port: 6379
@@ -111,7 +105,7 @@ spec:
               app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
-          port: 3001
+          port: 2283
   egress:
     - to:
         - namespaceSelector: {}

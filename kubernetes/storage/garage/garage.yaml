@@ -4,7 +4,9 @@
 #
 # Single node: replication_factor 1, SQLite metadata (the engine the Garage
 # docs recommend over LMDB when there is no second replica to rebuild from
-# after an unclean shutdown), metadata and data on their own PVCs.
+# after an unclean shutdown), metadata and data on their own PVCs. Metadata
+# is always on local-path (SSD); the data blocks go on local-path or on bulk
+# storage, chosen by GARAGE_DATA_STORAGE (data/).
 #
 # S3 endpoint (every consumer uses this one):
 #   http://garage.garage-system.svc.cluster.local:3900   region "garage", path-style
@@ -92,18 +94,10 @@ spec:
       storage: 2Gi
   storageClassName: local-path
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: garage-data
-  namespace: garage-system
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 100Gi
-  storageClassName: local-path
+# The garage-data claim is not here: it lives in data/<GARAGE_DATA_STORAGE>.yaml
+# (local-path, the default, or bulk), which setup_storage applies right after
+# this directory (the namespace has to exist first). The metadata claim above stays on local-path either way: it is
+# a SQLite database.
 ---
 apiVersion: apps/v1
 kind: Deployment

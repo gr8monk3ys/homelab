@@ -9,6 +9,70 @@ OPTIN_SERVICES="longhorn snapshot-controller volsync" ./setup-v2.sh
 ./scripts/services.sh install longhorn        # or one at a time
 ```
 
+## Bulk storage (media, photos, object data on big disks)
+
+`local-path` puts every volume on the node's root disk, usually an SSD.
+Big, sequentially written files go on a separate *bulk* disk instead:
+
+| What | Where | Claim |
+|---|---|---|
+| downloads + media library (arr-stack, qBittorrent) | `/mnt/bulk/data` | `media-data` in each namespace |
+| Immich upload location (originals, video, DB dumps) | `/mnt/bulk/immich` | `immich-uploads-pvc` |
+| Garage data blocks, with `GARAGE_DATA_STORAGE=bulk` | `/mnt/bulk/garage` | `garage-data` |
+
+Databases never go there: Postgres, SQLite (every *arr app's `/config`),
+Redis, Garage metadata and Immich thumbnails stay on `local-path`.
+
+**Host prerequisite:** on one node, mount the bulk disk at `/mnt/bulk`,
+create the directories the PVs name (they use hostPath `type: Directory`, so
+a missing mount fails instead of silently filling the root disk), and label
+the node:
+
+```bash
+sudo mkdir -p /mnt/bulk/data/{torrents,media}/{movies,tv} /mnt/bulk/immich /mnt/bulk/garage
+kubectl label node <node> homelab.io/bulk=true
+```
+
+The `bulk` StorageClass (`kubernetes/storage/bulk-storageclass.yaml`) has no
+provisioner. Each bulk volume is a static PV next to the service that uses it
+(`shared-storage.yaml`, `bulk-storage.yaml`, `storage.yaml`,
+`kubernetes/storage/garage/data/bulk.yaml`): pre-bound to its claim, pinned to
+the labelled node, `Retain` on delete. A pod that mounts one is scheduled to
+the bulk node, and its `local-path` claims are provisioned there too.
+
+The media tree is one directory mounted at `/data` in Sonarr, Radarr, Bazarr
+and qBittorrent (two PVs, one per namespace, same path), so an import is a
+hardlink, not a copy. Point qBittorrent's categories at `/data/torrents/tv`
+and `/data/torrents/movies`, the *arr root folders at `/data/media/tv` and
+`/data/media/movies`, and your media server's libraries at the same folders
+on the host.
+
+**Reinstalling after a delete.** A `Retain` PV keeps its data and goes
+`Released` when its claim is deleted; it will not bind the new claim until
+the old claim's UID is cleared:
+
+```bash
+kubectl patch pv bulk-arr-stack-data --type json -p '[{"op":"remove","path":"/spec/claimRef/uid"}]'
+```
+
+**Moving Garage's data to bulk on a running cluster.** The claim's class
+cannot change in place, and the metadata claim is pinned to the node it was
+provisioned on, so both are recreated. Scale Garage to zero, copy both
+volumes' contents out if the buckets matter (otherwise the bootstrap Job
+recreates the layout, key and buckets), delete the `garage-meta` and
+`garage-data` claims, then re-run `setup-v2.sh` with `GARAGE_DATA_STORAGE=bulk`
+and copy the contents back.
+
+**k3d on Docker Desktop (Windows).** Give the cluster a second node, a K3s
+agent container with the Windows folder bind-mounted at `/mnt/bulk` and
+`--node-label homelab.io/bulk=true`. From the WSL docker CLI, bind the
+distro's view of the drive (`/mnt/d/...`): `/run/desktop/mnt/host/d/...` is
+not the drive under the WSL 2 backend, but an empty tmpfs directory. Through
+that mount (9p/drvfs), every file shows as UID/GID 1000 with mode 0777,
+`chown` and `chmod` succeed but change nothing, any UID can write, hardlinks
+and symlinks work, and FIFOs do not. That is fine for media and
+object blocks, but not for a database.
+
 ## Longhorn (distributed block storage)
 
 **Host prerequisite:** `open-iscsi` must be installed and running on every

@@ -1,17 +1,12 @@
 ---
-# The shared media tree on bulk storage (kubernetes/storage/bulk-storageclass.yaml).
-#
-# One tree, mounted at /data in Sonarr, Radarr and Bazarr here and in
-# qBittorrent (its own PV onto the same directory), so a finished download
-# and its library copy are on one filesystem and one mount: Sonarr and
-# Radarr hardlink instead of copying. Layout (create it before installing):
-#
-#   /mnt/bulk/data/torrents/{movies,tv}   qBittorrent's save paths
-#   /mnt/bulk/data/media/{movies,tv}      the library; add these to your media server
+# qBittorrent's view of the shared media tree: a second static PV onto the
+# same bulk directory as arr-stack's (kubernetes/services/arr-stack/shared-storage.yaml),
+# because a PersistentVolumeClaim cannot cross namespaces. Both mount it at
+# /data, so the paths qBittorrent reports are the paths Sonarr and Radarr see.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: bulk-arr-stack-data
+  name: bulk-qbittorrent-data
   labels:
     homelab.io/bulk-path: data
 spec:
@@ -22,7 +17,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: bulk
   claimRef:
-    namespace: arr-stack
+    namespace: qbittorrent
     name: media-data
   hostPath:
     path: /mnt/bulk/data
@@ -39,12 +34,12 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: media-data
-  namespace: arr-stack
+  namespace: qbittorrent
 spec:
   accessModes:
     - ReadWriteMany
   storageClassName: bulk
-  volumeName: bulk-arr-stack-data
+  volumeName: bulk-qbittorrent-data
   resources:
     requests:
       storage: 2Ti

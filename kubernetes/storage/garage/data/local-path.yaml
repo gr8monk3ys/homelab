@@ -1,0 +1,16 @@
+---
+# Garage data blocks on local-path, next to everything else (the default,
+# GARAGE_DATA_STORAGE=local-path). setup_storage applies exactly one file
+# from this directory; bulk.yaml is the alternative.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+  namespace: garage-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
