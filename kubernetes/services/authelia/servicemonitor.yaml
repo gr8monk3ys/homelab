@@ -1,6 +1,7 @@
 ---
 # ServiceMonitor for Authelia
-# Authelia exposes Prometheus metrics at /metrics
+# Authelia exposes Prometheus metrics at /metrics on its telemetry port
+# (9959, the Service's `metrics` port), not on the web port 9091.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -14,6 +15,6 @@ spec:
     matchLabels:
       app: authelia
   endpoints:
-  - port: http
+  - port: metrics
     path: /metrics
     interval: 30s

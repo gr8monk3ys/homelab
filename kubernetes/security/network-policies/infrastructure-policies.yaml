@@ -278,6 +278,9 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+  # Egress is every port a ServiceMonitor in this repo (or the chart) scrapes,
+  # and nothing else. A new scrape target on a new port needs a line here, or
+  # K3s's kube-router rejects the scrape ("connection refused").
   egress:
     # Allow DNS
     - to:
@@ -286,20 +289,84 @@ spec:
       ports:
         - protocol: UDP
           port: 53
-    # Allow scraping all namespaces
+        - protocol: TCP
+          port: 53
+    # The rest of the stack in this namespace: Grafana (3000), Alertmanager
+    # (9093: scraped, and where Prometheus sends alerts), the config-reloader
+    # sidecars and kube-state-metrics (8080), the blackbox exporter (9115) and
+    # the operator (10250, its HTTPS port).
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 9115
+        - protocol: TCP
+          port: 10250
+    # CoreDNS metrics
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: TCP
+          port: 9153
+    # Application and infrastructure metrics in other namespaces; each
+    # destination namespace still decides with its own ingress policy.
     - to:
         - namespaceSelector: {}
       ports:
         - protocol: TCP
-          port: 9090
+          port: 3000  # gitea
+        - protocol: TCP
+          port: 3903  # garage admin API
+        - protocol: TCP
+          port: 5678  # n8n
+        - protocol: TCP
+          port: 6060  # crowdsec
+        - protocol: TCP
+          port: 7472  # metallb
+        - protocol: TCP
+          port: 8080  # various
+        - protocol: TCP
+          port: 8085  # velero
+        - protocol: TCP
+          port: 8123  # home-assistant
+        - protocol: TCP
+          port: 9090  # prometheus-style exporters
+        - protocol: TCP
+          port: 9100  # node-exporter (pod network)
+        - protocol: TCP
+          port: 9617  # pihole exporter
+        - protocol: TCP
+          port: 9959  # authelia telemetry
+    # The nodes themselves: the API server (6443), the kubelet and cAdvisor
+    # (10250) and node-exporter, which runs on the host network (9100). Node
+    # IPs are not pod IPs, so a namespaceSelector never matches them; they
+    # are on a private LAN (a k3d Docker network here), so the private ranges
+    # and only these three ports.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 6443
         - protocol: TCP
           port: 9100
         - protocol: TCP
-          port: 8080
-        - protocol: TCP
-          port: 6060
-        - protocol: TCP
-          port: 7472
+          port: 10250
 ---
 # Velero backup system
 apiVersion: networking.k8s.io/v1
