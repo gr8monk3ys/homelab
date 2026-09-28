@@ -65,7 +65,13 @@ and copy the contents back.
 
 **k3d on Docker Desktop (Windows).** Give the cluster a second node, a K3s
 agent container with the Windows folder bind-mounted at `/mnt/bulk` and
-`--node-label homelab.io/bulk=true`. From the WSL docker CLI, bind the
+`--node-label homelab.io/bulk=true`. Run it as k3d runs its own nodes:
+`--privileged --init`, tmpfs on `/run` and `/var/run`, and
+`mount --make-rshared /` before `k3s agent`. Without `--init`, zombies make
+the container impossible to stop. Without the shared root, node-exporter
+fails with "not a shared or slave mount". Keep `/var/lib/rancher/k3s` and
+`/etc/rancher/node` on named volumes, so a re-created container keeps its
+identity and node password. From the WSL docker CLI, bind the
 distro's view of the drive (`/mnt/d/...`): `/run/desktop/mnt/host/d/...` is
 not the drive under the WSL 2 backend, but an empty tmpfs directory. Through
 that mount (9p/drvfs), every file shows as UID/GID 1000 with mode 0777,
