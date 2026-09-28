@@ -176,13 +176,15 @@ setup_storage() {
         return 0
     fi
 
-    # Storage + MinIO, through the render seam the installer uses.
+    # Storage + Garage, through the render seam the installer uses. The
+    # bootstrap Job is replaced like setup-v2.sh does (its template is immutable).
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage" || \
         log "WARNING: Failed to apply kubernetes/storage/ (some components may already exist in Kind)"
-    if kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/minio"; then
-        HARNESS_INSTALLED+=(minio)
+    kubectl -n garage-system delete job garage-bootstrap --ignore-not-found >/dev/null 2>&1 || true
+    if kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/storage/garage"; then
+        HARNESS_INSTALLED+=(garage)
     else
-        log "WARNING: Failed to apply kubernetes/storage/minio/ (some components may already exist in Kind)"
+        log "WARNING: Failed to apply kubernetes/storage/garage/ (some components may already exist in Kind)"
     fi
 
     log "Storage setup completed"
@@ -262,9 +264,9 @@ setup_monitoring() {
     kubectl_apply_rendered_dir "$HOMELAB_DIR/kubernetes/monitoring/uptime-kuma" || \
         log "WARNING: Failed to deploy uptime-kuma"
 
-    # Optional: MinIO ServiceMonitor (requires Prometheus Operator CRDs from kube-prometheus-stack)
-    if kubectl get namespace minio-system &>/dev/null; then
-        kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/monitoring/servicemonitors/minio.yaml" 2>/dev/null || true
+    # Optional: Garage ServiceMonitor (requires Prometheus Operator CRDs from kube-prometheus-stack)
+    if kubectl get namespace garage-system &>/dev/null; then
+        kubectl_apply_rendered_file "$HOMELAB_DIR/kubernetes/monitoring/servicemonitors/garage.yaml" 2>/dev/null || true
     fi
 
     log "Monitoring setup completed"

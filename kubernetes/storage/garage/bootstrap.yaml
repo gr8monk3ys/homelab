@@ -1,0 +1,191 @@
+---
+# One-shot, re-runnable Garage bootstrap through the admin API (v2):
+#
+#   1. assign this node a role in the cluster layout and apply it (only while
+#      no layout has ever been applied);
+#   2. import the backup access key from the backup-s3-credentials secret row
+#      (re-imported if the stored secret no longer matches, e.g. after
+#      ROTATE_SECRETS=true);
+#   3. create the buckets the backup tools expect and give the key
+#      read/write/owner on each.
+#
+# Every step checks before it acts, so running it again changes nothing.
+# setup_storage deletes the finished Job and re-applies this file on every
+# install; the TTL removes it an hour after it finishes otherwise.
+#
+# The Garage image is FROM scratch (no shell), so this runs curl in its own
+# image. Buckets: velero-backups (kubernetes/backup/velero/values.yaml),
+# longhorn-backups (kubernetes/services/longhorn/values.yaml), volsync-backups
+# (docs/runbooks/storage-and-hardware.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-bootstrap
+  namespace: garage-system
+  labels:
+    app: garage-bootstrap
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    set -eu
+
+    ADMIN="${GARAGE_ADMIN_URL:-http://garage.garage-system.svc.cluster.local:3903}"
+    BUCKETS="${GARAGE_BUCKETS:-velero-backups longhorn-backups volsync-backups}"
+    ZONE="${GARAGE_ZONE:-homelab}"
+    # Bytes (SI). Matches the garage-data claim; local-path does not enforce it.
+    CAPACITY="${GARAGE_CAPACITY:-100000000000}"
+
+    # api <method> <path> [json]: response body on stdout; non-zero on HTTP >= 400.
+    api() {
+        if [ $# -ge 3 ]; then
+            curl -fsS -X "$1" -H "Authorization: Bearer $GARAGE_ADMIN_TOKEN" \
+                -H 'Content-Type: application/json' --data "$3" "$ADMIN$2"
+        else
+            curl -fsS -X "$1" -H "Authorization: Bearer $GARAGE_ADMIN_TOKEN" "$ADMIN$2"
+        fi
+    }
+
+    # The API pretty-prints its JSON; these helpers tolerate either layout.
+    # First 64-hex "id" in a JSON document (node and bucket ids are 64 hex).
+    first_id() {
+        grep -o '"id": *"[0-9a-f]\{64\}"' | head -n 1 | grep -o '[0-9a-f]\{64\}'
+    }
+
+    wait_for() { # wait_for <what> <command...>
+        what="$1"
+        shift
+        i=0
+        until "$@" > /dev/null 2>&1; do
+            i=$((i + 1))
+            if [ "$i" -ge 60 ]; then
+                echo "timed out waiting for $what" >&2
+                exit 1
+            fi
+            sleep 5
+        done
+    }
+
+    cluster_healthy() {
+        api GET /v2/GetClusterHealth | grep -q '"status": *"healthy"'
+    }
+
+    import_key() {
+        api POST /v2/ImportKey "{\"accessKeyId\":\"$S3_ACCESS_KEY\",\"secretAccessKey\":\"$S3_SECRET_KEY\",\"name\":\"backup\"}" > /dev/null
+        echo "key: imported $S3_ACCESS_KEY"
+    }
+
+    wait_for "the Garage admin API at $ADMIN" api GET /v2/GetClusterStatus
+    status="$(api GET /v2/GetClusterStatus)"
+
+    # 1. Layout
+    version="$(printf '%s' "$status" | sed -n 's/.*"layoutVersion": *\([0-9]*\).*/\1/p' | head -n 1)"
+    if [ "${version:-0}" = "0" ]; then
+        node="$(printf '%s' "$status" | first_id)"
+        [ -n "$node" ] || { echo "no node id in GetClusterStatus" >&2; exit 1; }
+        api POST /v2/UpdateClusterLayout \
+            "{\"roles\":[{\"id\":\"$node\",\"zone\":\"$ZONE\",\"capacity\":$CAPACITY,\"tags\":[]}]}" > /dev/null
+        api POST /v2/ApplyClusterLayout '{"version":1}' > /dev/null
+        echo "layout: assigned node $(printf '%s' "$node" | cut -c1-16) (zone $ZONE, capacity $CAPACITY bytes), applied version 1"
+    else
+        echo "layout: version $version already applied"
+    fi
+    wait_for "the cluster to report healthy" cluster_healthy
+
+    # 2. Access key
+    if info="$(api GET "/v2/GetKeyInfo?id=$S3_ACCESS_KEY&showSecretKey=true" 2> /dev/null)"; then
+        if printf '%s' "$info" | grep -q "\"secretAccessKey\": *\"$S3_SECRET_KEY\""; then
+            echo "key: $S3_ACCESS_KEY present"
+        else
+            api POST "/v2/DeleteKey?id=$S3_ACCESS_KEY" > /dev/null
+            echo "key: $S3_ACCESS_KEY had a different secret; re-importing"
+            import_key
+        fi
+    else
+        import_key
+    fi
+
+    # 3. Buckets and permissions
+    for bucket in $BUCKETS; do
+        if info="$(api GET "/v2/GetBucketInfo?globalAlias=$bucket" 2> /dev/null)"; then
+            state="present"
+        else
+            info="$(api POST /v2/CreateBucket "{\"globalAlias\":\"$bucket\"}")"
+            state="created"
+        fi
+        id="$(printf '%s' "$info" | first_id)"
+        [ -n "$id" ] || { echo "no bucket id for $bucket" >&2; exit 1; }
+        api POST /v2/AllowBucketKey \
+            "{\"bucketId\":\"$id\",\"accessKeyId\":\"$S3_ACCESS_KEY\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":true}}" > /dev/null
+        echo "bucket: $bucket $state; $S3_ACCESS_KEY has read/write/owner"
+    done
+
+    echo "garage bootstrap: done"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: garage-bootstrap
+  namespace: garage-system
+  labels:
+    app: garage-bootstrap
+  annotations:
+    # Under ArgoCD: run after every sync, replacing the previous run.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: garage-bootstrap
+    spec:
+      # Never: a failed attempt's pod (and its log) stays until the TTL.
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: bootstrap
+        image: curlimages/curl:8.16.0
+        command: ["/bin/sh", "/scripts/bootstrap.sh"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: GARAGE_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: admin-token
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: backup-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: backup-secret-key
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+      volumes:
+      - name: scripts
+        configMap:
+          name: garage-bootstrap

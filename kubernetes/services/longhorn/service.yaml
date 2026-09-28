@@ -7,7 +7,7 @@ group: core
 optin: true
 priority: 10
 url: longhorn
-description: Longhorn distributed block storage (snapshots, backups to MinIO); needs open-iscsi on the host
+description: Longhorn distributed block storage (snapshots, backups to Garage); needs open-iscsi on the host
 requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 kind: helm
 chart: longhorn/longhorn
@@ -18,6 +18,6 @@ versionVar: LONGHORN_CHART_VERSION
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
 # Deliberately open: Longhorn is a storage system, not an app. Its manager,
 # instance-manager and CSI pods talk to the kubelet, the API server, iSCSI
-# targets on the node and MinIO across namespaces, none of which a template
+# targets on the node and Garage across namespaces, none of which a template
 # allows yet. See docs/runbooks/storage-and-hardware.md.
 networkPolicies: []

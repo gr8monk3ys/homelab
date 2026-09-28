@@ -23,7 +23,7 @@ The category a service belongs to (core, media, network, content, productivity, 
 _Avoid_: category, stack, tier
 
 **Toggle**:
-An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece, and, for ArgoCD (not a Helm release), the `argocd` row of `_health_infra_local_spec` in `scripts/lib/health.sh` (`ENABLE_GITOPS`). The other rows there (local-path, MinIO, CrowdSec) have no toggle: those pieces are always installed. Nothing restates a default.
+An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece, and, for ArgoCD (not a Helm release), the `argocd` row of `_health_infra_local_spec` in `scripts/lib/health.sh` (`ENABLE_GITOPS`). The other rows there (local-path, Garage, CrowdSec) have no toggle: those pieces are always installed. Nothing restates a default.
 _Avoid_: flag, feature flag, option
 
 **Service namespace**:
@@ -55,7 +55,7 @@ One `setup_*` function in the installer that brings up one piece of infrastructu
 _Avoid_: stage, section
 
 **Infrastructure**:
-The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, MinIO, Velero, the monitoring stack, network policies. Each Helm-installed piece is one row of `HELM_INFRA_RELEASES`, which carries its chart, namespace, toggle and health check; the four that are not Helm releases are listed in `scripts/lib/health.sh`.
+The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, Garage (the in-cluster S3 store), Velero, the monitoring stack, network policies. Each Helm-installed piece is one row of `HELM_INFRA_RELEASES`, which carries its chart, namespace, toggle and health check; the four that are not Helm releases are listed in `scripts/lib/health.sh`.
 _Avoid_: platform, system services
 
 **Policy template**:

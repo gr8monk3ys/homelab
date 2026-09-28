@@ -71,7 +71,7 @@ Thirteen of the 53, in the `secrets` namespace:
 - Vaultwarden admin token: `vaultwarden-admin` (`admin-token`)
 - Pi-hole web password: `pihole-config` (`web-password`)
 - Gitea admin: `gitea-admin` (`username`, `password`) — generated as a bootstrap credential only; no ExternalSecret copies it and nothing auto-provisions this account (Gitea runs with `INSTALL_LOCK=true` and registration disabled). Read it with `kubectl get secret -n secrets gitea-admin -o jsonpath='{.data.password}' | base64 -d`, then create the first admin manually: `kubectl -n gitea exec deploy/gitea -- gitea admin user create --admin --username <u> --password <p> --email <e>`
-- MinIO root creds: `minio-config` (`root-user`, `root-password`)
+- Garage: `garage-config` (`rpc-secret`, `admin-token`, `metrics-token`); the S3 key Velero, Longhorn and VolSync share: `backup-s3-credentials` (`access-key`, `secret-key`)
 - Authelia admin (plaintext for recovery): `authelia-admin` (`username`, `password`) — only the Argon2 hash in `authelia-users` reaches the cluster; read the plaintext with `kubectl get secret -n secrets authelia-admin -o jsonpath='{.data.password}' | base64 -d`
 - Authelia users database: `authelia-users` (`users_database.yml`)
 - Open WebUI: `open-webui-config` (`secret-key`)

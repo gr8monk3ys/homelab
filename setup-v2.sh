@@ -189,9 +189,12 @@ setup_storage() {
     log "Setting up persistent storage..."
 
     # Through the render seam, like everything else the installer applies.
-    # kubectl_apply_rendered_dir is maxdepth 1, so MinIO needs its own call.
+    # kubectl_apply_rendered_dir is maxdepth 1, so Garage needs its own call.
+    # The bootstrap Job is replaced on every run (a Job's template is
+    # immutable); it is idempotent, so running it again is harmless.
     kubectl_apply_rendered_dir kubernetes/storage
-    kubectl_apply_rendered_dir kubernetes/storage/minio
+    kubectl -n garage-system delete job garage-bootstrap --ignore-not-found >/dev/null 2>&1 || true
+    kubectl_apply_rendered_dir kubernetes/storage/garage
 
     # Wait for storage to be ready
     if kubectl get namespace local-path-storage &> /dev/null; then
@@ -199,6 +202,17 @@ setup_storage() {
             warning "local-path-provisioner pods not ready yet (continuing)"
     else
         warning "Namespace local-path-storage not found. If you're not using K3s/Kind, install a storage provisioner."
+    fi
+
+    # Garage: the S3 target for Velero, Longhorn and VolSync. The bootstrap
+    # Job assigns the layout and creates the backup key and buckets. Without a
+    # node (an API server alone, as in test/e2e-default-install.sh) no pod can
+    # start, so there is nothing to wait for.
+    if [[ -n "$(kubectl get nodes -o name 2>/dev/null)" ]]; then
+        kubectl -n garage-system rollout status deployment/garage --timeout=300s || \
+            warning "Garage is not ready yet (continuing)"
+        kubectl -n garage-system wait --for=condition=complete job/garage-bootstrap --timeout=300s || \
+            warning "garage-bootstrap has not completed; backups have no bucket until it does: kubectl -n garage-system logs job/garage-bootstrap"
     fi
 
     success "Storage setup completed"

@@ -121,7 +121,8 @@ validate_service_connectivity() {
     log "Validating service connectivity (requires running environment)..."
 
     # Endpoints: infrastructure UIs plus every enabled service's descriptor url.
-    local services=("Grafana:https://grafana.$DOMAIN" "MinIO:https://minio.$DOMAIN")
+    # (Garage has no web UI and no Ingress; its health is a pod check.)
+    local services=("Grafana:https://grafana.$DOMAIN")
     local name url
     for name in $(services_all); do
         service_enabled "$name" || continue

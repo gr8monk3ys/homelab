@@ -32,9 +32,10 @@ kubectl patch storageclass longhorn \
 ```
 
 Replica count is 1 because this is a single node; raise it when you add
-nodes. The backup target points at the in-cluster MinIO, which means a
+nodes. The backup target points at the in-cluster Garage (bucket
+`longhorn-backups`, created by Garage's bootstrap Job), which means a
 Longhorn backup survives a volume loss but not the loss of the node that
-holds MinIO. Velero and `scripts/backup-secrets.sh` remain the off-node
+holds Garage. Velero and `scripts/backup-secrets.sh` remain the off-node
 path.
 
 The UI is at `longhorn.<domain>`, behind the same ingress as everything else.
@@ -46,8 +47,14 @@ itself does not ship. Install it before VolSync if you want snapshot-based
 copies; VolSync's `Direct` clone method works without it.
 
 VolSync replicates a PVC on a schedule, with restic as the mover, into
-MinIO. One `ReplicationSource` per PVC you care about, in that PVC's
-namespace:
+Garage's `volsync-backups` bucket. One `ReplicationSource` per PVC you care
+about, in that PVC's namespace. The repository Secret it names holds
+`RESTIC_REPOSITORY=s3:http://garage.garage-system.svc.cluster.local:3900/volsync-backups/<pvc>`,
+a `RESTIC_PASSWORD` of your choosing, `AWS_DEFAULT_REGION=garage`, and the
+shared backup key (`backup-s3-credentials`: `access-key` as
+`AWS_ACCESS_KEY_ID`, `secret-key` as `AWS_SECRET_ACCESS_KEY`), best built
+with an ExternalSecret like Longhorn's in
+`kubernetes/services/longhorn/namespace.yaml`:
 
 ```yaml
 apiVersion: volsync.backube/v1alpha1
@@ -68,7 +75,7 @@ spec:
 ```
 
 The mover pod runs in the application's namespace, so that namespace needs
-egress to MinIO. Add that egress rule to the service's own
+egress to Garage (namespace `garage-system`, TCP 3900). Add that egress rule to the service's own
 `kubernetes/services/<name>/networkpolicies.yaml` (ADR-0009) rather than
 opening the namespace.
 

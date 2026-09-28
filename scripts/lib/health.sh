@@ -72,12 +72,12 @@ fi
 # Every other piece is a row of HELM_INFRA_RELEASES (scripts/lib/helm.sh) and
 # is read from there, so a piece cannot be installed and go unchecked.
 # A "-" in the toggle column means the installer brings the piece up
-# unconditionally: setup_storage (local-path, MinIO) and setup_security
+# unconditionally: setup_storage (local-path, Garage) and setup_security
 # (CrowdSec) have no toggle, so these three are always expected.
 _health_infra_local_spec() {
     case "$1" in
         local-path) echo "local-path-storage app=local-path-provisioner -" ;;
-        minio)      echo "minio-system app=minio -" ;;
+        garage)     echo "garage-system app=garage -" ;;
         crowdsec)   echo "crowdsec app=crowdsec -" ;;
         argocd)     echo "argocd - ENABLE_GITOPS=false" ;;
         *)          return 1 ;;
@@ -86,7 +86,7 @@ _health_infra_local_spec() {
 
 # The infrastructure the installer brings up: storage first, then every Helm
 # release in the order the table installs them, then CrowdSec and ArgoCD.
-HEALTH_INFRA=(local-path minio)
+HEALTH_INFRA=(local-path garage)
 while IFS= read -r _health_piece; do
     HEALTH_INFRA+=("$_health_piece")
 done < <(helm_infra_release_names)
@@ -444,7 +444,6 @@ access_summary() {
     if infra_enabled argocd; then
         echo "    argocd              https://argocd.$DOMAIN"
     fi
-    echo "    minio               https://minio.$DOMAIN"
     for group in $(service_group_names); do
         line=""
         for name in $(services_in_group "$group"); do

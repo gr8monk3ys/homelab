@@ -35,10 +35,24 @@ Notes:
 
 ## Where the backups land (read this first)
 
-Velero's default `BackupStorageLocation` points at the MinIO running inside
-this cluster (`http://minio.minio.svc.cluster.local:9000`). MinIO stores its
-data on a `local-path` PersistentVolume, which is a directory on the node's
-own disk.
+Velero's default `BackupStorageLocation` points at the Garage running inside
+this cluster (`http://garage.garage-system.svc.cluster.local:3900`, region
+`garage`, bucket `velero-backups`). Garage stores its data on `local-path`
+PersistentVolumes, which are directories on the node's own disk.
+
+Garage's `garage-bootstrap` Job (`kubernetes/storage/garage/bootstrap.yaml`)
+assigns the node its layout, imports the shared backup key
+(`backup-s3-credentials`) and creates the `velero-backups`,
+`longhorn-backups` and `volsync-backups` buckets. It runs on every
+`./setup-v2.sh` and changes nothing when all of that already exists. To look
+inside:
+
+```bash
+kubectl -n garage-system exec deploy/garage -- /garage status
+kubectl -n garage-system exec deploy/garage -- /garage bucket list
+kubectl -n garage-system exec deploy/garage -- /garage key list
+kubectl -n garage-system logs job/garage-bootstrap   # within an hour of the last run
+```
 
 On a single-node homelab that means **the backups sit on the same physical
 disk as the volumes they back up**. That covers exactly one failure mode, a
@@ -55,8 +69,9 @@ To fix it, point the BackupStorageLocation somewhere off this machine:
 - **An external S3 bucket** (Backblaze B2, Wasabi, AWS). Change `s3Url`,
   `region` and `bucket` in `kubernetes/backup/velero/values.yaml`, and put
   the credentials in the secret table (`scripts/lib/secrets.sh`) instead of
-  reusing the MinIO ones.
-- **A second machine** running MinIO, if you already have one.
+  reusing the Garage ones.
+- **A second machine** running Garage (or any S3 store), if you already have
+  one.
 
 Whatever you choose, prove a restore once. A backup nobody has restored from
 is a hypothesis.

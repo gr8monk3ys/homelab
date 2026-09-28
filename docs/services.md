@@ -52,7 +52,7 @@ OPTIN_SERVICES="gatus jellyseerr navidrome" ./setup-v2.sh
 | cert-manager | `INSTALL_CERT_MANAGER` (true) | Local CA issuer `homelab-ca` by default; `letsencrypt-staging`/`letsencrypt-prod` issuers available for public domains (not `.local`/`.lan`) |
 | External Secrets Operator | `INSTALL_EXTERNAL_SECRETS` (true) | Copies credentials from the central `secrets` namespace into app namespaces; see `docs/credentials.md` |
 | local-path provisioner | always | Default storage class (host storage under K3s's data dir) |
-| MinIO | always | S3-compatible object store; Velero backup target |
+| Garage | always | S3-compatible object store (`garage-system`); backup target for Velero, Longhorn and VolSync. A bootstrap Job creates the layout, the backup key and the buckets |
 | Velero | `INSTALL_VELERO` (true) | Backup schedules below |
 | ExternalDNS | `INSTALL_EXTERNAL_DNS` (false) | Cloudflare only; needs a real DNS zone and a `cloudflare-api-token` secret; runs `upsert-only` so it won't delete records it doesn't manage |
 | CrowdSec | always | Agent + Traefik bouncer, wired into the request path: Traefik writes the access logs the agent reads, and the bouncer middleware is enforced on the `websecure` entrypoint |
@@ -64,7 +64,7 @@ Every Helm-installed piece above is one row of `HELM_INFRA_RELEASES` in
 `scripts/lib/helm.sh` (chart, namespace, version variable, values, toggle and
 the pod selector its health check looks for), and
 `./scripts/validate-setup.sh --infra` checks exactly those rows plus
-local-path, MinIO, CrowdSec and ArgoCD. See ADR-0006.
+local-path, Garage, CrowdSec and ArgoCD. See ADR-0006.
 
 ## Monitoring (installed by default)
 
@@ -149,7 +149,7 @@ secrets are already generated. Add them by name:
 | Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
 | kured (no URL; reboots the node when `/var/run/reboot-required` appears; hostPID + privileged by design) | — | core |
 | LocalAI | `localai.` | ai |
-| Longhorn (distributed block storage, snapshots, backups to MinIO; needs open-iscsi on the host) | `longhorn.` | core |
+| Longhorn (distributed block storage, snapshots, backups to Garage; needs open-iscsi on the host) | `longhorn.` | core |
 | Metabase | `metabase.` | productivity |
 | Miniflux (feed reader, Postgres-backed; overlaps yarr) | `reader.` | content |
 | Navidrome | `music.` | media |
@@ -168,7 +168,7 @@ secrets are already generated. Add them by name:
 | Tailscale operator (no URL; exposes services on your tailnet; needs the user-supplied `tailscale-oauth` secret) | — | network |
 | Tautulli (Plex statistics; Plex-only, so it is useful here only if you run Plex somewhere alongside this cluster's Jellyfin) | `stats.` | media |
 | Umami | `analytics.` | productivity |
-| VolSync (no URL; PVC replication and restic backups to MinIO) | — | core |
+| VolSync (no URL; PVC replication and restic backups to Garage) | — | core |
 | Whisper | `whisper.` | ai |
 
 Storage, remote access and hardware acceleration (Longhorn, VolSync,
@@ -220,7 +220,7 @@ Every container declares CPU/memory requests and limits in its manifest —
 check `kubernetes/services/<name>/` for specifics. Summed across the full
 stack, memory requests alone are ~25 GiB; a default install with the AI and
 dev toggles off fits comfortably in 16 GB, and a trimmed selection in 8 GB.
-Prometheus (50Gi), MinIO (100Gi), Nextcloud (100Gi), and media libraries
+Prometheus (50Gi), Garage (100Gi), Nextcloud (100Gi), and media libraries
 dominate storage.
 
 ## Scaling and customization

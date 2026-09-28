@@ -28,7 +28,7 @@ Repo-provided health checks:
 | Services stuck in `ImagePullBackOff` | `kubectl get pods -A | grep ImagePullBackOff` | Registry / DNS / network | Check node DNS + registry creds |
 | Many pods failing with secret errors | `kubectl get externalsecret -A` | External Secrets Operator | Reconcile ESO + SecretStore |
 | Storage/PVC issues | `kubectl get pvc -A` | StorageClass / PVs | Inspect PV binding + node disk |
-| Backups failing | `kubectl -n velero get schedule,backup` | Velero / MinIO | Run `./scripts/verify-backups.sh` |
+| Backups failing | `kubectl -n velero get schedule,backup` | Velero / Garage | Run `./scripts/verify-backups.sh` |
 | Need to rebuild cluster | Ensure secrets backup exists | Disaster recovery | See backup/restore runbook |
 
 ### Ingress/DNS Checklist

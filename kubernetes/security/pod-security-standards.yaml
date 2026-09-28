@@ -29,6 +29,17 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: garage-system
+  labels:
+    name: garage-system
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: crowdsec
   labels:
     name: crowdsec
