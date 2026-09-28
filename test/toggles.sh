@@ -139,7 +139,7 @@ assert_eq "true"  "$(INSTALL_KYVERNO=true infra_state kyverno)"     "kyverno wit
 assert_eq "false" "$(infra_state argocd)"                           "argocd by default"
 assert_eq "true"  "$(ENABLE_GITOPS=true infra_state argocd)"        "argocd with ENABLE_GITOPS=true"
 # No toggle column: the installer always brings these up.
-for piece in local-path minio crowdsec; do
+for piece in local-path garage crowdsec; do
     assert_eq "true" "$(infra_state "$piece")"                      "$piece (no toggle)"
     assert_eq "true" "$(INSTALL_KYVERNO=false ENABLE_GITOPS=false infra_state "$piece")" \
         "$piece with unrelated toggles off"

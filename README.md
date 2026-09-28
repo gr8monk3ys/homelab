@@ -16,7 +16,7 @@ K3s node and staying up. Deploy a subset, verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
 the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
-MinIO, Velero, kube-prometheus-stack) and the **service catalogue**: every
+Garage, Velero, kube-prometheus-stack) and the **service catalogue**: every
 directory under `kubernetes/services/` carries a `service.yaml` descriptor
 (group, opt-in, ordered install steps, network isolation), and one code path,
 `install_service`, installs any of them. There are 64: 18 install under the
@@ -74,7 +74,7 @@ passwords as one of its checks. `docs/credentials.md` documents how to read any 
 | Load balancing | MetalLB | on |
 | Ingress + TLS | Traefik, cert-manager (local CA `homelab-ca`; Let's Encrypt issuers available) | on |
 | Secrets | External Secrets Operator over a central `secrets` namespace; SOPS/age for GitOps | on |
-| Storage | local-path provisioner, MinIO (S3-compatible) | on |
+| Storage | local-path provisioner, Garage (S3-compatible) | on |
 | Backups | Velero (daily/weekly/monthly + 6-hourly critical schedules) | on |
 | Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager), blackbox-exporter, Uptime Kuma | on |
 | Logging | Loki (+ optional Grafana Alloy log shipper) | off |
@@ -198,7 +198,7 @@ kubectl -n pihole get svc pihole-dns
   `docs/runbooks/backup-restore.md`.
 
 > **The default backup target is not a backup.** Velero writes to the
-> in-cluster MinIO, which on a single node with `local-path` lives on that
+> in-cluster Garage, which on a single node with `local-path` lives on that
 > node's own disk: one disk failure loses the data and its backups together.
 > `verify-backups.sh` says so on every run until you point Velero at a NAS,
 > an external S3 bucket or another machine. See

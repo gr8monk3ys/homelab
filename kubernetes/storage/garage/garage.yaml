@@ -1,0 +1,227 @@
+---
+# Garage (https://garagehq.deuxfleurs.fr): the in-cluster S3-compatible object
+# store. It replaces MinIO, whose public images were withdrawn (issue #44).
+#
+# Single node: replication_factor 1, SQLite metadata (the engine the Garage
+# docs recommend over LMDB when there is no second replica to rebuild from
+# after an unclean shutdown), metadata and data on their own PVCs.
+#
+# S3 endpoint (every consumer uses this one):
+#   http://garage.garage-system.svc.cluster.local:3900   region "garage", path-style
+#
+# rpc_secret, admin_token and metrics_token come from the environment
+# (GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN, GARAGE_METRICS_TOKEN), filled from
+# the garage-credentials ExternalSecret below. The layout, the backup access
+# key and the buckets are created by the garage-bootstrap Job (bootstrap.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: garage-system
+  labels:
+    app: garage
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "sqlite"
+
+    replication_factor = 1
+
+    # Keep the in-flight block buffer inside the container's memory limit.
+    block_ram_buffer_max = "128MiB"
+
+    rpc_bind_addr = "0.0.0.0:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+
+    [s3_api]
+    api_bind_addr = "0.0.0.0:3900"
+    s3_region = "garage"
+
+    [admin]
+    api_bind_addr = "0.0.0.0:3903"
+    metrics_require_token = true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: garage-credentials
+  namespace: garage-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: garage-credentials
+    creationPolicy: Owner
+  data:
+  - secretKey: rpc-secret
+    remoteRef:
+      key: garage-config
+      property: rpc-secret
+  - secretKey: admin-token
+    remoteRef:
+      key: garage-config
+      property: admin-token
+  - secretKey: metrics-token
+    remoteRef:
+      key: garage-config
+      property: metrics-token
+  # The backup key the bootstrap Job imports (Velero, Longhorn and VolSync
+  # read the same row through their own ExternalSecrets).
+  - secretKey: backup-access-key
+    remoteRef:
+      key: backup-s3-credentials
+      property: access-key
+  - secretKey: backup-secret-key
+    remoteRef:
+      key: backup-s3-credentials
+      property: secret-key
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-meta
+  namespace: garage-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+  namespace: garage-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage
+  namespace: garage-system
+  labels:
+    app: garage
+spec:
+  replicas: 1
+  # ReadWriteOnce volumes: never two Garage processes on one data directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: garage
+  template:
+    metadata:
+      labels:
+        app: garage
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: garage
+        image: dxflrs/garage:v2.4.1
+        # The image's default command, `/garage server`, reads /etc/garage.toml;
+        # `kubectl -n garage-system exec deploy/garage -- /garage status` works too.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: GARAGE_RPC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: rpc-secret
+        - name: GARAGE_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: admin-token
+        - name: GARAGE_METRICS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: garage-credentials
+              key: metrics-token
+        ports:
+        - containerPort: 3900
+          name: s3
+        - containerPort: 3901
+          name: rpc
+        - containerPort: 3903
+          name: admin
+        volumeMounts:
+        - name: config
+          mountPath: /etc/garage.toml
+          subPath: garage.toml
+          readOnly: true
+        - name: meta
+          mountPath: /var/lib/garage/meta
+        - name: data
+          mountPath: /var/lib/garage/data
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        # TCP, not the admin /health endpoint: /health stays 503 until a
+        # layout is assigned, and the bootstrap Job reaches the admin API
+        # through the Service, which only routes to Ready pods.
+        readinessProbe:
+          tcpSocket:
+            port: 3900
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 3903
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: garage-config
+      - name: meta
+        persistentVolumeClaim:
+          claimName: garage-meta
+      - name: data
+        persistentVolumeClaim:
+          claimName: garage-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: garage-system
+  labels:
+    app: garage
+spec:
+  selector:
+    app: garage
+  ports:
+  - name: s3
+    port: 3900
+    targetPort: 3900
+  - name: admin
+    port: 3903
+    targetPort: 3903
+  type: ClusterIP

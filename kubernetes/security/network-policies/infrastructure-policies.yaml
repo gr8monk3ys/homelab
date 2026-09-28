@@ -48,6 +48,57 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+
+---
+# Garage namespace - the in-cluster S3 store (kubernetes/storage/garage)
+# The S3 API is open to every source: Velero, Longhorn and the VolSync mover
+# pods (which run in the application namespaces) all write to it, and every
+# request is authenticated by an S3 key. That rule has no `from` on purpose:
+# K3s's policy controller (kube-router) adds a new pod's IP to a peer set only
+# on its next sync, so a peer-based rule refuses a pod that connects in its
+# first seconds, which is exactly what a VolSync mover or a Velero job does.
+# The admin API (and /metrics) only from this namespace (the bootstrap Job,
+# which retries) and Prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: garage-policy
+  namespace: garage-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 3900
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3903
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The bootstrap Job talks to Garage's admin API inside the namespace
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3900
+        - protocol: TCP
+          port: 3903
 ---
 # CrowdSec Bouncer - Connects to Traefik
 apiVersion: networking.k8s.io/v1
@@ -287,14 +338,14 @@ spec:
       ports:
         - protocol: TCP
           port: 6443
-    # Allow MinIO/S3 for backup storage
+    # Allow Garage (in-cluster S3) for backup storage
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: minio-system
+              kubernetes.io/metadata.name: garage-system
       ports:
         - protocol: TCP
-          port: 9000
+          port: 3900
     # Allow external S3 if configured
     - to:
         - ipBlock:

@@ -14,6 +14,8 @@
 #   password            32-char random password (openssl base64, [A-Za-z0-9])
 #   password:<n>        n-char random password
 #   hex:<n>             n random bytes, hex encoded (2n characters)
+#   garage-key-id       "GK" + 24 random hex characters: the shape of a Garage
+#                       S3 access key ID, so `ImportKey` accepts it
 #   literal:<value>     the value as written (admin usernames, fixed config)
 #   empty               "" (the operator fills it in later)
 #   email               ADMIN_EMAIL (scripts/lib/render.sh, homelab_load_config)
@@ -67,8 +69,11 @@ secrets_catalogue() {
     # Core infrastructure. Every secret here must have a consumer:
     # scripts/secrets-check.sh fails CI on generated-but-unused or
     # used-but-ungenerated names.
-    secret minio-config             root-user=literal:minioadmin root-password=password
-    secret velero-minio-credentials access-key=literal:velero secret-key=hex:32
+    # Garage (kubernetes/storage/garage): the node's RPC secret and the admin
+    # and metrics bearer tokens. The backup key is the one S3 user Velero,
+    # Longhorn and VolSync share; the garage-bootstrap Job imports it.
+    secret garage-config            rpc-secret=hex:32 admin-token=hex:32 metrics-token=hex:32
+    secret backup-s3-credentials    access-key=garage-key-id secret-key=hex:32
 
     # Databases
     secret mysql-root-password      password=password
@@ -205,6 +210,7 @@ _secrets_resolve() {
         password)     generate_password ;;
         password:*)   generate_password "${policy#password:}" ;;
         hex:*)        generate_secret_key "${policy#hex:}" ;;
+        garage-key-id) printf 'GK%s' "$(generate_secret_key 12)" ;;
         literal:*)    printf '%s' "${policy#literal:}" ;;
         empty)        printf '' ;;
         email)        printf '%s' "$ADMIN_EMAIL" ;;

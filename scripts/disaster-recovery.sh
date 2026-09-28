@@ -323,10 +323,10 @@ reinstall_infrastructure() {
     FAILED_STEPS=()
 
     # The installer's relative order: ingress, secrets, storage, backup. Storage
-    # must follow secrets: MinIO's manifest carries an ExternalSecret, whose CRD
+    # must follow secrets: Garage's manifest carries an ExternalSecret, whose CRD
     # only exists once setup_secrets has installed External Secrets. In the
-    # other order the ExternalSecret is rejected, MinIO never gets credentials,
-    # and Velero's backup target is that MinIO. test/dr-phases.sh holds DR to
+    # other order the ExternalSecret is rejected, Garage never gets credentials,
+    # and Velero's backup target is that Garage. test/dr-phases.sh holds DR to
     # the installer's order.
     run_step "Ingress: Traefik, cert-manager, issuers (setup_ingress)" setup_ingress
 

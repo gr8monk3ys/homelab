@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Homelab backup verification: Velero and MinIO health come from
+# Homelab backup verification: Velero and Garage health come from
 # scripts/lib/health.sh; this script keeps the backup logic (storage location,
 # backups, schedules, snapshot locations, pod-volume annotations, the optional
 # backup/restore round trip) and takes the namespaces it inspects from the
@@ -75,9 +75,9 @@ check_backup_storage() {
 
     success "Backup storage is available: $available_bsl"
 
-    # MinIO, when it is the storage backend.
+    # Garage, when it is the storage backend.
     local line
-    if line="$(infra_healthy minio)"; then
+    if line="$(infra_healthy garage)"; then
         success "$line (storage backend)"
     else
         warning "$line"
@@ -89,7 +89,7 @@ check_backup_storage() {
 # check_backup_shares_fate <bsl names>
 #
 # A backup that lives on the disk it is backing up is not a backup. The
-# default target here is the in-cluster MinIO, which on a single node with
+# default target here is the in-cluster Garage, which on a single node with
 # the local-path provisioner sits on that node's own disk: one disk failure
 # loses the data and the backup together. This says so, every run, until the
 # target points somewhere else.
@@ -100,7 +100,7 @@ check_backup_shares_fate() {
         bucket_url="$(kubectl get backupstoragelocation "$name" -n "$BACKUP_NAMESPACE" \
             -o jsonpath='{.spec.config.s3Url}' 2>/dev/null || true)"
         case "$bucket_url" in
-            *.svc.cluster.local*|*.svc:*|*minio.minio*) in_cluster+="${in_cluster:+ }$name" ;;
+            *.svc.cluster.local*|*.svc:*|*garage.garage-system*) in_cluster+="${in_cluster:+ }$name" ;;
         esac
     done
 
@@ -109,7 +109,7 @@ check_backup_shares_fate() {
     # Only a real risk while the object store shares a node with the workloads.
     local node_count storage_class
     node_count="$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
-    storage_class="$(kubectl get pvc -n minio-system -o jsonpath='{.items[0].spec.storageClassName}' 2>/dev/null || true)"
+    storage_class="$(kubectl get pvc -n garage-system -o jsonpath='{.items[0].spec.storageClassName}' 2>/dev/null || true)"
 
     warning "BackupStorageLocation '$in_cluster' points at the in-cluster object store."
     if [[ "$node_count" == "1" || "$storage_class" == "local-path" ]]; then

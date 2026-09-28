@@ -1,7 +1,9 @@
 # Velero Helm Chart Values
 # Install with: helm install velero vmware-tanzu/velero -n velero -f values.yaml
 
-# Configuration for using MinIO as S3-compatible backend
+# The in-cluster Garage (kubernetes/storage/garage) as the S3-compatible
+# backend. The bucket and the access key are created by its garage-bootstrap
+# Job; region must equal s3_region in garage.toml.
 configuration:
   # Default backup storage location
   backupStorageLocation:
@@ -9,17 +11,16 @@ configuration:
     provider: aws
     bucket: velero-backups
     config:
-      region: minio
+      region: garage
       s3ForcePathStyle: "true"
-      s3Url: http://minio.minio.svc.cluster.local:9000
-      publicUrl: http://minio.homelab.local:9000
+      s3Url: http://garage.garage-system.svc.cluster.local:3900
 
   # Volume snapshot location (optional, for CSI snapshots)
   volumeSnapshotLocation:
   - name: default
     provider: aws
     config:
-      region: minio
+      region: garage
 
   # Default settings
   defaultBackupStorageLocation: default
@@ -32,7 +33,7 @@ configuration:
   # Note: modern Velero defaults to kopia; restic has been removed.
   uploaderType: kopia
 
-# Credentials for MinIO - managed via ExternalSecret
+# Credentials for Garage - managed via ExternalSecret
 # The secret is created by external-secrets.yaml in this directory
 credentials:
   useSecret: true
@@ -61,11 +62,19 @@ resources:
 # Init containers for plugins
 initContainers:
 - name: velero-plugin-for-aws
-  image: velero/velero-plugin-for-aws:v1.9.0
+  # v1.13.x is the release line for Velero 1.17 (chart 11.x, VELERO_CHART_VERSION).
+  image: velero/velero-plugin-for-aws:v1.13.2
   imagePullPolicy: IfNotPresent
   volumeMounts:
   - mountPath: /target
     name: plugins
+
+# The chart's CRD-upgrade hook Job runs docker.io/bitnamilegacy/kubectl:<k8s
+# minor>, which no longer exists for current Kubernetes (the pull fails and the
+# hook blocks the install). Helm installs the chart's crds/ on the first
+# install without it; after a chart bump that changes the CRDs, apply them by
+# hand: helm pull vmware-tanzu/velero --version <v> --untar && kubectl apply -f velero/crds
+upgradeCRDs: false
 
 # Metrics for Prometheus
 metrics:

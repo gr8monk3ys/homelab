@@ -1,0 +1,11 @@
+---
+# Garage, the in-cluster S3 store (backup target for Velero, Longhorn and
+# VolSync). Pod Security labels for this namespace are in
+# kubernetes/security/pod-security-standards.yaml (restricted), applied by
+# setup_pod_security_standards so POD_SECURITY_MODE governs them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage-system
+  labels:
+    name: garage-system

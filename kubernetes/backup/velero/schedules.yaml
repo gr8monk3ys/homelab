@@ -132,34 +132,3 @@ spec:
     defaultVolumesToFsBackup: true
     ttl: 72h  # 3 days for frequent backups
     storageLocation: default
----
-# ExternalSecret for Velero MinIO credentials
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: velero-minio-credentials
-  namespace: velero
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: homelab-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: velero-minio-credentials
-    creationPolicy: Owner
-    template:
-      type: Opaque
-      data:
-        cloud: |
-          [default]
-          aws_access_key_id={{ .access_key }}
-          aws_secret_access_key={{ .secret_key }}
-  data:
-  - secretKey: access_key
-    remoteRef:
-      key: velero-minio-credentials
-      property: access-key
-  - secretKey: secret_key
-    remoteRef:
-      key: velero-minio-credentials
-      property: secret-key

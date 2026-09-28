@@ -1,0 +1,27 @@
+---
+# ServiceMonitor for Garage (kubernetes/storage/garage).
+# Garage serves Prometheus metrics on its admin API port at /metrics; the
+# config sets metrics_require_token, so Prometheus sends the metrics token
+# (garage-credentials, filled from the garage-config secret row).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: garage
+  namespace: garage-system
+  labels:
+    app: garage
+spec:
+  jobLabel: app
+  selector:
+    matchLabels:
+      app: garage
+  endpoints:
+  - port: admin
+    path: /metrics
+    interval: 30s
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials:
+        name: garage-credentials
+        key: metrics-token

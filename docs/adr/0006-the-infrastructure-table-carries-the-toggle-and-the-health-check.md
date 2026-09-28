@@ -47,7 +47,7 @@ installer puts it, and that is genuinely health's business, not helm's.
 - A piece with no `--toggle` would be treated as always on. Every row has one,
   and a row without one is a mistake the next reader can see in the table.
 - `HEALTH_INFRA` is built at source time: the four pieces that are not Helm
-  releases (local-path, MinIO, CrowdSec, ArgoCD) stay in `health.sh`, which is
+  releases (local-path, MinIO (now Garage, ADR-0010), CrowdSec, ArgoCD) stay in `health.sh`, which is
   the only remaining list of infrastructure and is now short enough to read.
 - A wrong `--health-label` turns into a FAIL row, not a silent pass. That is
   the intended failure direction, but it means a chart that relabels its pods

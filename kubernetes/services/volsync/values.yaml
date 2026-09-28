@@ -4,7 +4,7 @@
 #
 # The operator installs its CRDs (ReplicationSource, ReplicationDestination)
 # and waits for them to be used. An example ReplicationSource that backs one
-# PVC up to the in-cluster MinIO with restic is in
+# PVC up to the in-cluster Garage (bucket volsync-backups) with restic is in
 # docs/runbooks/storage-and-hardware.md; nothing is replicated until you
 # create one.
 replicaCount: 1
