@@ -30,7 +30,10 @@ spec:
           type: RuntimeDefault
       containers:
       - name: open-webui
-        image: ghcr.io/open-webui/open-webui:v0.4.8
+        # Upgrades migrate webui.db in place on startup (Alembic). Back up
+        # /app/backend/data before bumping across a release that notes
+        # database migrations.
+        image: ghcr.io/open-webui/open-webui:v0.11.4
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -53,15 +56,36 @@ spec:
           value: "user"
         - name: WEBUI_AUTH
           value: "true"
+        # Web search through the homelab's SearXNG (in-cluster, JSON API).
+        # These seed Open WebUI's persistent config on first start; once an
+        # admin saves Settings > Web Search, the stored values win.
+        - name: ENABLE_WEB_SEARCH
+          value: "true"
+        - name: WEB_SEARCH_ENGINE
+          value: "searxng"
+        - name: SEARXNG_QUERY_URL
+          value: "http://searxng.searxng.svc.cluster.local:8080/search?q=<query>"
+        # The image is built for root: its static dir and /root are not
+        # writable by UID 1000. On startup it copies frontend assets into
+        # STATIC_DIR, so point that and HOME at writable emptyDirs.
+        - name: STATIC_DIR
+          value: "/app/static"
+        - name: HOME
+          value: "/home/open-webui"
         volumeMounts:
         - name: data
           mountPath: /app/backend/data
+        - name: static
+          mountPath: /app/static
+        - name: home
+          mountPath: /home/open-webui
         resources:
           requests:
-            memory: "256Mi"
+            memory: "512Mi"
             cpu: "100m"
+          # 0.5+ loads a local embedding model for RAG and web search.
           limits:
-            memory: "1Gi"
+            memory: "2Gi"
             cpu: "1000m"
         livenessProbe:
           httpGet:
@@ -79,6 +103,10 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: open-webui-data-pvc
+      - name: static
+        emptyDir: {}
+      - name: home
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

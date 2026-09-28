@@ -211,6 +211,9 @@ data:
       bind_address: "0.0.0.0"
       base_url: "https://search.homelab.local"
       public_instance: false
+      # No bot detection: the only clients are Traefik (behind the LAN) and
+      # open-webui's JSON API calls, which the limiter would flag as bots.
+      limiter: false
 
     valkey:
       url: "redis://searxng-redis:6379"
@@ -222,6 +225,10 @@ data:
         simple_style: "dark"
 
     search:
+      # json: Open WebUI's web search queries /search?format=json.
+      formats:
+        - html
+        - json
       safe_search: 1
       autocomplete: "google"
       default_lang: "en"
