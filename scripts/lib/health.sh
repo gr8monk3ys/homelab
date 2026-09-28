@@ -74,9 +74,12 @@ fi
 # A "-" in the toggle column means the installer brings the piece up
 # unconditionally: setup_storage (local-path, Garage) and setup_security
 # (CrowdSec) have no toggle, so these three are always expected.
+# The local-path provisioner is the cluster's, not the installer's: KinD (and
+# a standalone install) run it in local-path-storage, K3s and k3d bundle it
+# in kube-system. Both carry app=local-path-provisioner.
 _health_infra_local_spec() {
     case "$1" in
-        local-path) echo "local-path-storage app=local-path-provisioner -" ;;
+        local-path) echo "local-path-storage,kube-system app=local-path-provisioner -" ;;
         garage)     echo "garage-system app=garage -" ;;
         crowdsec)   echo "crowdsec app=crowdsec -" ;;
         argocd)     echo "argocd - ENABLE_GITOPS=false" ;;
@@ -217,6 +220,11 @@ _pods_running() {
     _kubectl get pods -n "$1" -l "$2" -o jsonpath='{.items[*].status.phase}' | grep -qw Running
 }
 
+# _pods_exist <ns> <selector>: 0 when any pod matches, whatever its phase.
+_pods_exist() {
+    _kubectl get pods -n "$1" -l "$2" -o name | grep -q .
+}
+
 # _ingress_has_host <ns> <host>
 _ingress_has_host() {
     _kubectl get ingress -n "$1" -o jsonpath='{.items[*].spec.rules[*].host}' | tr ' ' '\n' | grep -qx "$2"
@@ -295,19 +303,26 @@ service_healthy() {
 
 # _infra_health <piece>: rc 0/1/2, HEALTH_REASON set. No output.
 _infra_health() {
-    local piece="$1" spec namespaces selector ns="" candidate problems=()
+    local piece="$1" spec namespaces selector ns="" first="" candidate problems=()
     if ! spec="$(_health_infra_spec "$piece")"; then
         HEALTH_REASON="unknown infrastructure piece (known: ${HEALTH_INFRA[*]})"
         return 1
     fi
     _health_cluster || return 2
     read -r namespaces selector _ <<< "$spec"
+    # The first listed namespace whose pods carry the selector; failing that,
+    # the first one that exists (then the selector check below reports it).
+    # A namespace existing is not enough: kube-system always exists, and an
+    # empty local-path-storage must not hide a provisioner in kube-system.
     for candidate in ${namespaces//,/ }; do
-        if _ns_exists "$candidate"; then
+        _ns_exists "$candidate" || continue
+        first="${first:-$candidate}"
+        if [[ "$selector" == "-" ]] || _pods_exist "$candidate" "$selector"; then
             ns="$candidate"
             break
         fi
     done
+    ns="${ns:-$first}"
     if [[ -z "$ns" ]]; then
         HEALTH_REASON="namespace ${namespaces//,/ or } missing (not installed)"
         return 1

@@ -207,12 +207,15 @@ setup_storage() {
     esac
     kubectl_apply_rendered_file "kubernetes/storage/garage/data/${GARAGE_DATA_STORAGE}.yaml"
 
-    # Wait for storage to be ready
-    if kubectl get namespace local-path-storage &> /dev/null; then
-        kubectl wait --for=condition=Ready pods -l app=local-path-provisioner -n local-path-storage --timeout=300s || \
+    # Wait for storage to be ready. The provisioner is the cluster's own:
+    # K3s/k3d bundle it in kube-system, KinD runs it in local-path-storage.
+    local lp_ns
+    lp_ns="$(kubectl get pods -A -l app=local-path-provisioner -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null || true)"
+    if [[ -n "$lp_ns" ]]; then
+        kubectl wait --for=condition=Ready pods -l app=local-path-provisioner -n "$lp_ns" --timeout=300s || \
             warning "local-path-provisioner pods not ready yet (continuing)"
     else
-        warning "Namespace local-path-storage not found. If you're not using K3s/Kind, install a storage provisioner."
+        warning "No local-path-provisioner pod found. If you're not using K3s/Kind, install a storage provisioner."
     fi
 
     # Garage: the S3 target for Velero, Longhorn and VolSync. The bootstrap
