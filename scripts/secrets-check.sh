@@ -40,6 +40,7 @@ USER_SUPPLIED=(
     alertmanager-webhook     # docs/runbooks/alerting.md
     cloudflare-api-token     # docs/runbooks/external-dns.md
     cloudflare-tunnel-token  # docs/credentials.md (cloudflared)
+    qbittorrent-vpn          # docs/credentials.md (qBittorrent's gluetun VPN)
     renovate-token           # docs/credentials.md (renovate)
     tailscale-oauth          # docs/credentials.md (Tailscale operator)
 )
@@ -59,13 +60,14 @@ sops_file_secrets() {
     done | sort -u
 }
 
-# remoteRef.key of every ExternalSecret data/dataFrom entry, block or inline form.
+# remoteRef.key of every ExternalSecret data entry and extract.key of every
+# dataFrom entry, block or inline form.
 remote_keys() {
     find "${MANIFEST_DIRS[@]}" -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.tpl' \) \
         -not -path '*/charts/*' -print0 \
     | xargs -0 awk '
-        /remoteRef:[[:space:]]*\{/ { if (match($0, /key:[[:space:]]*"?[A-Za-z0-9._-]+/)) print substr($0, RSTART, RLENGTH); next }
-        /remoteRef:/ { pending = 1; next }
+        /(remoteRef|extract):[[:space:]]*\{/ { if (match($0, /key:[[:space:]]*"?[A-Za-z0-9._-]+/)) print substr($0, RSTART, RLENGTH); next }
+        /(remoteRef|extract):/ { pending = 1; next }
         pending && /^[[:space:]]*key:/ { print; pending = 0 }
         pending && !/^[[:space:]]*(property|version|key):/ { pending = 0 }
     ' | sed -E 's/.*key:[[:space:]]*"?([A-Za-z0-9._-]+).*/\1/' | sort -u

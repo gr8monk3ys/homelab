@@ -4,12 +4,37 @@
 #
 # First login: qBittorrent 4.6.1+ has no default password; it prints a
 # temporary one for user admin to the pod log on first start
-# (kubectl -n qbittorrent logs deploy/qbittorrent). Change it in the Web UI.
+# (kubectl -n qbittorrent logs deploy/qbittorrent -c qbittorrent). Change it
+# in the Web UI.
 #
 # Downloads land in the shared media tree (bulk-storage.yaml) at /data,
 # the same path Sonarr and Radarr see, so imports are hardlinks. In
 # Options > Downloads set the default save path to /data/torrents and use
 # categories "tv" and "movies" (saving to /data/torrents/tv, .../movies).
+#
+# VPN (fail closed). All of qBittorrent's internet traffic goes through a
+# WireGuard tunnel run by the gluetun sidecar in the same pod (one network
+# namespace, so gluetun's routes and iptables rules are qBittorrent's too):
+#   - gluetun's firewall drops everything that is not the tunnel, the
+#     WireGuard handshake itself, or the cluster CIDRs below. If the tunnel
+#     is down, qBittorrent has no route out (the kill switch).
+#   - gluetun is a native sidecar (an initContainer with restartPolicy:
+#     Always) with a startupProbe on its health check, so the qbittorrent
+#     container is not even started until the tunnel is up.
+#   - The provider and key come from the user-supplied qbittorrent-vpn secret
+#     (docs/credentials.md), required, not optional: without it the pod stays
+#     in Init:CreateContainerConfigError and qBittorrent never starts.
+#   - DNS: the pod does not use cluster DNS. Its only nameserver is gluetun's
+#     resolver on 127.0.0.1, which forwards over DNS-over-TLS inside the
+#     tunnel, so tracker lookups never leak to the node's resolver.
+# Security exception: gluetun runs as root with NET_ADMIN (it creates the
+# WireGuard interface and writes iptables rules), which is why the namespace
+# is Pod Security "privileged" (namespace.yaml). It uses the kernel's
+# WireGuard (WIREGUARD_IMPLEMENTATION=kernelspace), so no /dev/net/tun
+# hostPath and no NET_RAW (verified on the WSL2 5.15 kernel; WireGuard is
+# in mainline since 5.6 and in every common distro kernel). Its DNS server binds port 53 without
+# NET_BIND_SERVICE because K3s's containerd allows unprivileged ports.
+# qBittorrent itself stays non-root, read-only, ALL capabilities dropped.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,20 +54,96 @@ spec:
       labels:
         app: qbittorrent
     spec:
-      # The home-operations image runs as any non-root UID with a read-only
-      # root filesystem; the LinuxServer.io image needs root and setuid.
+      automountServiceAccountToken: false
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      # Only gluetun's resolver (127.0.0.1:53, DoT through the tunnel). With
+      # no tunnel there is no DNS either, which is the point.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 127.0.0.1
+        options:
+          - name: ndots
+            value: "1"
+      initContainers:
+      - name: gluetun
+        # v3.41.3: current release, verified on Docker Hub (qmcgaw/gluetun).
+        image: qmcgaw/gluetun:v3.41.3
+        restartPolicy: Always
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+        # VPN_SERVICE_PROVIDER, WIREGUARD_PRIVATE_KEY and any other gluetun
+        # setting the user puts in the secret (WIREGUARD_ADDRESSES,
+        # SERVER_COUNTRIES, ...). Not optional: no secret, no pod.
+        envFrom:
+        - secretRef:
+            name: qbittorrent-vpn
+        # `env` wins over `envFrom`, so the secret cannot turn these off.
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: VPN_TYPE
+          value: wireguard
+        - name: WIREGUARD_IMPLEMENTATION
+          value: kernelspace
+        # Inbound through eth0: only the Web UI (Traefik, Sonarr, Radarr).
+        - name: FIREWALL_INPUT_PORTS
+          value: "8080"
+        # The only non-tunnel destinations: the K3s pod and service CIDRs
+        # (defaults 10.42.0.0/16 and 10.43.0.0/16), so Web UI replies and
+        # probes work. Nothing outside the cluster.
+        - name: FIREWALL_OUTBOUND_SUBNETS
+          value: "10.42.0.0/16,10.43.0.0/16"
+        # The small health check defaults to ICMP, which needs NET_RAW; a
+        # DNS lookup through the tunnel does the same job without it.
+        - name: HEALTH_SMALL_CHECK_TYPE
+          value: dns
+        - name: VERSION_INFORMATION
+          value: "off"
+        # gluetun chowns the files it writes to PUID:PGID, which needs
+        # CAP_CHOWN; as root it has nothing to chown.
+        - name: PUID
+          value: "0"
+        - name: PGID
+          value: "0"
+        startupProbe:
+          exec:
+            command: ["/gluetun-entrypoint", "healthcheck"]
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 60
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        # gluetun creates /tmp/gluetun mode 0644, which root without
+        # DAC_OVERRIDE cannot enter; a writable emptyDir there instead.
+        volumeMounts:
+        - name: gluetun-tmp
+          mountPath: /tmp/gluetun
       containers:
       - name: qbittorrent
+        # The home-operations image runs as any non-root UID with a read-only
+        # root filesystem; the LinuxServer.io image needs root and setuid.
         image: ghcr.io/home-operations/qbittorrent:5.2.3
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
@@ -53,17 +154,13 @@ spec:
           value: "UTC"
         - name: QBT_WEBUI_PORT
           value: "8080"
+        # Peers reach this port only through the tunnel, and only if the
+        # provider forwards a port to it (gluetun VPN_PORT_FORWARDING).
         - name: QBT_TORRENTING_PORT
           value: "6881"
         ports:
         - containerPort: 8080
           name: webui
-        - containerPort: 6881
-          name: torrent-tcp
-          protocol: TCP
-        - containerPort: 6881
-          name: torrent-udp
-          protocol: UDP
         volumeMounts:
         - name: config
           mountPath: /config
@@ -100,6 +197,29 @@ spec:
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi
+      - name: gluetun-tmp
+        emptyDir:
+          sizeLimit: 16Mi
+---
+# qbittorrent-vpn: gluetun's settings, copied verbatim (every key) from the
+# user-supplied qbittorrent-vpn secret in the secrets namespace. Its keys are
+# gluetun environment variable names; see docs/credentials.md.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: qbittorrent-vpn
+  namespace: qbittorrent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: qbittorrent-vpn
+    creationPolicy: Owner
+  dataFrom:
+  - extract:
+      key: qbittorrent-vpn
 ---
 # Config and resume data: SSD, never bulk.
 apiVersion: v1
@@ -115,6 +235,8 @@ spec:
       storage: 1Gi
   storageClassName: local-path
 ---
+# The Web UI only. There is no Service for BitTorrent traffic: peers reach
+# qBittorrent through the VPN tunnel, never through the cluster.
 apiVersion: v1
 kind: Service
 metadata:
@@ -127,26 +249,6 @@ spec:
   - name: webui
     port: 8080
     targetPort: 8080
-  type: ClusterIP
----
-# Service for BitTorrent traffic (optional - use with LoadBalancer or NodePort)
-apiVersion: v1
-kind: Service
-metadata:
-  name: qbittorrent-torrent
-  namespace: qbittorrent
-spec:
-  selector:
-    app: qbittorrent
-  ports:
-  - name: torrent-tcp
-    port: 6881
-    targetPort: 6881
-    protocol: TCP
-  - name: torrent-udp
-    port: 6881
-    targetPort: 6881
-    protocol: UDP
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1

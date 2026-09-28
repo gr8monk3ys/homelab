@@ -158,7 +158,7 @@ secrets are already generated. Add them by name:
 | ntfy | `ntfy.` | productivity |
 | NVIDIA device plugin (no URL; exposes `nvidia.com/gpu`; needs the NVIDIA container toolkit on the host) | — | core |
 | Outline | `wiki.` | productivity |
-| qBittorrent | `torrent.` | media |
+| qBittorrent (behind a WireGuard VPN, gluetun sidecar; needs the user-supplied `qbittorrent-vpn` secret and does not start without it) | `torrent.` | media |
 | Reloader (no URL; workloads opt in with the `reloader.stakater.com/auto: "true"` annotation) | — | core |
 | Renovate (no URL; nightly CronJob opening dependency PRs, needs the user-supplied `renovate-token` secret and the repo name in its ConfigMap) | — | dev |
 | RomM | `games.` | media |
