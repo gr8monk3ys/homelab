@@ -11,5 +11,8 @@ spec:
     limits.cpu: "4"
     limits.memory: 4Gi
     persistentvolumeclaims: "10"
-    requests.storage: 100Gi
+    # Storage per class: the SSD budget stays small; the shared media tree
+    # is one static bulk volume (shared-storage.yaml).
+    local-path.storageclass.storage.k8s.io/requests.storage: 50Gi
+    bulk.storageclass.storage.k8s.io/requests.storage: 4Ti
     pods: "15"

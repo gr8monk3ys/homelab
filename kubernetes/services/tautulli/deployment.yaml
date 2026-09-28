@@ -2,7 +2,7 @@
 # Tautulli - Media Server Statistics and Monitoring
 # https://tautulli.com/
 #
-# Tautulli monitors Plex/Jellyfin activity and provides:
+# Tautulli monitors a Plex Media Server (Plex only) and provides:
 # - Watch history and statistics
 # - User activity tracking
 # - Notifications for media events
@@ -26,25 +26,26 @@ spec:
       labels:
         app: tautulli
     spec:
+      # The home-operations image runs as any non-root UID with a read-only
+      # root filesystem; the LinuxServer.io image needs root and setuid.
       securityContext:
-        # Note: LinuxServer.io images typically run as root internally
-        # They use PUID/PGID for file ownership but process runs as root
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: tautulli
-        image: lscr.io/linuxserver/tautulli:2.14.5
+        image: ghcr.io/home-operations/tautulli:2.18.1
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
         env:
-        - name: PUID
-          value: "1000"
-        - name: PGID
-          value: "1000"
         - name: TZ
           value: "UTC"
         ports:
@@ -53,6 +54,8 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "128Mi"
@@ -76,6 +79,9 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: tautulli-config-pvc
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

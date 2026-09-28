@@ -11,5 +11,8 @@ spec:
     limits.cpu: "8"
     limits.memory: 16Gi
     persistentvolumeclaims: "10"
-    requests.storage: 500Gi
+    # Storage per class: Postgres, Redis, thumbnails and models on the SSD;
+    # the upload location is one static bulk volume (storage.yaml).
+    local-path.storageclass.storage.k8s.io/requests.storage: 100Gi
+    bulk.storageclass.storage.k8s.io/requests.storage: 2Ti
     pods: "15"

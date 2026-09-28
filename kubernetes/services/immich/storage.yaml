@@ -1,0 +1,60 @@
+---
+# Immich's upload location (originals, encoded video, profile pictures,
+# database dumps) on bulk storage (kubernetes/storage/bulk-storageclass.yaml):
+# a static PV on /mnt/bulk/immich of the node labelled homelab.io/bulk=true.
+# Create the directory before installing. Thumbnails, Postgres, Redis and the
+# model cache stay on local-path (SSD).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bulk-immich-uploads
+  labels:
+    homelab.io/bulk-path: immich
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: bulk
+  claimRef:
+    namespace: immich
+    name: immich-uploads-pvc
+  hostPath:
+    path: /mnt/bulk/immich
+    type: Directory
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: homelab.io/bulk
+              operator: In
+              values: ["true"]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-uploads-pvc
+  namespace: immich
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: bulk
+  volumeName: bulk-immich-uploads
+  resources:
+    requests:
+      storage: 1Ti
+---
+# Thumbnails: SSD, mounted over the thumbs/ directory of the upload location.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-thumbs-pvc
+  namespace: immich
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path

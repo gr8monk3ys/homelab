@@ -1,0 +1,49 @@
+---
+# Garage data blocks on bulk storage (GARAGE_DATA_STORAGE=bulk): a static PV
+# on /mnt/bulk/garage of the node labelled homelab.io/bulk=true
+# (kubernetes/storage/bulk-storageclass.yaml). Create the directory first.
+#
+# The PV pins the Garage pod to the bulk node, so garage-meta (local-path,
+# WaitForFirstConsumer) is provisioned on that node too. Switching an
+# existing install means recreating both claims: see "Bulk storage" in
+# docs/runbooks/storage-and-hardware.md.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bulk-garage-data
+  labels:
+    homelab.io/bulk-path: garage
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: bulk
+  claimRef:
+    namespace: garage-system
+    name: garage-data
+  hostPath:
+    path: /mnt/bulk/garage
+    type: Directory
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: homelab.io/bulk
+              operator: In
+              values: ["true"]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+  namespace: garage-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: bulk
+  volumeName: bulk-garage-data
+  resources:
+    requests:
+      storage: 500Gi

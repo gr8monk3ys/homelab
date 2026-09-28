@@ -64,7 +64,7 @@ spec:
             cpu: "50m"
       containers:
       - name: immich-server
-        image: ghcr.io/immich-app/immich-server:v1.122.0
+        image: ghcr.io/immich-app/immich-server:v3.2.2
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -86,16 +86,22 @@ spec:
           value: "immich-redis"
         - name: IMMICH_MACHINE_LEARNING_URL
           value: "http://immich-machine-learning:3003"
-        - name: UPLOAD_LOCATION
-          value: "/usr/src/app/upload"
+        # Immich 2+ keeps all media under /data (IMMICH_MEDIA_LOCATION).
+        - name: IMMICH_MEDIA_LOCATION
+          value: "/data"
+        - name: TZ
+          value: "UTC"
         ports:
-        - containerPort: 3001
+        - containerPort: 2283
           name: http
         volumeMounts:
         - name: uploads
-          mountPath: /usr/src/app/upload
-        - name: library
-          mountPath: /usr/src/app/upload/library
+          mountPath: /data
+        # Thumbnails on the SSD: the grid loads them constantly. Everything
+        # else under the upload location (originals, encoded video, backups)
+        # is on the bulk volume.
+        - name: thumbs
+          mountPath: /data/thumbs
         resources:
           requests:
             memory: "512Mi"
@@ -105,23 +111,23 @@ spec:
             cpu: "2000m"
         livenessProbe:
           httpGet:
-            path: /api/server-info/ping
-            port: 3001
+            path: /api/server/ping
+            port: 2283
           initialDelaySeconds: 60
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /api/server-info/ping
-            port: 3001
+            path: /api/server/ping
+            port: 2283
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:
       - name: uploads
         persistentVolumeClaim:
           claimName: immich-uploads-pvc
-      - name: library
+      - name: thumbs
         persistentVolumeClaim:
-          claimName: immich-library-pvc
+          claimName: immich-thumbs-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -135,8 +141,8 @@ spec:
     app: immich-server
   ports:
   - name: http
-    port: 3001
-    targetPort: 3001
+    port: 2283
+    targetPort: 2283
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1
@@ -166,4 +172,4 @@ spec:
           service:
             name: immich-server
             port:
-              number: 3001
+              number: 2283

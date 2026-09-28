@@ -47,6 +47,11 @@ OPTIN_SERVICES="${OPTIN_SERVICES:-}"
 CONFIGURE_ALERTING="${CONFIGURE_ALERTING:-false}"
 INSTALL_ALLOY="${INSTALL_ALLOY:-false}"
 
+# Where Garage keeps its data blocks: local-path (next to everything else) or
+# bulk (a node labelled homelab.io/bulk=true with the bulk disk at /mnt/bulk;
+# kubernetes/storage/bulk-storageclass.yaml). Its metadata stays on local-path.
+GARAGE_DATA_STORAGE="${GARAGE_DATA_STORAGE:-local-path}" # local-path|bulk
+
 # Optional: include an encrypted backup of secret values in backup_configuration()
 BACKUP_SECRETS="${BACKUP_SECRETS:-false}"
 
@@ -195,6 +200,12 @@ setup_storage() {
     kubectl_apply_rendered_dir kubernetes/storage
     kubectl -n garage-system delete job garage-bootstrap --ignore-not-found >/dev/null 2>&1 || true
     kubectl_apply_rendered_dir kubernetes/storage/garage
+    # The data claim: exactly one of kubernetes/storage/garage/data/*.yaml.
+    case "$GARAGE_DATA_STORAGE" in
+        local-path|bulk) ;;
+        *) error "Invalid GARAGE_DATA_STORAGE: $GARAGE_DATA_STORAGE (expected: local-path|bulk)" ;;
+    esac
+    kubectl_apply_rendered_file "kubernetes/storage/garage/data/${GARAGE_DATA_STORAGE}.yaml"
 
     # Wait for storage to be ready
     if kubectl get namespace local-path-storage &> /dev/null; then

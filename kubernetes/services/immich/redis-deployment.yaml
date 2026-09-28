@@ -29,7 +29,8 @@ spec:
           type: RuntimeDefault
       containers:
       - name: redis
-        image: redis:7.4.2-alpine
+        # Valkey, as Immich v3.2.2's docker-compose.yml pins it (Redis-compatible).
+        image: docker.io/valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -37,7 +38,7 @@ spec:
             drop:
               - ALL
         command:
-        - redis-server
+        - valkey-server
         - --appendonly
         - "yes"
         ports:

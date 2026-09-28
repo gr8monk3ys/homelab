@@ -84,6 +84,28 @@ nodeExporter:
 kubeStateMetrics:
   enabled: true
 
+# The monitoring ResourceQuota rejects a pod without requests and limits.
+# The existing node-exporter pod predates the quota, but a new one (a second
+# node, or a re-created pod) would be refused. The same goes for
+# kube-state-metrics.
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 64Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
 # The operator's admission-webhook certificate Jobs (create and patch) run as
 # Helm hooks on every install and upgrade. The monitoring ResourceQuota
 # (kubernetes/security/resource-quotas.yaml) rejects a pod without requests

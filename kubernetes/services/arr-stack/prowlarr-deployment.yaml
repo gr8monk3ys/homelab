@@ -18,23 +18,26 @@ spec:
       labels:
         app: prowlarr
     spec:
+      # home-operations images run as any non-root UID with a read-only root
+      # filesystem; the LinuxServer.io images need root and setuid to start.
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: prowlarr
-        image: lscr.io/linuxserver/prowlarr:1.27.0
+        image: ghcr.io/home-operations/prowlarr:2.6.5
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
         env:
-        - name: PUID
-          value: "1000"
-        - name: PGID
-          value: "1000"
         - name: TZ
           value: "UTC"
         ports:
@@ -43,6 +46,8 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /config
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "128Mi"
@@ -66,7 +71,11 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: prowlarr-config-pvc
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
 ---
+# Config and the app's SQLite database: SSD, never bulk.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
