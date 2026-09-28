@@ -53,7 +53,7 @@ kubectl get secret -n monitoring grafana-admin -o jsonpath='{.data.password}' | 
 scripts/generate-secrets.sh --list
 ```
 
-That is the authoritative answer, and it needs no cluster: it prints all 53
+That is the authoritative answer, and it needs no cluster: it prints all 54
 generated secrets with their keys and policies, straight from the table this
 doc describes. **This page does not list them all** — it never will, because
 a hand-copied list drifts the day someone adds a `secret` line. What follows
@@ -62,7 +62,7 @@ from the table.
 
 ## Service Cheat Sheet (the ones you reach for)
 
-Thirteen of the 53, in the `secrets` namespace:
+Fourteen of the 54, in the `secrets` namespace:
 
 - Grafana admin: `grafana-admin` (`username`, `password`)
 - Nextcloud admin: `nextcloud-admin` (`username`, `password`)
@@ -75,6 +75,7 @@ Thirteen of the 53, in the `secrets` namespace:
 - Authelia admin (plaintext for recovery): `authelia-admin` (`username`, `password`) — only the Argon2 hash in `authelia-users` reaches the cluster; read the plaintext with `kubectl get secret -n secrets authelia-admin -o jsonpath='{.data.password}' | base64 -d`
 - Authelia users database: `authelia-users` (`users_database.yml`)
 - Open WebUI: `open-webui-config` (`secret-key`)
+- Laya API key: `laya-config` (`api-key`) — callers send it as `Authorization: Bearer <api-key>`; read it with `kubectl get secret -n secrets laya-config -o jsonpath='{.data.api-key}' | base64 -d`
 - Miniflux admin: `miniflux-admin` (`username`, `password`) — created on first start via `CREATE_ADMIN=1`
 - Miniflux DB password: `miniflux-db-password` (`password`)
 

@@ -1,0 +1,213 @@
+---
+# Laya - System-1 decision model (classification, ratings, yes/no probabilities
+# over text in one forward pass; it does not generate text). laya-serve speaks
+# the TypeSafe Jev /v1/systemone protocol on port 8000.
+#
+# Image: there is no upstream prebuilt image. Build it from the pinned tag with
+# the repo's CPU Dockerfile and push it here before installing:
+#   git clone --branch v0.3.21 https://github.com/NandhaKishorM/laya && cd laya
+#   docker build --build-arg TORCH_INDEX=cpu -t ghcr.io/gr8monk3ys/laya:0.3.21 .
+#   docker push ghcr.io/gr8monk3ys/laya:0.3.21
+# (On k3d: `k3d image import ghcr.io/gr8monk3ys/laya:0.3.21 -c homelab`.)
+#
+# Weights come from Hugging Face (convaiinnovations/laya, which bundles the
+# english, multilingual and typed-decisions checkpoints as subfolders) on first
+# start, into the PVC. LAYA_REVISION pins the commit and LAYA_SHA256_DIGESTS
+# refuses any weight file whose digest does not match; bump all three together
+# with the image.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laya
+  namespace: laya
+  labels:
+    app: laya
+spec:
+  replicas: 1
+  # Single writer on a ReadWriteOnce volume: RWO pins the volume to one node,
+  # so a rolling update would briefly run two writers there, or stall across
+  # nodes. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: laya
+  template:
+    metadata:
+      labels:
+        app: laya
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: laya
+        image: ghcr.io/gr8monk3ys/laya:0.3.21
+        imagePullPolicy: IfNotPresent
+        args: ["laya-serve"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: LAYA_HOST
+          value: "0.0.0.0"
+        - name: LAYA_PORT
+          value: "8000"
+        - name: LAYA_DEVICE
+          value: "cpu"
+        # Preload only the English checkpoint (~2 GiB resident). Non-English
+        # text routes to the multilingual checkpoint, which loads lazily on
+        # first use and stays resident (+~1.5 GiB): the memory limit covers both.
+        - name: LAYA_MODELS
+          value: "english"
+        - name: LAYA_AUTO_TASK
+          value: "0"
+        # Match the CPU limit; oversubscribing cores is a large regression.
+        - name: LAYA_THREADS
+          value: "2"
+        - name: OMP_NUM_THREADS
+          value: "2"
+        - name: LAYA_REVISION
+          value: "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
+        # Per-checkpoint SHA-256 of the weights and config at that revision.
+        # typed-decisions is not listed: it loads only on an explicit
+        # "model": "typed-decisions" and is then pinned by LAYA_REVISION alone.
+        - name: LAYA_SHA256_DIGESTS
+          value: >-
+            {"english": {"model.safetensors": "891102d372688fc2a094dac56a384bc537b87c63f21f9f3dac0be2b7cbc8d86c",
+            "rl_agent_config.json": "ae287b56bbcf5f8c4f4541ae9dfd00c914c4c48b940b8398c3058af37ba92bbd"},
+            "multilingual": {"model.safetensors": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+            "rl_agent_config.json": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6"}}
+        - name: LAYA_MAX_CONCURRENT
+          value: "8"
+        - name: LAYA_LOG_LEVEL
+          value: "info"
+        # Every request except GET /health needs `Authorization: Bearer <key>`.
+        - name: LAYA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: laya-secret
+              key: api-key
+        volumeMounts:
+        - name: models
+          mountPath: /home/laya/.cache/huggingface
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "250m"
+          limits:
+            memory: "5Gi"
+            cpu: "2000m"
+        # laya-serve downloads and builds the preloaded checkpoint before it
+        # binds, so /health answers only once it can serve. The first start
+        # downloads ~850 MB; allow 20 minutes.
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          failureThreshold: 120
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: laya-models-pvc
+---
+# Hugging Face cache: english + multilingual weights are ~1.5 GB.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: laya-models-pvc
+  namespace: laya
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: laya
+  namespace: laya
+spec:
+  selector:
+    app: laya
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+# An API for other apps, not a browser UI: Authelia forward-auth would answer
+# every client call with a login redirect, so this Ingress has no forward-auth
+# middleware (like whisper's) and laya's own bearer key (LAYA_API_KEY) is the
+# gate. GET /health, /docs and /openapi.json stay open; they carry no data.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: laya-ingress
+  namespace: laya
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: "homelab-ca"
+spec:
+  tls:
+  - hosts:
+    - laya.homelab.local
+    secretName: laya-tls
+  rules:
+  - host: laya.homelab.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: laya
+            port:
+              number: 8000
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: laya-secret
+  namespace: laya
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: homelab-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: laya-secret
+    creationPolicy: Owner
+  data:
+  - secretKey: api-key
+    remoteRef:
+      key: laya-config
+      property: api-key

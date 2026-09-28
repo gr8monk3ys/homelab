@@ -1,0 +1,14 @@
+---
+# Service descriptor: the install interface read by scripts/lib/services.sh.
+namespace: laya
+group: ai
+optin: true
+url: laya
+description: System-1 decision API (Jev /v1/systemone)
+# No requires: the Ingress deliberately skips Authelia forward-auth (an API for
+# other apps; LAYA_API_KEY is the gate), so it needs no middleware.
+
+# Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
+# allow-external-https: this service downloads its weights from Hugging Face.
+# In-cluster clients from other namespaces are allowed in networkpolicies.yaml.
+networkPolicies: [default-deny, allow-dns, allow-ingress, allow-monitoring, allow-same-namespace, allow-external-https]

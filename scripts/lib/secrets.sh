@@ -116,6 +116,7 @@ secrets_catalogue() {
     secret n8n-config               encryption-key=hex:32 jwt-secret=hex:32
     secret linkwarden-config        nextauth-secret=hex:32
     secret open-webui-config        secret-key=hex:32
+    secret laya-config              api-key=hex:32
     secret outline-secret-key       key=hex:64
     secret outline-utils-secret     key=hex:64
     secret hoppscotch-jwt-secret    secret=hex:64
