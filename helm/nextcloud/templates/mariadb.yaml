@@ -1,0 +1,145 @@
+# Nextcloud's database: MariaDB on the official image, a Deployment with its
+# own ReadWriteOnce claim (the repo's database shape, CLAUDE.md "Rules"). It
+# replaces the Bitnami MySQL subchart, whose images left Docker Hub.
+{{- $name := printf "%s-mariadb" (include "nextcloud.fullname" .) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "nextcloud.mariadb.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.mariadb.persistence.size }}
+  {{- if .Values.mariadb.persistence.storageClass }}
+  storageClassName: {{ .Values.mariadb.persistence.storageClass }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "nextcloud.mariadb.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+      protocol: TCP
+  selector:
+    {{- include "nextcloud.mariadb.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "nextcloud.mariadb.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate: one mysqld on a ReadWriteOnce data directory; two would corrupt it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nextcloud.mariadb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nextcloud.mariadb.selectorLabels" . | nindent 8 }}
+    spec:
+      # The image's mysql user (999). The entrypoint needs no root: started
+      # as 999 it initialises the empty data directory itself, and fsGroup
+      # makes the claim writable for it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mariadb
+          image: "{{ .Values.mariadb.image.repository }}:{{ .Values.mariadb.image.tag }}"
+          imagePullPolicy: {{ .Values.mariadb.image.pullPolicy }}
+          # The server settings the Nextcloud admin manual asks for
+          # ("Database configuration"): READ-COMMITTED isolation and utf8mb4.
+          # Binary logging is off by default in MariaDB, which Nextcloud also
+          # accepts.
+          args:
+            - --transaction-isolation=READ-COMMITTED
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_general_ci
+            - --skip-name-resolve
+            - --max-connections=100
+            - --innodb-buffer-pool-size={{ .Values.mariadb.innodbBufferPoolSize }}
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.fullname" . }}-db-password
+                  key: root-password
+            - name: MARIADB_DATABASE
+              value: {{ .Values.mariadb.database | quote }}
+            - name: MARIADB_USER
+              value: {{ .Values.mariadb.username | quote }}
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nextcloud.fullname" . }}-db-password
+                  key: password
+            # Upgrade the system tables when the image moves to a newer
+            # MariaDB (takes a backup of them first).
+            - name: MARIADB_AUTO_UPGRADE
+              value: "1"
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # healthcheck.sh ships in the image and logs in as the healthcheck
+          # user the entrypoint creates (credentials in the data directory).
+          startupProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.mariadb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+            - name: run
+              mountPath: /run/mysqld
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

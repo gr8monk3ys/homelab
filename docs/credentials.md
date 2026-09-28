@@ -67,7 +67,7 @@ Fourteen of the 54, in the `secrets` namespace:
 - Grafana admin: `grafana-admin` (`username`, `password`)
 - Nextcloud admin: `nextcloud-admin` (`username`, `password`)
 - Nextcloud DB password: `nextcloud-db-password` (`password`)
-- MySQL root password: `mysql-root-password` (`password`)
+- Nextcloud MariaDB root password: `mysql-root-password` (`password`)
 - Vaultwarden admin token: `vaultwarden-admin` (`admin-token`)
 - Pi-hole web password: `pihole-config` (`web-password`)
 - Gitea admin: `gitea-admin` (`username`, `password`) — generated as a bootstrap credential only; no ExternalSecret copies it and nothing auto-provisions this account (Gitea runs with `INSTALL_LOCK=true` and registration disabled). Read it with `kubectl get secret -n secrets gitea-admin -o jsonpath='{.data.password}' | base64 -d`, then create the first admin manually: `kubectl -n gitea exec deploy/gitea -- gitea admin user create --admin --username <u> --password <p> --email <e>`
