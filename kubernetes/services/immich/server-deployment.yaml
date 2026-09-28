@@ -64,7 +64,7 @@ spec:
             cpu: "50m"
       containers:
       - name: immich-server
-        image: ghcr.io/immich-app/immich-server:v1.122.0
+        image: ghcr.io/immich-app/immich-server:v3.2.2
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -86,19 +86,22 @@ spec:
           value: "immich-redis"
         - name: IMMICH_MACHINE_LEARNING_URL
           value: "http://immich-machine-learning:3003"
-        - name: UPLOAD_LOCATION
-          value: "/usr/src/app/upload"
+        # Immich 2+ keeps all media under /data (IMMICH_MEDIA_LOCATION).
+        - name: IMMICH_MEDIA_LOCATION
+          value: "/data"
+        - name: TZ
+          value: "UTC"
         ports:
         - containerPort: 2283
           name: http
         volumeMounts:
         - name: uploads
-          mountPath: /usr/src/app/upload
+          mountPath: /data
         # Thumbnails on the SSD: the grid loads them constantly. Everything
         # else under the upload location (originals, encoded video, backups)
         # is on the bulk volume.
         - name: thumbs
-          mountPath: /usr/src/app/upload/thumbs
+          mountPath: /data/thumbs
         resources:
           requests:
             memory: "512Mi"
