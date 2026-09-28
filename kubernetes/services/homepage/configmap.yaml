@@ -97,6 +97,18 @@ data:
             description: Subtitles
             namespace: arr-stack
             app: bazarr
+        - Jellyseerr:
+            href: https://requests.homelab.local
+            icon: jellyseerr.png
+            description: Media requests
+            namespace: jellyseerr
+            app: jellyseerr
+        - Tautulli:
+            href: https://stats.homelab.local
+            icon: tautulli.png
+            description: Plex statistics
+            namespace: tautulli
+            app: tautulli
         - Audiobookshelf:
             href: https://audiobooks.homelab.local
             icon: audiobookshelf.svg
@@ -169,7 +181,7 @@ data:
             href: https://chat.homelab.local
             icon: open-webui.svg
             description: AI Chat interface
-            namespace: ollama
+            namespace: open-webui
             app: open-webui
 
   widgets.yaml: |
