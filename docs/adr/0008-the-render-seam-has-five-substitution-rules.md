@@ -45,3 +45,13 @@ That is a cluster-wide value, so it became a sixth rule exactly as the
 consequences above prescribe: `http://ollama.ollama.svc.cluster.local:11434`
 -> `OLLAMA_URL`, from `ai.ollama_url` in `config/homelab.yaml`. There are
 still no per-service values.
+
+## Revision (2026-09-27): a seventh rule, IMMICH_ML_URL
+
+The same deployment runs Immich's machine-learning service on the host GPU
+(the `-cuda` image under Docker Desktop), not on the cluster's CPU. Where the
+GPU is, is the same kind of environment fact as `OLLAMA_URL`, so it is the
+same kind of rule: `http://immich-machine-learning:3003` -> `IMMICH_ML_URL`,
+from `ai.immich_ml_url` in `config/homelab.yaml`. The default renders to
+itself, so the default install is unchanged. A per-service override key was
+again not needed.

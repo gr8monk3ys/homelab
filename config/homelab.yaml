@@ -28,3 +28,9 @@ ai:
   # service; point it at a GPU host's Ollama instead, e.g. under Docker
   # Desktop / k3d: "http://host.docker.internal:11434".
   ollama_url: "http://ollama.ollama.svc.cluster.local:11434"  # OLLAMA_URL
+  # Where Immich's server finds its machine-learning service. The default is
+  # the in-cluster immich-machine-learning (CPU); point it at a GPU host's
+  # immich-machine-learning:<version>-cuda container instead, e.g. under
+  # Docker Desktop / k3d: "http://host.docker.internal:3003". Then scale the
+  # in-cluster one to 0 (docs/runbooks/storage-and-hardware.md).
+  immich_ml_url: "http://immich-machine-learning:3003"  # IMMICH_ML_URL

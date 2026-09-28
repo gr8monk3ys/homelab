@@ -5,7 +5,7 @@
 #
 # Drives the interface only: set DOMAIN / ADMIN_EMAIL / TIMEZONE /
 # CERT_MANAGER_CLUSTER_ISSUER / GITOPS_REPO_URL, feed render_stream a line,
-# compare. Covers the six placeholder rules, replacement values carrying sed
+# compare. Covers the seven placeholder rules, replacement values carrying sed
 # metacharacters (& and /), and the rule order (the email placeholder
 # contains the domain placeholder, so the email rule must run first; the repo
 # URL placeholder does not, so its place in the order is not observable).
@@ -16,7 +16,7 @@ set -uo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # render.sh captures these as env overrides when sourced; none may leak in.
-unset DOMAIN ADMIN_EMAIL TIMEZONE CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL OLLAMA_URL ENVIRONMENT
+unset DOMAIN ADMIN_EMAIL TIMEZONE CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL OLLAMA_URL IMMICH_ML_URL ENVIRONMENT
 # shellcheck source=scripts/lib/common.sh
 source "$TEST_DIR/../scripts/lib/common.sh"
 # shellcheck source=scripts/lib/render.sh
@@ -38,9 +38,10 @@ expect_render() {
 }
 
 # The effective values render_stream reads (what homelab_load_config exports).
-set_config() { # <domain> <email> <timezone> <issuer> <repo url> [ollama url]
+set_config() { # <domain> <email> <timezone> <issuer> <repo url> [ollama url] [immich ml url]
     DOMAIN="$1" ADMIN_EMAIL="$2" TIMEZONE="$3" CERT_MANAGER_CLUSTER_ISSUER="$4" GITOPS_REPO_URL="$5"
     OLLAMA_URL="${6:-http://ollama.ollama.svc.cluster.local:11434}"
+    IMMICH_ML_URL="${7:-http://immich-machine-learning:3003}"
 }
 
 echo "render rules:"
@@ -68,6 +69,12 @@ set_config "lab.example.test" "ops@mail.example.test" "Europe/Amsterdam" \
     "letsencrypt-prod" "https://git.example.test/me/infra.git" "http://gpu.example.test:11434"
 expect_render '  value: "http://ollama.ollama.svc.cluster.local:11434"' \
               '  value: "http://gpu.example.test:11434"' "Ollama URL"
+# 7. the Immich machine-learning URL
+set_config "lab.example.test" "ops@mail.example.test" "Europe/Amsterdam" \
+    "letsencrypt-prod" "https://git.example.test/me/infra.git" "http://gpu.example.test:11434" \
+    "http://gpu.example.test:3003"
+expect_render '  value: "http://immich-machine-learning:3003"' \
+              '  value: "http://gpu.example.test:3003"' "Immich ML URL"
 
 # Nothing else changes.
 expect_render "  image: nginx:1.27" "  image: nginx:1.27" "untouched line"
@@ -101,6 +108,8 @@ expect_render "admin@homelab.local, https://homelab.local" \
 set_config "homelab.local" "admin@homelab.local" "UTC" "homelab-ca" \
     "https://github.com/your-username/homelab.git"
 expect_render 'host: homelab.local; value: "UTC"' 'host: homelab.local; value: "UTC"' "defaults are a no-op"
+expect_render 'value: "http://immich-machine-learning:3003"' \
+              'value: "http://immich-machine-learning:3003"' "Immich ML URL default is a no-op"
 
 if [[ $FAILURES -ne 0 ]]; then
     echo "render rules: $FAILURES assertion(s) failed"

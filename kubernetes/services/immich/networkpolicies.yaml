@@ -134,3 +134,12 @@ spec:
       ports:
         - protocol: TCP
           port: 3003
+    # ...or a machine-learning service outside the cluster (IMMICH_ML_URL,
+    # e.g. a GPU host). Only the ML port, to any address: the host's IP is
+    # environment-specific.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 3003
