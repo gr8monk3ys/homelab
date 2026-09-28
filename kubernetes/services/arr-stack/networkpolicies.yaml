@@ -62,6 +62,15 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+    # Prowlarr: the indexers it syncs point at its own proxy
+    # (http://prowlarr.arr-stack...:9696/<id>/api), so searches go there
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prowlarr
+      ports:
+        - protocol: TCP
+          port: 9696
     # The download client (qBittorrent Web API)
     - to:
         - namespaceSelector:
@@ -135,6 +144,15 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+    # Prowlarr: the indexers it syncs point at its own proxy
+    # (http://prowlarr.arr-stack...:9696/<id>/api), so searches go there
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prowlarr
+      ports:
+        - protocol: TCP
+          port: 9696
     # The download client (qBittorrent Web API)
     - to:
         - namespaceSelector:
@@ -172,6 +190,17 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 9696
+    # Sonarr and Radarr query the indexers Prowlarr syncs to them
+    - from:
+        - podSelector:
+            matchLabels:
+              app: sonarr
+        - podSelector:
+            matchLabels:
+              app: radarr
       ports:
         - protocol: TCP
           port: 9696
