@@ -2,8 +2,8 @@ apiVersion: v2
 name: nextcloud
 description: A Helm chart for Nextcloud homelab deployment
 type: application
-version: 0.1.0
-appVersion: "28"
+version: 0.2.0
+appVersion: "34.0.4"
 keywords:
   - nextcloud
   - file-sharing
@@ -14,8 +14,3 @@ sources:
 maintainers:
   - name: homelab
     email: admin@homelab.local
-dependencies:
-  - name: mysql
-    version: "9.12.5"
-    repository: https://charts.bitnami.com/bitnami
-    condition: mysql.enabled

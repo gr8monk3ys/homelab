@@ -8,7 +8,7 @@ group: core
 project: homelab-productivity
 priority: 40
 url: nextcloud
-description: Files, calendar and contacts (Helm chart with a separate MySQL StatefulSet)
+description: Files, calendar and contacts (Helm chart with a separate MariaDB Deployment)
 kind: helm
 chart: helm/nextcloud
 release: nextcloud

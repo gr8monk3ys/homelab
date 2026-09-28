@@ -3,16 +3,16 @@
 # rules the networkPolicies: templates in service.yaml cannot express.
 # Applied by install_service with the rest of this directory.
 
-# Nextcloud MySQL - Only allow connections from nextcloud
+# Nextcloud MariaDB - only Nextcloud connects
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: nextcloud-mysql-policy
+  name: nextcloud-mariadb-policy
   namespace: nextcloud
 spec:
   podSelector:
     matchLabels:
-      app: nextcloud-mysql
+      app: nextcloud-mariadb
   policyTypes:
     - Ingress
     - Egress
@@ -35,7 +35,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-mysql-egress
+  name: allow-mariadb-egress
   namespace: nextcloud
 spec:
   podSelector:
@@ -47,7 +47,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: nextcloud-mysql
+              app: nextcloud-mariadb
       ports:
         - protocol: TCP
           port: 3306
@@ -102,11 +102,11 @@ spec:
       ports:
         - protocol: UDP
           port: 53
-    # Allow MySQL connection
+    # Allow MariaDB connection
     - to:
         - podSelector:
             matchLabels:
-              app: nextcloud-mysql
+              app: nextcloud-mariadb
       ports:
         - protocol: TCP
           port: 3306

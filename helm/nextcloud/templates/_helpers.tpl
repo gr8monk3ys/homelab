@@ -48,3 +48,26 @@ app: nextcloud
 app.kubernetes.io/name: {{ include "nextcloud.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+MariaDB selector labels. Deliberately not the Nextcloud ones above: the
+Nextcloud Service and NetworkPolicies select app.kubernetes.io/name=nextcloud.
+The app label is what the static NetworkPolicies
+(kubernetes/services/nextcloud/networkpolicies.yaml) select.
+*/}}
+{{- define "nextcloud.mariadb.selectorLabels" -}}
+app: nextcloud-mariadb
+app.kubernetes.io/name: mariadb
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+MariaDB labels
+*/}}
+{{- define "nextcloud.mariadb.labels" -}}
+helm.sh/chart: {{ include "nextcloud.chart" . }}
+{{ include "nextcloud.mariadb.selectorLabels" . }}
+app.kubernetes.io/component: database
+app.kubernetes.io/version: {{ .Values.mariadb.image.tag | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}

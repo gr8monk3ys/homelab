@@ -49,11 +49,9 @@ if [[ -z "${HOMELAB_RENDER_SOURCED:-}" ]]; then
     exit 1
 fi
 
-# name=url. The only place a chart repo is listed. bitnami is the mysql
-# subchart dependency of helm/nextcloud.
+# name=url. The only place a chart repo is listed.
 HELM_REPOS=(
     "prometheus-community=https://prometheus-community.github.io/helm-charts"
-    "bitnami=https://charts.bitnami.com/bitnami"
     "jetstack=https://charts.jetstack.io"
     "traefik=https://traefik.github.io/charts"
     "external-secrets=https://charts.external-secrets.io"

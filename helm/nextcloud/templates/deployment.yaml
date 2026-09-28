@@ -8,7 +8,7 @@ spec:
   replicas: 1
   # Recreate: the data/config volumes are ReadWriteOnce with a single writer,
   # and the namespace ResourceQuota (limits.memory 4Gi, limits.cpu 2) has no
-  # room for a surge pod next to the running one plus MySQL.
+  # room for a surge pod next to the running one plus MariaDB.
   strategy:
     type: Recreate
   selector:
@@ -24,6 +24,8 @@ spec:
         runAsUser: {{ .Values.nextcloud.securityContext.runAsUser }}
         runAsGroup: {{ .Values.nextcloud.securityContext.runAsGroup }}
         fsGroup: {{ .Values.nextcloud.securityContext.fsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: wait-for-db
           image: busybox:1.37
@@ -31,11 +33,11 @@ spec:
             - sh
             - -c
             - |
-              until nc -z {{ include "nextcloud.fullname" . }}-mysql 3306; do
-                echo "Waiting for MySQL to be ready..."
+              until nc -z {{ include "nextcloud.fullname" . }}-mariadb 3306; do
+                echo "Waiting for MariaDB to be ready..."
                 sleep 5
               done
-              echo "MySQL is ready!"
+              echo "MariaDB is ready!"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -74,12 +76,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "nextcloud.fullname" . }}-admin
                   key: password
+            # The image's MYSQL_* variables cover MariaDB too.
             - name: MYSQL_HOST
-              value: {{ include "nextcloud.fullname" . }}-mysql
+              value: {{ include "nextcloud.fullname" . }}-mariadb
             - name: MYSQL_DATABASE
-              value: {{ .Values.mysql.auth.database }}
+              value: {{ .Values.mariadb.database | quote }}
             - name: MYSQL_USER
-              value: {{ .Values.mysql.auth.username }}
+              value: {{ .Values.mariadb.username | quote }}
             - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:

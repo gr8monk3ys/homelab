@@ -83,7 +83,7 @@ local-path, Garage, CrowdSec and ArgoCD. See ADR-0006.
 
 | Service | URL | Purpose |
 |---|---|---|
-| Nextcloud | `nextcloud.` | Files/calendar/contacts. Helm chart (`helm/nextcloud/`) declared with `kind: helm` in its descriptor; separate MySQL StatefulSet |
+| Nextcloud | `nextcloud.` | Files/calendar/contacts. Helm chart (`helm/nextcloud/`) declared with `kind: helm` in its descriptor; separate MariaDB Deployment (official image) |
 | Gitea | `git.` | Git hosting |
 | Vaultwarden | `vault.` | Bitwarden-compatible password manager (admin panel at `/admin`) |
 | Authelia | `auth.` | SSO/2FA; protects selected apps via Traefik ForwardAuth middleware |
@@ -186,9 +186,8 @@ are preserved on the `archive/legacy` branch.
 - Every credential flows `generate-secrets.sh` → `secrets` namespace →
   ExternalSecret → app namespace. If ESO is down, new pods can't get secrets.
 - Databases are a separate Deployment per app (Postgres for Immich/Gitea/n8n
-  etc., Redis where needed) — never sidecars — each with its own PVC. The one
-  exception to "Deployment" is Nextcloud's MySQL, which comes from the Bitnami
-  subchart of `helm/nextcloud/` and is that chart's StatefulSet.
+  etc., Redis where needed, MariaDB for Nextcloud, from `helm/nextcloud/`) —
+  never sidecars — each with its own PVC.
 - Every single-replica Deployment that mounts a ReadWriteOnce volume,
   database or not, uses `strategy: Recreate`. ReadWriteOnce limits a volume
   to one node, not one pod, so a rolling update would either run two writers

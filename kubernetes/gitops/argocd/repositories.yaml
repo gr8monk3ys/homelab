@@ -14,19 +14,6 @@ stringData:
   # username: your-username
   # password: your-token-or-password
 ---
-# Helm repository for common charts
-apiVersion: v1
-kind: Secret
-metadata:
-  name: bitnami-charts
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repository
-stringData:
-  type: helm
-  name: bitnami
-  url: https://charts.bitnami.com/bitnami
----
 # Prometheus community Helm charts
 apiVersion: v1
 kind: Secret
