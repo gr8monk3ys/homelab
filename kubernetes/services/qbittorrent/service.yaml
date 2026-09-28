@@ -4,9 +4,11 @@ namespace: qbittorrent
 group: media
 optin: true
 url: torrent
-description: BitTorrent client
+description: BitTorrent client behind a WireGuard VPN (gluetun); needs the user-supplied qbittorrent-vpn secret
 requires: [authelia]   # its Ingress routes through Authelia's forward-auth middleware
 
 # Per-namespace isolation: policy templates under kubernetes/security/network-policies/templates/.
-# Deliberately open: peer traffic on arbitrary ports; allow-external-https is not enough.
+# None of them fit: the pod has no cluster DNS and no HTTPS egress (everything
+# leaves through the VPN tunnel as UDP), so its policies are all static, in
+# networkpolicies.yaml.
 networkPolicies: []
