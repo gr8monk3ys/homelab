@@ -46,6 +46,13 @@
 #      applied into it (docs/adr/0009), so none of it waits on a central file.
 #   4. the descriptor's `networkPolicies:` templates are rendered into the
 #      namespace (scripts/lib/netpol.sh).
+#   5. a Secret or ConfigMap of the service's own manifests that this install
+#      changes (kubectl diff before applying) gets its readers restarted: the
+#      Deployments, StatefulSets and DaemonSets in the namespace that mount it
+#      or read it through env. Apps such as Authelia read their configuration
+#      only at startup, so a re-install would otherwise leave the new
+#      configuration unused. Secrets an ExternalSecret or a chart produces
+#      are not covered.
 #   A kind: helm service replaces 2 with one helm_release
 #   (scripts/lib/helm.sh), then applies 3 and 4 as usual.
 #
@@ -292,6 +299,86 @@ service_enabled() {
     return 0
 }
 
+# _service_config_docs <dir>: the service's own Secrets and ConfigMaps (from
+# every manifest in the directory, steps included), rendered, as one stream.
+_service_config_docs() {
+    local dir="$1" file base
+    while IFS= read -r file; do
+        base="$(basename "$file")"
+        case "$base" in
+            service.yaml|values.yaml|*.values.yaml) continue ;;
+        esac
+        render_file "$file"
+        echo "---"
+    done < <(find "$dir" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) -print | sort) |
+        yq 'select(.kind == "Secret" or .kind == "ConfigMap")'
+}
+
+# _service_changed_configs <dir> <namespace>: "Kind/name" for each of the
+# service's Secrets and ConfigMaps whose rendered form differs from the
+# cluster's. Run it before applying. A missing namespace or any kubectl diff
+# error counts as unchanged: a first install has nothing to restart.
+_service_changed_configs() {
+    local dir="$1" ns="$2" docs kind name rc
+    docs="$(_service_config_docs "$dir")" || return 0
+    [[ -n "$docs" ]] || return 0
+    kubectl get namespace "$ns" >/dev/null 2>&1 || return 0
+    while read -r kind name; do
+        [[ -n "$kind" && -n "$name" ]] || continue
+        # kubectl diff exits 0 when equal, 1 when different, >1 on error.
+        rc=0
+        printf '%s\n' "$docs" | K="$kind" N="$name" \
+            yq 'select(.kind == strenv(K) and .metadata.name == strenv(N))' | \
+            kubectl diff -n "$ns" -f - >/dev/null 2>&1 || rc=$?
+        if [[ "$rc" -eq 1 ]]; then
+            echo "$kind/$name"
+        fi
+    done < <(printf '%s\n' "$docs" | yq -N -r '.kind + " " + .metadata.name')
+    return 0
+}
+
+# _service_restart_readers <namespace> [Kind/name…]: rollout-restart, once
+# each, the Deployments, StatefulSets and DaemonSets in the namespace whose pod
+# template reads any of those Secrets or ConfigMaps (volume, projected volume,
+# envFrom or env valueFrom, in containers or init containers).
+_service_restart_readers() {
+    local ns="$1"
+    shift
+    [[ $# -gt 0 ]] || return 0
+    local workloads ref kind name workload
+    workloads="$(kubectl -n "$ns" get deployments,statefulsets,daemonsets -o yaml)" || {
+        warning "  could not list workloads in $ns to restart for: $*"
+        return 0
+    }
+    local restart=()
+    for ref in "$@"; do
+        kind="${ref%%/*}"
+        name="${ref#*/}"
+        while IFS= read -r workload; do
+            [[ -n "$workload" ]] || continue
+            [[ " ${restart[*]:-} " == *" $workload "* ]] || restart+=("$workload")
+        done < <(printf '%s\n' "$workloads" | K="$kind" N="$name" yq -r '
+            .items[] | .spec.template.spec as $p | select(
+              (strenv(K) == "Secret" and (
+                [$p.volumes[].secret.secretName] +
+                [$p.volumes[].projected.sources[].secret.name] +
+                [($p.containers[], $p.initContainers[]) | .envFrom[].secretRef.name] +
+                [($p.containers[], $p.initContainers[]) | .env[].valueFrom.secretKeyRef.name]
+                | any_c(. == strenv(N)))) or
+              (strenv(K) == "ConfigMap" and (
+                [$p.volumes[].configMap.name] +
+                [$p.volumes[].projected.sources[].configMap.name] +
+                [($p.containers[], $p.initContainers[]) | .envFrom[].configMapRef.name] +
+                [($p.containers[], $p.initContainers[]) | .env[].valueFrom.configMapKeyRef.name]
+                | any_c(. == strenv(N))))
+            ) | (.kind | downcase) + "/" + .metadata.name')
+    done
+    for workload in ${restart[@]+"${restart[@]}"}; do
+        log "  configuration changed ($*): restarting $workload"
+        kubectl -n "$ns" rollout restart "$workload" || warning "  could not restart $workload in $ns"
+    done
+}
+
 # install_service <name|dir>
 # Renders and applies one service per the rules above. In render mode
 # (HOMELAB_APPLY_MODE=render) nothing touches a cluster.
@@ -351,6 +438,15 @@ install_service() {
         has_servicemonitor_crd="true"
     fi
 
+    # 5, detection: the Secrets and ConfigMaps this install is about to
+    # change, found before anything is applied.
+    local changed_configs=() changed_config
+    if [[ "$HOMELAB_APPLY_MODE" != "render" ]]; then
+        while IFS= read -r changed_config; do
+            [[ -n "$changed_config" ]] && changed_configs+=("$changed_config")
+        done < <(_service_changed_configs "$dir" "$ns")
+    fi
+
     # 1. Namespace first, its Pod Security labels set for POD_SECURITY_MODE.
     if [[ -f "$dir/namespace.yaml" ]]; then
         render_file "$dir/namespace.yaml" | pod_security_mode_filter | \
@@ -365,6 +461,7 @@ install_service() {
         if declare -F install_service_network_policies >/dev/null; then
             install_service_network_policies "$dir" "$ns"
         fi
+        _service_restart_readers "$ns" ${changed_configs[@]+"${changed_configs[@]}"}
         success "Service $name installed"
         return 0
     fi
@@ -402,6 +499,9 @@ install_service() {
     if declare -F install_service_network_policies >/dev/null; then
         install_service_network_policies "$dir" "$ns"
     fi
+
+    # 5. Restart what reads a changed Secret or ConfigMap.
+    _service_restart_readers "$ns" ${changed_configs[@]+"${changed_configs[@]}"}
 
     success "Service $name installed"
 }
