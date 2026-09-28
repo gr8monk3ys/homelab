@@ -73,6 +73,8 @@ spec:
   destinations:
   - namespace: immich
     server: https://kubernetes.default.svc
+  - namespace: laya
+    server: https://kubernetes.default.svc
   - namespace: localai
     server: https://kubernetes.default.svc
   - namespace: ollama

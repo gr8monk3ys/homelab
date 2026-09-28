@@ -1,0 +1,12 @@
+---
+# The pod meets the restricted profile (non-root UID 10001, no privilege
+# escalation, all capabilities dropped, RuntimeDefault seccomp).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: laya
+  labels:
+    name: laya
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -19,11 +19,11 @@ the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
 Garage, Velero, kube-prometheus-stack) and the **service catalogue**: every
 directory under `kubernetes/services/` carries a `service.yaml` descriptor
 (group, opt-in, ordered install steps, network isolation), and one code path,
-`install_service`, installs any of them. There are 64: 18 install under the
-default toggles, 37 more are opt-in by name, and the rest wait on a group
+`install_service`, installs any of them. There are 65: 18 install under the
+default toggles, 38 more are opt-in by name, and the rest wait on a group
 toggle. `./scripts/services.sh list` prints the catalogue.
 
-Running 64 services on one node is not the intent and would not fit; the
+Running 65 services on one node is not the intent and would not fit; the
 catalogue is a menu, not a target. Pick the handful you actually want.
 
 ## How it fits together

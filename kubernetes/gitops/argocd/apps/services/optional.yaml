@@ -538,6 +538,34 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: laya
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: argocd
+    homelab.service/group: ai
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab-ai
+  source:
+    repoURL: https://github.com/your-username/homelab.git
+    targetRevision: HEAD
+    path: kubernetes/services/laya
+    directory:
+      exclude: '{service.yaml,values.yaml,*.values.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: laya
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: localai
   namespace: argocd
   labels:

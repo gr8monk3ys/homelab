@@ -1,0 +1,28 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# In-cluster clients -> laya:8000 (http://laya.laya.svc.cluster.local:8000).
+# Laya is an API other apps call, and which namespaces those are is not known
+# here, so any namespace may connect; every call except GET /health still needs
+# the bearer key (LAYA_API_KEY). Narrow `from` to named namespaces to tighten it.
+# A client namespace with default-deny egress needs its own egress rule to
+# namespace laya, port 8000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-cluster-clients
+  namespace: laya
+spec:
+  podSelector:
+    matchLabels:
+      app: laya
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -148,6 +148,7 @@ secrets are already generated. Add them by name:
 | Keycloak (`auth.` belongs to Authelia) | `keycloak.` | core |
 | Kiwix (offline ZIM reader; download ZIMs yourself, see the deployment comments) | `library.` | content |
 | kured (no URL; reboots the node when `/var/run/reboot-required` appears; hostPID + privileged by design) | — | core |
+| Laya (System-1 decision API: classification, ratings and yes/no probabilities over text, Jev `/v1/systemone`; no Authelia, needs `Authorization: Bearer` with `laya-config`'s `api-key`; in-cluster at `http://laya.laya.svc.cluster.local:8000`; image is built from source, see its `deployment.yaml`) | `laya.` | ai |
 | LocalAI | `localai.` | ai |
 | Longhorn (distributed block storage, snapshots, backups to Garage; needs open-iscsi on the host) | `longhorn.` | core |
 | Metabase | `metabase.` | productivity |

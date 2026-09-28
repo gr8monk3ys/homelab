@@ -55,7 +55,7 @@ enabled_count() {
 echo "toggle algebra:"
 
 catalogue=$(services_all | wc -l | tr -d ' ')
-assert_eq 64 "$catalogue" "descriptors in the catalogue"
+assert_eq 65 "$catalogue" "descriptors in the catalogue"
 
 # The three numbers CLAUDE.md and the README state, derived here from the
 # descriptors and SERVICE_GROUPS rather than restated.
@@ -71,9 +71,9 @@ for svc in $(services_all); do
     fi
 done
 assert_eq 18 "$default_enabled" "enabled under the default toggles"
-assert_eq 37 "$optin_total"     "opt-in services (need naming in OPTIN_SERVICES)"
+assert_eq 38 "$optin_total"     "opt-in services (need naming in OPTIN_SERVICES)"
 assert_eq 9  "$group_gated"     "non-opt-in services waiting on a group toggle"
-assert_eq 64 "$((default_enabled + optin_total + group_gated))" "18 + 37 + 9"
+assert_eq 65 "$((default_enabled + optin_total + group_gated))" "18 + 38 + 9"
 
 # The "-" sentinel: core has no toggle variable and is always on.
 assert_eq "-"    "$(service_group_field core toggle)" "core's toggle column"
@@ -116,7 +116,7 @@ assert_eq 18 "$(OPTIN_SERVICES=not-a-service enabled_count)" "default + OPTIN_SE
 # OPTIN_SERVICES=all: every opt-in service in an enabled group, and with every
 # group toggle on, the whole catalogue.
 assert_eq 49 "$(OPTIN_SERVICES=all enabled_count)" "OPTIN_SERVICES=all under the default groups"
-assert_eq 64 "$(OPTIN_SERVICES=all ENABLE_DEV_SERVICES=true ENABLE_AI_SERVICES=true \
+assert_eq 65 "$(OPTIN_SERVICES=all ENABLE_DEV_SERVICES=true ENABLE_AI_SERVICES=true \
                 ENABLE_HOME_SERVICES=true ENABLE_COMMUNICATION_SERVICES=true \
                 INSTALL_LOGGING=true enabled_count)" "OPTIN_SERVICES=all with every group on"
 
