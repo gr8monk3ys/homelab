@@ -32,6 +32,7 @@
 #   value: "UTC"                       -> TIMEZONE
 #   cluster-issuer: "homelab-ca"       -> CERT_MANAGER_CLUSTER_ISSUER
 #   https://github.com/your-username/homelab.git -> GITOPS_REPO_URL
+#   http://ollama.ollama.svc.cluster.local:11434 -> OLLAMA_URL
 
 if [[ -n "${HOMELAB_RENDER_SOURCED:-}" ]]; then
     return 0
@@ -54,6 +55,7 @@ TIMEZONE_OVERRIDE="${TIMEZONE-}"
 ADMIN_EMAIL_OVERRIDE="${ADMIN_EMAIL-}"
 CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE="${CERT_MANAGER_CLUSTER_ISSUER-}"
 GITOPS_REPO_URL_OVERRIDE="${GITOPS_REPO_URL-}"
+OLLAMA_URL_OVERRIDE="${OLLAMA_URL-}"
 
 ENVIRONMENT="production"
 DOMAIN="homelab.local"
@@ -61,6 +63,7 @@ TIMEZONE="UTC"
 ADMIN_EMAIL="admin@homelab.local"
 CERT_MANAGER_CLUSTER_ISSUER="homelab-ca"
 GITOPS_REPO_URL="https://github.com/your-username/homelab.git"
+OLLAMA_URL="http://ollama.ollama.svc.cluster.local:11434"
 
 homelab_load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
@@ -78,6 +81,8 @@ homelab_load_config() {
             [[ -n "$cfg" ]] && CERT_MANAGER_CLUSTER_ISSUER="$cfg"
             cfg="$(yq -r '.gitops.repo_url // empty' "$CONFIG_FILE" 2>/dev/null || true)"
             [[ -n "$cfg" ]] && GITOPS_REPO_URL="$cfg"
+            cfg="$(yq -r '.ai.ollama_url // empty' "$CONFIG_FILE" 2>/dev/null || true)"
+            [[ -n "$cfg" ]] && OLLAMA_URL="$cfg"
         else
             warning "yq is not installed; skipping config parsing of $CONFIG_FILE"
         fi
@@ -91,8 +96,9 @@ homelab_load_config() {
     [[ -n "${ENVIRONMENT_OVERRIDE:-}" ]] && ENVIRONMENT="$ENVIRONMENT_OVERRIDE"
     [[ -n "${CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE:-}" ]] && CERT_MANAGER_CLUSTER_ISSUER="$CERT_MANAGER_CLUSTER_ISSUER_OVERRIDE"
     [[ -n "${GITOPS_REPO_URL_OVERRIDE:-}" ]] && GITOPS_REPO_URL="$GITOPS_REPO_URL_OVERRIDE"
+    [[ -n "${OLLAMA_URL_OVERRIDE:-}" ]] && OLLAMA_URL="$OLLAMA_URL_OVERRIDE"
 
-    export ENVIRONMENT DOMAIN TIMEZONE ADMIN_EMAIL CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL
+    export ENVIRONMENT DOMAIN TIMEZONE ADMIN_EMAIL CERT_MANAGER_CLUSTER_ISSUER GITOPS_REPO_URL OLLAMA_URL
     return 0
 }
 
@@ -102,19 +108,21 @@ escape_sed_replacement() {
 }
 
 render_stream() {
-    local admin_email_esc domain_esc timezone_esc issuer_esc gitops_repo_url_esc
+    local admin_email_esc domain_esc timezone_esc issuer_esc gitops_repo_url_esc ollama_url_esc
     admin_email_esc="$(escape_sed_replacement "$ADMIN_EMAIL")"
     domain_esc="$(escape_sed_replacement "$DOMAIN")"
     timezone_esc="$(escape_sed_replacement "$TIMEZONE")"
     issuer_esc="$(escape_sed_replacement "$CERT_MANAGER_CLUSTER_ISSUER")"
     gitops_repo_url_esc="$(escape_sed_replacement "$GITOPS_REPO_URL")"
+    ollama_url_esc="$(escape_sed_replacement "${OLLAMA_URL:-http://ollama.ollama.svc.cluster.local:11434}")"
 
     # Order matters for the email only: admin@homelab.local contains the domain
-    # placeholder, so it is replaced before the domain. The repo URL does not
-    # contain it (homelab.git, not homelab.local); its position is arbitrary.
+    # placeholder, so it is replaced before the domain. The repo URL and the
+    # Ollama URL do not contain it; their positions are arbitrary.
     sed \
         -e "s/admin@homelab\\.local/${admin_email_esc}/g" \
         -e "s/https:\\/\\/github\\.com\\/your-username\\/homelab\\.git/${gitops_repo_url_esc}/g" \
+        -e "s/http:\\/\\/ollama\\.ollama\\.svc\\.cluster\\.local:11434/${ollama_url_esc}/g" \
         -e "s/homelab\\.local/${domain_esc}/g" \
         -e "s/value: \\\"UTC\\\"/value: \\\"${timezone_esc}\\\"/g" \
         -e "s/cert-manager\\.io\\/cluster-issuer: \\\"homelab-ca\\\"/cert-manager.io\\/cluster-issuer: \\\"${issuer_esc}\\\"/g"
