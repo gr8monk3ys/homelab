@@ -196,8 +196,8 @@ spec:
         app: calibre-server
     spec:
       securityContext:
-        # Note: LinuxServer.io images typically run as root internally
-        # They use PUID/PGID for file ownership but process runs as root
+        # The s6 init runs as root and drops to PUID/PGID (1000) for calibre;
+        # see the container's securityContext for the capabilities it keeps.
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
@@ -228,11 +228,46 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1000m"
+        # Security exception, the same one calibre-web carries (see there):
+        # the LinuxServer.io s6 init starts as root, remaps user abc to
+        # PUID/PGID, chowns /config and nginx's /var/lib/nginx, then drops to
+        # abc via setgroups/setuid. With every capability dropped it loops on
+        # "s6-applyuidgid: unable to set supplementary group list" and nginx
+        # "chown(/var/lib/nginx/body) failed", and nothing listens on 8080.
+        # There is no maintained rootless image of the calibre desktop
+        # (home-operations/containers has none; the headless calibre-server
+        # images are unmaintained single-user builds on EOL bases). So ALL is
+        # still dropped and only the baseline-allowed capabilities the init
+        # needs are added back; privilege escalation stays off and calibre
+        # itself runs as uid 1000.
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
+            add:
+              - CHOWN
+              - DAC_OVERRIDE
+              - FOWNER
+              - SETGID
+              - SETUID
+        # The KasmVNC web desktop on 8080. (8081, calibre's content server,
+        # listens only once it is switched on inside the desktop.)
+        startupProbe:
+          tcpSocket:
+            port: 8080
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 3
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          periodSeconds: 30
+          timeoutSeconds: 5
       volumes:
       - name: calibre-config
         persistentVolumeClaim:
@@ -266,6 +301,9 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    # The calibre web desktop (KasmVNC) has no login of its own: gate it
+    # behind Authelia like the arr apps.
+    traefik.ingress.kubernetes.io/router.middlewares: authelia-authelia-forwardauth@kubernetescrd
     cert-manager.io/cluster-issuer: "homelab-ca"
 spec:
   tls:
