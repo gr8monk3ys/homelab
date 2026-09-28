@@ -1,0 +1,30 @@
+---
+# Static NetworkPolicies in this namespace: the per-pod and cross-namespace
+# rules the networkPolicies: templates in service.yaml cannot express.
+# Applied by install_service with the rest of this directory.
+
+# open-webui -> searxng:8080: Open WebUI's web search calls the JSON API
+# in-cluster (SEARXNG_QUERY_URL in open-webui/deployment.yaml; the matching
+# egress rule is in open-webui/networkpolicies.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-open-webui
+  namespace: searxng
+spec:
+  podSelector:
+    matchLabels:
+      app: searxng
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: open-webui
+          podSelector:
+            matchLabels:
+              app: open-webui
+      ports:
+        - protocol: TCP
+          port: 8080

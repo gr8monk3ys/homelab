@@ -22,6 +22,31 @@ spec:
         - protocol: TCP
           port: 11434
 ---
+# open-webui -> searxng:8080 (SEARXNG_QUERY_URL in open-webui/deployment.yaml;
+# the matching ingress rule is in searxng/networkpolicies.yaml)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-searxng
+  namespace: open-webui
+spec:
+  podSelector:
+    matchLabels:
+      app: open-webui
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: searxng
+          podSelector:
+            matchLabels:
+              app: searxng
+      ports:
+        - protocol: TCP
+          port: 8080
+---
 # Open WebUI - AI chat interface (sensitive conversation data)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
