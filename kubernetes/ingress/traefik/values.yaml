@@ -14,7 +14,9 @@ deployment:
   # chart's non-root user (65532) with every capability dropped, so without this
   # it cannot open access.log and CrowdSec sees no traffic (#36). fsGroup does not
   # apply to hostPath. Hand the directory to Traefik's user before it starts;
-  # CrowdSec (UID 1000) keeps read access through 0755.
+  # CrowdSec (UID 1000) keeps read access through 0755. FOWNER lets root chmod
+  # the directory on a restart, when it already belongs to 65532; with CHOWN
+  # alone the chmod fails and Traefik never starts again after a node reboot.
   initContainers:
     - name: traefik-log-dir
       image: busybox:1.37.0
@@ -26,7 +28,14 @@ deployment:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
-          add: [CHOWN]
+          add: [CHOWN, FOWNER]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 8Mi
+        limits:
+          cpu: 50m
+          memory: 16Mi
       volumeMounts:
         - name: traefik-logs
           mountPath: /var/log/traefik

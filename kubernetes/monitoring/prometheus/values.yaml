@@ -84,6 +84,21 @@ nodeExporter:
 kubeStateMetrics:
   enabled: true
 
+# The operator's admission-webhook certificate Jobs (create and patch) run as
+# Helm hooks on every install and upgrade. The monitoring ResourceQuota
+# (kubernetes/security/resource-quotas.yaml) rejects a pod without requests
+# and limits, so without these a re-run of setup-v2.sh fails at this release.
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
 defaultRules:
   create: true
   rules:
