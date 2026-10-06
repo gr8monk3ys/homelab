@@ -71,13 +71,37 @@ agent container with the Windows folder bind-mounted at `/mnt/bulk` and
 the container impossible to stop. Without the shared root, node-exporter
 fails with "not a shared or slave mount". Keep `/var/lib/rancher/k3s` and
 `/etc/rancher/node` on named volumes, so a re-created container keeps its
-identity and node password. From the WSL docker CLI, bind the
-distro's view of the drive (`/mnt/d/...`): `/run/desktop/mnt/host/d/...` is
-not the drive under the WSL 2 backend, but an empty tmpfs directory. Through
-that mount (9p/drvfs), every file shows as UID/GID 1000 with mode 0777,
-`chown` and `chmod` succeed but change nothing, any UID can write, hardlinks
-and symlinks work, and FIFOs do not. That is fine for media and
-object blocks, but not for a database.
+identity and node password.
+
+Create the container from the **Windows** docker CLI and bind the Windows
+path (`-v 'D:\homelab:/mnt/bulk'`; in Git Bash set `MSYS_NO_PATHCONV=1`).
+Docker Desktop mounts the drive itself (`D:\ on /mnt/bulk type 9p ...
+aname=drvfs`), so the bind does not depend on any WSL distro. Do **not**
+create it from a WSL distro's docker CLI with `/mnt/d/...`: Docker records
+that bind as `/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/<distro>/<hash>`,
+which only resolves while that distro is registered, running and integrated.
+When the distro is removed or renamed, the node silently gets an empty tmpfs
+at `/mnt/bulk`, and every bulk pod fails with "hostPath type check failed: ...
+is not a directory" (this happened on 2026-10-04, when the `Ubuntu` distro the
+node was created from went away). `/run/desktop/mnt/host/d/...` typed from
+inside a distro is not the drive either, but an empty tmpfs directory.
+
+To re-create the node, keep everything except the bind: `docker inspect` it,
+stop it, `docker rename` it to `-old` for rollback, then `docker run` with the
+same image, entrypoint and command, `--privileged --init --cgroupns host
+--security-opt label=disable`, network and IP, the two named volumes **and**
+the three anonymous ones (`/var/log`, `/var/lib/cni`, `/var/lib/kubelet`) by
+name, and the `K3S_URL`/`K3S_TOKEN` env (pass it with `--env-file`, never on the
+command line). Once the node is Ready and `/mnt/bulk` lists its directories,
+`docker rm` the old container without `-v`.
+
+The two binds behave differently. Bound from the Windows CLI, the mount has
+drvfs `metadata`: new files are owned by root with mode 0644, `chown` and
+`chmod` persist, and hardlinks, symlinks and FIFOs work (checked 2026-10-05).
+Folders created from Windows show as root 0777. Bound from a distro, every file
+shows as UID/GID 1000 with mode 0777, `chown` and `chmod` succeed but change
+nothing, and FIFOs do not work. Either way it is fine for media and object
+blocks, but not for a database.
 
 ## Longhorn (distributed block storage)
 
