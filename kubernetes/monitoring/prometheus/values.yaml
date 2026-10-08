@@ -1,7 +1,16 @@
 ---
 prometheus:
   prometheusSpec:
-    retention: 30d
+    # A week of metrics is enough to see what changed; 30 days made every
+    # restart replay a month of WAL and TSDB blocks, which on a single-PC k3d
+    # cluster pinned two cores for minutes. retentionSize caps the disk too,
+    # whichever limit is hit first.
+    retention: 7d
+    retentionSize: 8GB
+    # Kube-prometheus-stack defaults to 30s. Nothing here alerts on sub-minute
+    # changes, and halving the scrape rate halves the ingest load.
+    scrapeInterval: 60s
+    evaluationInterval: 60s
     # Discover ServiceMonitors/PodMonitors/PrometheusRules across the cluster.
     # By default, kube-prometheus-stack restricts discovery to resources labeled with the Helm release.
     # This repo defines ServiceMonitors and PrometheusRules in multiple namespaces, so we opt into broad discovery.
