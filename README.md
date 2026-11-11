@@ -1,18 +1,16 @@
 # Homelab
 
-**Status: verified against a live Kubernetes API, not yet on a real node.**
-Every check in `scripts/ci.sh` passes, and 58 of the 64 services in the
-catalogue have been applied through the installer's own code path to a real
-`kube-apiserver` (with the External Secrets, Traefik, cert-manager and
-Prometheus Operator CRDs loaded), with the installer running end to end
-against it. That run had the Helm-based infrastructure disabled, which is
-exactly why 58 and not 64: the six `kind: helm` services — `longhorn`,
-`nextcloud`, `node-feature-discovery`, `nvidia-device-plugin`,
-`tailscale-operator`, `volsync` — were never applied, and the Helm install
-path itself is unverified. `helm_release` in `scripts/lib/helm.sh` installs
-those six services and all nine infrastructure charts, and it has never run
-against an API server. What has not happened yet: pods scheduling on a real
-K3s node and staying up. Deploy a subset, verify, then grow.
+**Status: running on one PC (k3d on Docker Desktop) since 2026-09-27; not yet on bare metal.**
+The installer has deployed a working subset to a single-PC k3d cluster (K3s
+in Docker), with a second K3s agent for bulk storage, and a full redeploy from
+`main` reproduces it (2026-09-28: `validate-setup.sh` health 21/0, 31/31
+Prometheus targets up). The Helm infrastructure charts and Nextcloud install
+through `helm_release` there. Never run so far: a bare-metal or multi-host
+K3s cluster, MetalLB (servicelb stands in), and the opt-in `kind: helm`
+services other than Nextcloud (`longhorn`, `node-feature-discovery`,
+`nvidia-device-plugin`, `tailscale-operator`, `volsync`). CI still checks
+every service against a real `kube-apiserver` with no kubelet. Deploy a
+subset, verify, then grow.
 
 A self-hosted Kubernetes homelab on K3s. One installer (`setup-v2.sh`) deploys
 the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,

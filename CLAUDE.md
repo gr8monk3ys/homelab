@@ -5,9 +5,9 @@ infrastructure layer plus the service catalogue: every directory under
 `kubernetes/services/` has a `service.yaml` descriptor (group, opt-in,
 ordered steps) and `scripts/lib/services.sh` is the one code path that
 installs one. 65 services: 18 install under the default toggles, 38 are
-opt-in by name, the rest wait on a group toggle. Applied end-to-end to a
-live Kubernetes API, but no pod has ever started on a real node — see the
-README status line.
+opt-in by name, the rest wait on a group toggle. Runs live on one PC
+(k3d: K3s in Docker Desktop) since 2026-09-27; never yet on bare metal — see
+the README status line.
 
 ## Run / test
 

@@ -36,7 +36,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       initContainers:
       - name: wait-for-deps
-        image: busybox:1.35
+        image: busybox:1.37.0
         command:
         - sh
         - -c

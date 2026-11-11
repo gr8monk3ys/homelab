@@ -602,8 +602,9 @@ setup_gitops() {
     log "Installing ArgoCD ${ARGOCD_VERSION}..."
     kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
-    # Wait for ArgoCD to be ready
-    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
+    # Wait for ArgoCD to be ready. Best-effort like every other wait in the
+    # installer: a slow pull must not abort the run under set -e.
+    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s         || warning "ArgoCD pods not Ready after 600s; check: kubectl -n argocd get pods"
 
     # Apply ArgoCD projects (safe defaults), and only apply apps/repos if explicitly enabled.
     kubectl_apply_rendered_file kubernetes/gitops/argocd/projects.yaml
