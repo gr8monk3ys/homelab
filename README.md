@@ -4,8 +4,9 @@
 The installer has deployed a working subset to a single-PC k3d cluster (K3s
 in Docker), with a second K3s agent for bulk storage, and a full redeploy from
 `main` reproduces it (2026-09-28: `validate-setup.sh` health 21/0, 31/31
-Prometheus targets up). The Helm infrastructure charts and Nextcloud install
-through `helm_release` there. Never run so far: a bare-metal or multi-host
+Prometheus targets up). Helm infrastructure charts, Traefik,
+kube-prometheus-stack and Velero among them, install through `helm_release`
+there. Never run so far: a bare-metal or multi-host
 K3s cluster, MetalLB (servicelb stands in), and the opt-in `kind: helm`
 services other than Nextcloud (`longhorn`, `node-feature-discovery`,
 `nvidia-device-plugin`, `tailscale-operator`, `volsync`). CI still checks

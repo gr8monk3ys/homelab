@@ -49,7 +49,9 @@ if [[ -z "${HOMELAB_RENDER_SOURCED:-}" ]]; then
     exit 1
 fi
 
-# name=url. The only place a chart repo is listed.
+# name=url. The one table of chart repos; the `# renovate:` comments in
+# tools/versions.env repeat these URLs for Renovate, and scripts/ci.sh
+# fails if one is not listed here.
 HELM_REPOS=(
     "prometheus-community=https://prometheus-community.github.io/helm-charts"
     "jetstack=https://charts.jetstack.io"

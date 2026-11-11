@@ -15,7 +15,7 @@ the README status line.
 ./setup-v2.sh                    # idempotent installer; generates secrets first
 ./scripts/validate-setup.sh      # cluster health + hardcoded-password check
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
-./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, helm lint, kustomize build
+./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, helm lint, kustomize build, Renovate annotations in tools/versions.env
 ./scripts/services.sh list       # the catalogue; `check` validates descriptors, `render <dir>` renders without a cluster
 ./test/setup-kind.sh             # throwaway KinD cluster; test/validate.sh k8s
 ./test/e2e-default-install.sh    # the default install against a live etcd + kube-apiserver (CI runs it; no kubelet)

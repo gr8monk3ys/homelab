@@ -6,8 +6,10 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
   timezone: "America/Los_Angeles",
-  schedule: ["before 6am on monday"],
-  prConcurrentLimit: 5,
+  // "on monday" (Pacific) also covers the self-hosted CronJob, which runs
+  // daily at 03:00 UTC: Tuesday 03:00 UTC is Monday evening in Los Angeles.
+  schedule: ["on monday"],
+  prConcurrentLimit: 3,
   prHourlyLimit: 2,
   labels: ["dependencies"],
   // Nothing merges by itself; every update is a PR to review.
@@ -46,7 +48,7 @@
     // Database majors need a dump and restore: never proposed.
     {
       matchDatasources: ["docker"],
-      matchPackageNames: ["postgres", "mysql", "mariadb", "redis", "valkey/valkey", "mongo"],
+      matchPackageNames: ["postgres", "mariadb", "redis"],
       matchUpdateTypes: ["major"],
       enabled: false,
     },
@@ -55,6 +57,14 @@
       matchPackageNames: ["ghcr.io/immich-app/postgres"],
       enabled: false,
     },
+    // Minor and patch image bumps across the catalogue: one weekly PR.
+    {
+      matchDatasources: ["docker"],
+      matchFileNames: ["kubernetes/services/**"],
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      groupName: "service images (minor and patch)",
+    },
+    // The groups below come after the catch-all: a later packageRule wins.
     // Immich server and machine-learning must run the same version.
     {
       matchPackageNames: ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"],
@@ -64,13 +74,6 @@
     {
       matchPackageNames: ["busybox"],
       groupName: "busybox",
-    },
-    // Minor and patch image bumps across the catalogue: one weekly PR.
-    {
-      matchDatasources: ["docker"],
-      matchFileNames: ["kubernetes/services/**"],
-      matchUpdateTypes: ["minor", "patch", "digest"],
-      groupName: "service images (minor and patch)",
     },
     // The e2e test installs the Prometheus Operator CRDs at the chart's appVersion.
     {
