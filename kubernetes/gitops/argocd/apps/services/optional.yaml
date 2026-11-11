@@ -118,34 +118,6 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: drone
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-    homelab.service/group: dev
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  project: homelab-infrastructure
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/drone
-    directory:
-      exclude: '{service.yaml,values.yaml,*.values.yaml}'
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: drone
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
   name: frigate
   namespace: argocd
   labels:
@@ -220,34 +192,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: harbor
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: heimdall
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: argocd
-    homelab.service/group: core
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  project: homelab-infrastructure
-  source:
-    repoURL: https://github.com/your-username/homelab.git
-    targetRevision: HEAD
-    path: kubernetes/services/heimdall
-    directory:
-      exclude: '{service.yaml,values.yaml,*.values.yaml}'
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: heimdall
   syncPolicy:
     automated:
       prune: true

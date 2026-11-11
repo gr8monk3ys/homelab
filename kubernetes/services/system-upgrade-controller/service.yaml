@@ -3,7 +3,7 @@
 namespace: system-upgrade
 group: core
 optin: true
-description: Rancher system-upgrade-controller with k3s server/agent Plans on the stable channel (opt in per node with the k3s-upgrade label)
+description: Rancher system-upgrade-controller with k3s server/agent Plans pinned to an explicit K3s version (opt in per node with the k3s-upgrade label)
 steps:
   - apply: crd.yaml
   - apply: controller.yaml

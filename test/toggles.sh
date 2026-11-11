@@ -55,7 +55,7 @@ enabled_count() {
 echo "toggle algebra:"
 
 catalogue=$(services_all | wc -l | tr -d ' ')
-assert_eq 65 "$catalogue" "descriptors in the catalogue"
+assert_eq 62 "$catalogue" "descriptors in the catalogue"
 
 # The three numbers CLAUDE.md and the README state, derived here from the
 # descriptors and SERVICE_GROUPS rather than restated.
@@ -70,10 +70,10 @@ for svc in $(services_all); do
         group_gated=$((group_gated + 1))
     fi
 done
-assert_eq 18 "$default_enabled" "enabled under the default toggles"
-assert_eq 38 "$optin_total"     "opt-in services (need naming in OPTIN_SERVICES)"
-assert_eq 9  "$group_gated"     "non-opt-in services waiting on a group toggle"
-assert_eq 65 "$((default_enabled + optin_total + group_gated))" "18 + 38 + 9"
+assert_eq 17 "$default_enabled" "enabled under the default toggles"
+assert_eq 37 "$optin_total"     "opt-in services (need naming in OPTIN_SERVICES)"
+assert_eq 8  "$group_gated"     "non-opt-in services waiting on a group toggle"
+assert_eq 62 "$((default_enabled + optin_total + group_gated))" "17 + 37 + 8"
 
 # The "-" sentinel: core has no toggle variable and is always on.
 assert_eq "-"    "$(service_group_field core toggle)" "core's toggle column"
@@ -103,20 +103,20 @@ done
 ok "every group has services and every service has a group"
 
 # OPTIN_SERVICES: naming one opt-in service adds exactly that one.
-assert_eq 19 "$(OPTIN_SERVICES=heimdall enabled_count)" "default + OPTIN_SERVICES=heimdall"
+assert_eq 18 "$(OPTIN_SERVICES=reloader enabled_count)" "default + OPTIN_SERVICES=reloader"
 # ... and the comma-separated form adds exactly two.
-assert_eq 20 "$(OPTIN_SERVICES=heimdall,kured enabled_count)" "default + OPTIN_SERVICES=heimdall,kured"
-assert_eq 20 "$(OPTIN_SERVICES='heimdall kured' enabled_count)" "default + OPTIN_SERVICES='heimdall kured'"
+assert_eq 19 "$(OPTIN_SERVICES=reloader,kured enabled_count)" "default + OPTIN_SERVICES=reloader,kured"
+assert_eq 19 "$(OPTIN_SERVICES='reloader kured' enabled_count)" "default + OPTIN_SERVICES='reloader kured'"
 # Naming an opt-in service whose group is off changes nothing: the group gate
 # comes first. code-server is in the (default-off) dev group.
-assert_eq 18 "$(OPTIN_SERVICES=code-server enabled_count)" "default + OPTIN_SERVICES=code-server (dev is off)"
+assert_eq 17 "$(OPTIN_SERVICES=code-server enabled_count)" "default + OPTIN_SERVICES=code-server (dev is off)"
 # An unknown name is simply not selected.
-assert_eq 18 "$(OPTIN_SERVICES=not-a-service enabled_count)" "default + OPTIN_SERVICES=not-a-service"
+assert_eq 17 "$(OPTIN_SERVICES=not-a-service enabled_count)" "default + OPTIN_SERVICES=not-a-service"
 
 # OPTIN_SERVICES=all: every opt-in service in an enabled group, and with every
 # group toggle on, the whole catalogue.
-assert_eq 49 "$(OPTIN_SERVICES=all enabled_count)" "OPTIN_SERVICES=all under the default groups"
-assert_eq 65 "$(OPTIN_SERVICES=all ENABLE_DEV_SERVICES=true ENABLE_AI_SERVICES=true \
+assert_eq 47 "$(OPTIN_SERVICES=all enabled_count)" "OPTIN_SERVICES=all under the default groups"
+assert_eq 62 "$(OPTIN_SERVICES=all ENABLE_DEV_SERVICES=true ENABLE_AI_SERVICES=true \
                 ENABLE_HOME_SERVICES=true ENABLE_COMMUNICATION_SERVICES=true \
                 INSTALL_LOGGING=true enabled_count)" "OPTIN_SERVICES=all with every group on"
 

@@ -37,6 +37,18 @@ After editing it:
 ./scripts/install-dev-tools.sh
 ```
 
+## Upgrade K3s
+
+The opt-in `system-upgrade-controller` service upgrades K3s with two Plans in
+`kubernetes/services/system-upgrade-controller/plans.yaml`. Both pin an
+explicit `version:` (for example `v1.34.13+k3s1`). They do not follow the
+`stable` channel, because a channel can move to a new minor on its own.
+
+To upgrade, change `version:` in both Plans in one commit (Renovate opens this
+PR; a minor bump waits for approval on its Dependency Dashboard). A node
+upgrades only when it carries the label `k3s-upgrade=true`
+(`kubectl label node <name> k3s-upgrade=true`).
+
 ## Upgrade Cluster Components (Non-GitOps)
 
 Re-run the setup script to apply updates:

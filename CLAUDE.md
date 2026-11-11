@@ -4,7 +4,7 @@ Self-hosted Kubernetes homelab on K3s. `setup-v2.sh` installs the
 infrastructure layer plus the service catalogue: every directory under
 `kubernetes/services/` has a `service.yaml` descriptor (group, opt-in,
 ordered steps) and `scripts/lib/services.sh` is the one code path that
-installs one. 65 services: 18 install under the default toggles, 38 are
+installs one. 62 services: 17 install under the default toggles, 37 are
 opt-in by name, the rest wait on a group toggle. Runs live on one PC
 (k3d: K3s in Docker Desktop) since 2026-09-27; never yet on bare metal — see
 the README status line.
@@ -46,7 +46,7 @@ the README status line.
 - Every script sources `scripts/lib/common.sh`; anything that applies repo manifests goes through `scripts/lib/render.sh` (never raw `kubectl apply -f` on a repo path).
 - Containers: `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot` where the image allows.
 - Databases are a separate workload per app, never a sidecar: a Deployment with its own PVC, not a StatefulSet (nothing here needs the stable network identity or ordinal scaling a StatefulSet buys; `kind: StatefulSet` appears nowhere under `kubernetes/services/`).
-- Any single-replica Deployment that mounts a ReadWriteOnce volume, database or not, uses `strategy: Recreate`. ReadWriteOnce restricts a volume to one node, not one pod, so a rolling update either briefly runs two writers on the same node or stalls when the new pod is scheduled to another node. `./scripts/services.sh check` enforces it. Two Deployments sharing one ReadWriteOnce claim need required `podAffinity` to land on the same node (wireguard-ui, calibre-web).
+- Any single-replica Deployment that mounts a ReadWriteOnce volume, database or not, uses `strategy: Recreate`. ReadWriteOnce restricts a volume to one node, not one pod, so a rolling update either briefly runs two writers on the same node or stalls when the new pod is scheduled to another node. `./scripts/services.sh check` enforces it. Two Deployments sharing one ReadWriteOnce claim need required `podAffinity` to land on the same node (calibre-web).
 - `config/homelab.yaml` holds only the eight keys `homelab_load_config` reads (domain, timezone, email, environment, cluster issuer, GitOps repo URL, Ollama URL, Immich ML URL); env vars override it. `ENVIRONMENT` is parsed but unused. Versions live in `tools/versions.env`, and what installs is chosen by the `ENABLE_*`/`INSTALL_*`/`OPTIN_SERVICES` toggles.
 - No kustomize overlay: the descriptor catalogue is the desired state (`docs/adr/0003-no-kustomize-overlay.md`). The only kustomizations are the ArgoCD app-of-apps and the SOPS store.
 - `ansible/` is host prep for K3s nodes (`just ansible-prep`, before `setup-v2.sh`); see `ansible/README.md`.

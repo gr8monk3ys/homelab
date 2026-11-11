@@ -110,13 +110,9 @@ secrets_catalogue() {
 
     # Service configuration
     secret pihole-config            web-password=password 'dns-servers=literal:1.1.1.1;8.8.8.8'
-    secret wireguard-config         ui-password=password internal-subnet=literal:10.13.13.0
     secret searxng-config           secret-key=hex:64 'instance-name=literal:Homelab Search'
     secret yarr-config              auth-user=literal:admin auth-password=password \
                                     'auth-credentials=template:admin:{auth-password}'
-    secret drone-config             gitea-client-id=hex:16 gitea-client-secret=hex:64 rpc-secret=hex:64 \
-                                    db-password=password \
-                                    'database-url=template:postgres://drone:{db-password}@drone-db:5432/drone?sslmode=disable'
     secret crowdsec-config          bouncer-api-key=hex:32 enroll-key=empty
     secret n8n-config               encryption-key=hex:32 jwt-secret=hex:32
     secret linkwarden-config        nextauth-secret=hex:32

@@ -16,7 +16,6 @@ spec:
     - nextcloud
     - gitea
     - vaultwarden
-    - heimdall
     - jellyfin
     - arr-stack
     - immich
@@ -62,7 +61,6 @@ spec:
     - nextcloud
     - gitea
     - vaultwarden
-    - heimdall
     - jellyfin
     - arr-stack
     - immich

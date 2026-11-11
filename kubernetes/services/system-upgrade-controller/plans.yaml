@@ -1,8 +1,11 @@
 ---
 # k3s upgrade Plans, the shape from the SUC README / examples/k3s-upgrade.yaml.
-# Both follow the "stable" channel (https://update.k3s.io/v1-release/channels/stable),
-# so the target is whatever the channel resolves to, e.g. v1.34.1+k3s1;
-# replace `channel:` with `version: v1.34.1+k3s1` to pin instead.
+# Both Plans pin an explicit K3s version, so a new minor never installs itself:
+# the `stable` channel can jump a minor without warning. Renovate proposes the
+# bump as a PR (renovate.json5; minors wait for approval on the Dependency
+# Dashboard). The pin is the v1.34 line the rest of the repo targets
+# (KUBECTL_VERSION, KIND_NODE_IMAGE in tools/versions.env); the `+k3s1` suffix
+# is part of the release tag the upgrade controller expects.
 #
 # Nothing upgrades until a node carries the label k3s-upgrade=true
 # (`kubectl label node <name> k3s-upgrade=true`): the nodeSelector below is
@@ -24,7 +27,8 @@ metadata:
     k3s-upgrade: server
 spec:
   concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/stable
+  # renovate: datasource=github-releases depName=k3s-io/k3s
+  version: v1.34.13+k3s1
   nodeSelector:
     matchExpressions:
       - {key: k3s-upgrade, operator: Exists}
@@ -45,7 +49,8 @@ metadata:
     k3s-upgrade: agent
 spec:
   concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/stable
+  # renovate: datasource=github-releases depName=k3s-io/k3s
+  version: v1.34.13+k3s1
   nodeSelector:
     matchExpressions:
       - {key: k3s-upgrade, operator: Exists}

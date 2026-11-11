@@ -98,7 +98,7 @@ local-path, Garage, CrowdSec and ArgoCD. See ADR-0006.
 | Audiobookshelf | `audiobooks.` |
 
 **Network** (`ENABLE_NETWORK_SERVICES=true` by default): Pi-hole (`pihole.`,
-also provides wildcard DNS for the cluster), WireGuard (`vpn.`), dnsmasq DHCP.
+also provides wildcard DNS for the cluster), dnsmasq DHCP.
 
 **Content** (`ENABLE_CONTENT_SERVICES=true` by default): Calibre-web
 (`books.`), SearXNG (`search.`), yarr (`rss.`).
@@ -114,16 +114,11 @@ n8n (`automation.`).
 | Immich (photos; server + ML + Postgres/pgvecto + Redis) | `photos.` | `ENABLE_AI_SERVICES=true` |
 | Ollama (LLM runtime; large storage, heavy CPU/RAM) | `ai.` | `ENABLE_AI_SERVICES=true` |
 | Open WebUI (chat UI for Ollama; behind Authelia) | `chat.` | `ENABLE_AI_SERVICES=true` |
-| Drone CI (no runner by default, see note below) | `drone.` | `ENABLE_DEV_SERVICES=true` |
 | Harbor (container registry, installed via in-cluster Helm job) | — | `ENABLE_DEV_SERVICES=true` |
 | Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT | `hass.`, `nodered.`, `zigbee.` | `ENABLE_HOME_SERVICES=true` |
 | Matrix (Synapse + Element) | `matrix.`, `element.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | Mattermost | `mattermost.` | `ENABLE_COMMUNICATION_SERVICES=true` |
 | ArgoCD | `argocd.` | `ENABLE_GITOPS=true` |
-
-> **Drone has no runner.** Drone CI installs without a build runner, which is the
-> secure default: the usual runner mounts the host Docker socket. A Docker-socket
-> runner manifest is preserved on the `archive/legacy` branch if you want it.
 
 ## Opt-in services (`OPTIN_SERVICES`)
 
@@ -139,7 +134,6 @@ secrets are already generated. Add them by name:
 | CyberChef | `cyberchef.` | productivity |
 | Frigate (local NVR; needs Mosquitto from Home Assistant and, realistically, a Coral or iGPU) | `frigate.` | home |
 | Gatus | `status.` | monitoring |
-| Heimdall | `dashboard.` | core |
 | Homebox | `inventory.` | productivity |
 | Hoppscotch | `hoppscotch.` | dev |
 | Intel device plugin (no URL; exposes `gpu.intel.com/i915` for transcoding and detection) | — | core |
@@ -165,7 +159,7 @@ secrets are already generated. Add them by name:
 | RomM | `games.` | media |
 | snapshot-controller (no URL; CSI VolumeSnapshot support, prerequisite for VolSync snapshot copies) | — | core |
 | Stirling-PDF | `pdf.` | productivity |
-| system-upgrade-controller (no URL; k3s server/agent upgrade Plans on the stable channel, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
+| system-upgrade-controller (no URL; k3s server/agent upgrade Plans pinned to an explicit K3s version, opt in per node with `kubectl label node <name> k3s-upgrade=true`) | — | core |
 | Tailscale operator (no URL; exposes services on your tailnet; needs the user-supplied `tailscale-oauth` secret) | — | network |
 | Tautulli (Plex statistics; Plex-only, so it is useful here only if you run Plex somewhere alongside this cluster's Jellyfin) | `stats.` | media |
 | Umami | `analytics.` | productivity |
@@ -194,7 +188,7 @@ are preserved on the `archive/legacy` branch.
   to one node, not one pod, so a rolling update would either run two writers
   on the same node for a moment or stall when the new pod is scheduled
   elsewhere; `./scripts/services.sh check` enforces the rule. Two Deployments
-  that share one ReadWriteOnce claim (wireguard and wireguard-ui, the two
+  that share one ReadWriteOnce claim (the two
   calibre-web Deployments) carry required `podAffinity` so they land on the
   same node.
 - Open WebUI depends on Ollama; the arr-stack shares a common storage PVC.

@@ -18,11 +18,11 @@ the infrastructure layer (MetalLB, Traefik, cert-manager, External Secrets,
 Garage, Velero, kube-prometheus-stack) and the **service catalogue**: every
 directory under `kubernetes/services/` carries a `service.yaml` descriptor
 (group, opt-in, ordered install steps, network isolation), and one code path,
-`install_service`, installs any of them. There are 65: 18 install under the
-default toggles, 38 more are opt-in by name, and the rest wait on a group
+`install_service`, installs any of them. There are 62: 17 install under the
+default toggles, 37 more are opt-in by name, and the rest wait on a group
 toggle. `./scripts/services.sh list` prints the catalogue.
 
-Running 65 services on one node is not the intent and would not fit; the
+Running 62 services on one node is not the intent and would not fit; the
 catalogue is a menu, not a target. Pick the handful you actually want.
 
 ## How it fits together
@@ -136,11 +136,11 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 | Toggle | Default | Controls |
 |---|---|---|
 | `ENABLE_MEDIA_SERVICES` | `true` | Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf |
-| `ENABLE_NETWORK_SERVICES` | `true` | Pi-hole, WireGuard, dnsmasq (DHCP) |
+| `ENABLE_NETWORK_SERVICES` | `true` | Pi-hole, dnsmasq (DHCP) |
 | `ENABLE_CONTENT_SERVICES` | `true` | Calibre-web, SearXNG, yarr |
 | `ENABLE_PRODUCTIVITY_SERVICES` | `true` | Paperless-ngx, Mealie, Linkwarden, n8n |
 | `ENABLE_AI_SERVICES` | `false` | Ollama, Open WebUI, Immich |
-| `ENABLE_DEV_SERVICES` | `false` | Drone CI, Harbor registry |
+| `ENABLE_DEV_SERVICES` | `false` | Harbor registry |
 | `ENABLE_HOME_SERVICES` | `false` | Home Assistant, Mosquitto, Node-RED, Zigbee2MQTT |
 | `ENABLE_COMMUNICATION_SERVICES` | `false` | Matrix (Synapse + Element), Mattermost |
 | `OPTIN_SERVICES` | empty | Space-separated names of `optin: true` services to add (or `all`); see `docs/services.md` |
@@ -162,11 +162,11 @@ Env vars, checked at install time (`VAR=value ./setup-v2.sh`):
 
 Installed by default: Homepage, Grafana, Uptime Kuma, Nextcloud, Vaultwarden,
 Gitea, Authelia, Jellyfin, Sonarr/Radarr/Prowlarr/Bazarr, Audiobookshelf,
-Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole,
-WireGuard. Opt-in via the group toggles: Immich, Ollama, Open WebUI, Drone,
+Paperless-ngx, Mealie, Linkwarden, n8n, Calibre-web, SearXNG, yarr, Pi-hole.
+Opt-in via the group toggles: Immich, Ollama, Open WebUI,
 Harbor, Home Assistant, Matrix, Mattermost, ArgoCD. Opt-in by name
 (`OPTIN_SERVICES="gatus jellyseerr ..."`): Actual Budget, cloudflared,
-code-server, CyberChef, Frigate, Gatus, Heimdall, Homebox, Hoppscotch,
+code-server, CyberChef, Frigate, Gatus, Homebox, Hoppscotch,
 Intel and NVIDIA device plugins, IT-Tools, Jellyseerr, Keycloak, Kiwix,
 kured, LocalAI, Longhorn, Metabase, Miniflux, Navidrome, NocoDB,
 node-feature-discovery, ntfy, Outline, qBittorrent, Reloader, Renovate,
