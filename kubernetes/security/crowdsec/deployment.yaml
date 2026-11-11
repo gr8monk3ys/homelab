@@ -41,7 +41,7 @@ spec:
       # /staging itself when no config.yaml exists, so it must happen here.
       initContainers:
       - name: seed-etc
-        image: crowdsecurity/crowdsec:v1.6.0
+        image: crowdsecurity/crowdsec:v1.8.2
         # The credential files live on the data PVC (configmap.yaml). cscli loads
         # both while the entrypoint is still creating them, so, as the image's own
         # /staging templates do, start them empty on first run.
@@ -56,12 +56,17 @@ spec:
           done
           cp /config/config.yaml /config/profiles.yaml /config/simulation.yaml /acquis/acquis.yaml /seed/
           touch /data/local_api_credentials.yaml /data/online_api_credentials.yaml
-          # The entrypoint symlinks missing GeoIP databases to root-owned /staging
-          # copies, which the hub update then cannot overwrite. Real copies can be.
-          for db in /staging/var/lib/crowdsec/data/*.mmdb; do
-            t="/data/$(basename "$db")"
+          # The entrypoint symlinks every missing data file (v1.6.0 linked only
+          # the GeoIP databases; v1.8.2 links the preloaded hub data files
+          # too) to root-owned /staging copies, which the hub upgrade then
+          # cannot overwrite. Real copies can be. Skip the database files, as
+          # the entrypoint does.
+          for f in /staging/var/lib/crowdsec/data/*; do
+            name="$(basename "$f")"
+            case "$name" in crowdsec.db*) continue ;; esac
+            t="/data/$name"
             [ -L "$t" ] && rm -f "$t"
-            [ -e "$t" ] || cp "$db" "$t"
+            [ -e "$t" ] || cp -R "$f" "$t"
           done
         resources:   # the namespace ResourceQuota requires them on every container
           requests:
@@ -88,7 +93,7 @@ spec:
           mountPath: /data
       containers:
       - name: crowdsec
-        image: crowdsecurity/crowdsec:v1.6.0
+        image: crowdsecurity/crowdsec:v1.8.2
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

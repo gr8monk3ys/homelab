@@ -30,8 +30,9 @@ metadata:
     app: crowdsec
 data:
   config.yaml: |
+    # CrowdSec parses this file strictly (unknown keys stop it). `daemonize`
+    # is deprecated and ignored, and gone from the image's own config.yaml.
     common:
-      daemonize: false
       log_media: stdout
       log_level: info
       log_dir: /var/log/
