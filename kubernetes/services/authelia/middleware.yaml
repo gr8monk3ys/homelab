@@ -7,7 +7,9 @@ metadata:
   namespace: authelia
 spec:
   forwardAuth:
-    address: http://authelia.authelia.svc.cluster.local:9091/api/verify?rd=https://auth.homelab.local
+    # The 4.38+ authz endpoint for Traefik. /api/verify is deprecated; this
+    # one finds the login URL from session.cookies[].authelia_url.
+    address: http://authelia.authelia.svc.cluster.local:9091/api/authz/forward-auth
     trustForwardHeader: true
     authResponseHeaders:
     - Remote-User

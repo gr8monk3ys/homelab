@@ -54,7 +54,7 @@ SECRETS_NAMESPACE="${SECRETS_NAMESPACE:-secrets}"
 ROTATE_SECRETS="${ROTATE_SECRETS:-false}"
 SECRETS_SOPS_OUT_DIR="${SECRETS_SOPS_OUT_DIR:-$HOMELAB_DIR/kubernetes/secrets/sops/secrets}"
 SECRETS_SOPS_CONFIG="${SECRETS_SOPS_CONFIG:-$HOMELAB_DIR/.sops.yaml}"
-AUTHELIA_IMAGE="${AUTHELIA_IMAGE:-authelia/authelia:4.38.18}"
+AUTHELIA_IMAGE="${AUTHELIA_IMAGE:-authelia/authelia:4.39.28}"
 AUTHELIA_PLACEHOLDER_HASH='$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_PROPER_HASH'
 
 # Every resolved value, as SECRETS_VALUES[<name>/<key>], so a later table

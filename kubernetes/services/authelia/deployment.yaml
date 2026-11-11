@@ -44,14 +44,16 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: authelia
-        image: authelia/authelia:4.38.18
+        image: authelia/authelia:4.39.28
         args:
         - --config
         - /config/configuration.yml
         env:
         - name: TZ
           value: "UTC"
-        - name: AUTHELIA_JWT_SECRET_FILE
+        # identity_validation.reset_password.jwt_secret; the old top-level
+        # jwt_secret (AUTHELIA_JWT_SECRET_FILE) is deprecated since 4.38.
+        - name: AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
           value: /secrets/jwt-secret
         - name: AUTHELIA_SESSION_SECRET_FILE
           value: /secrets/session-secret
