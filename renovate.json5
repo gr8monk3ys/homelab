@@ -34,6 +34,18 @@
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?( extractVersion=(?<extractVersion>\\S+))?\\r?\\n[A-Z0-9_]+=(?<currentValue>\\S+)",
       ],
     },
+    {
+      // The K3s version in the system-upgrade-controller Plans, under a comment:
+      //   # renovate: datasource=github-releases depName=k3s-io/k3s
+      //   version: v1.34.13+k3s1
+      // The release tags carry a "+k3sN" suffix, which the pattern keeps in
+      // currentValue. Both Plans carry the pin; move them together.
+      customType: "regex",
+      managerFilePatterns: ["/^kubernetes/services/system-upgrade-controller/plans\\.yaml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\r?\\n\\s*version: (?<currentValue>v\\S+\\+k3s\\d+)",
+      ],
+    },
   ],
 
   // Built locally and imported into k3d; not published to a registry.
@@ -43,6 +55,12 @@
     // Majors wait for a tick on the Dependency Dashboard issue.
     {
       matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    // A new K3s minor is a Kubernetes minor upgrade: wait for a tick too.
+    {
+      matchPackageNames: ["k3s-io/k3s"],
+      matchUpdateTypes: ["minor"],
       dependencyDashboardApproval: true,
     },
     // Database majors need a dump and restore: never proposed.
