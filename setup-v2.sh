@@ -600,7 +600,11 @@ setup_gitops() {
     # Install ArgoCD with pinned version
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     log "Installing ArgoCD ${ARGOCD_VERSION}..."
-    kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+    # Server-side apply: Argo CD 3.x CRDs are too large for the client-side
+    # last-applied annotation, and the ApplicationSet CRD requires it from 3.3.
+    # --force-conflicts takes over fields an earlier client-side apply owned.
+    kubectl apply --server-side --force-conflicts -n argocd \
+        -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
     # Wait for ArgoCD to be ready. Best-effort like every other wait in the
     # installer: a slow pull must not abort the run under set -e.

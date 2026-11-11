@@ -10,7 +10,7 @@ spec:
     spec:
       initContainers:
         - name: install-ksops
-          image: viaductoss/ksops:v4.4.0
+          image: viaductoss/ksops:v4.5.1
           command: ["/bin/sh", "-c"]
           # Install ksops + kustomize into a shared volume, then mount into repo-server PATH.
           args:
