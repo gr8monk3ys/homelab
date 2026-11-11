@@ -37,7 +37,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: vaultwarden
-        image: vaultwarden/server:1.32.5
+        image: vaultwarden/server:1.37.5
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -50,15 +50,16 @@ spec:
             secretKeyRef:
               name: vaultwarden-admin
               key: admin-token
-        - name: WEBSOCKET_ENABLED
-          value: "true"
+        # Live sync notifications (/notifications/hub) are served on port 80
+        # since 1.29 and are on by default (ENABLE_WEBSOCKET). The old
+        # WEBSOCKET_ENABLED variable and the separate port 3012 listener are
+        # gone, so neither is set here.
         - name: SIGNUPS_ALLOWED
           value: "false"  # Disable open signups after initial setup
         - name: DOMAIN
           value: "https://vault.homelab.local"
         ports:
         - containerPort: 80
-        - containerPort: 3012
         volumeMounts:
         - name: vaultwarden-data
           mountPath: /data
@@ -117,9 +118,6 @@ spec:
   - name: http
     port: 80
     targetPort: 80
-  - name: websocket
-    port: 3012
-    targetPort: 3012
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1
