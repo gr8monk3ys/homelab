@@ -110,3 +110,30 @@ If a workload gets blocked, remove the label to stop enforcing in that namespace
 ```bash
 kubectl label namespace <ns> homelab-kyverno-
 ```
+
+## CrowdSec bouncer
+
+The bouncer is a Traefik plugin (`maxlerebourg/crowdsec-bouncer-traefik-plugin`),
+loaded in `kubernetes/ingress/traefik/values.yaml` and configured by the
+`crowdsec-bouncer` Middleware in `kubernetes/security/crowdsec/deployment.yaml`.
+The `websecure` entrypoint applies it to every HTTPS request. It runs in stream
+mode: Traefik pulls the decision list from the agent's Local API every 60
+seconds.
+
+It fails closed. When a pull fails, every request gets 403 until a pull
+succeeds again. If the plugin itself cannot load (no outbound HTTPS from
+Traefik at start), Traefik cannot build the middleware and serves no HTTPS
+routes. A run of 403s for everyone is the sign to look at:
+
+```bash
+# the plugin logs failed pulls in Traefik's log
+kubectl logs -n traefik-system deploy/traefik | grep -i -E 'crowdsec|handleStreamTicker|plugin'
+# the agent, its Local API and the registered bouncer
+kubectl get pods -n crowdsec
+kubectl exec -n crowdsec deploy/crowdsec-agent -- cscli bouncers list
+```
+
+The bouncer key is `bouncer-api-key` in the `crowdsec-config` Secret. The agent
+registers it as bouncer `traefik` only when that name is not registered yet, so
+after rotating the key run `cscli bouncers delete traefik` in the agent and
+restart it.

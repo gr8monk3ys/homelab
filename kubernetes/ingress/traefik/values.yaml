@@ -47,6 +47,22 @@ additionalVolumeMounts:
 service:
   type: LoadBalancer
 
+# The CrowdSec bouncer runs inside Traefik as a plugin; the Middleware that
+# configures it is crowdsec-bouncer in kubernetes/security/crowdsec/deployment.yaml.
+# Traefik downloads the plugin from plugins.traefik.io at every start into the
+# chart's /plugins-storage emptyDir, so the pod needs outbound HTTPS; the
+# traefik-system namespace has no NetworkPolicy, so egress is open. If one is
+# ever added, allow TCP 443 out, and TCP 8080 to the CrowdSec Local API.
+# Renovate does not track this pin; bump it by hand from the plugin's releases.
+# If the download fails Traefik still starts (abortOnPluginFailure: false, the
+# chart default), but the entrypoint middleware cannot be built, so HTTPS
+# routes stop being served rather than going out unscreened.
+experimental:
+  plugins:
+    bouncer:
+      moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      version: v1.8.1
+
 providers:
   kubernetesCRD:
     enabled: true
@@ -74,7 +90,7 @@ ports:
     http:
       tls:
         enabled: true
-      # Screen every request through the CrowdSec bouncer
+      # Screen every request through the CrowdSec bouncer plugin
       # (Middleware in kubernetes/security/crowdsec/deployment.yaml).
       middlewares:
         - crowdsec-crowdsec-bouncer@kubernetescrd

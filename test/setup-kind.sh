@@ -119,13 +119,16 @@ setup_ingress() {
     # KinD has no LoadBalancer: Traefik is reached through the node ports the
     # kind config maps to the host (30080/30443). The harness does not run
     # CrowdSec, so the websecure entrypoint's bouncer middleware would not
-    # exist and Traefik would drop every HTTPS route (#38); leave it off here.
+    # exist and Traefik would drop every HTTPS route (#38); leave it off here,
+    # and skip loading the bouncer plugin that middleware would configure (no
+    # download from plugins.traefik.io at startup).
     # Everything else about the release is the table's row.
     helm_infra_release traefik \
         --set service.type=NodePort \
         --set ports.web.nodePort=30080 \
         --set ports.websecure.nodePort=30443 \
-        --set 'ports.websecure.http.middlewares=null'
+        --set 'ports.websecure.http.middlewares=null' \
+        --set 'experimental.plugins=null'
     HARNESS_INSTALLED+=(traefik)
 
     log "Ingress controller setup completed"

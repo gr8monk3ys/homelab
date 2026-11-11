@@ -18,4 +18,5 @@ helm upgrade --install traefik traefik/traefik \
 ## Notes
 
 - Traefik CRDs are required for `Middleware` and other `traefik.io/*` resources used by this repo.
+- `values.yaml` loads one plugin, the CrowdSec bouncer (`experimental.plugins.bouncer`). Traefik downloads it from plugins.traefik.io at every start, so the pod needs outbound HTTPS. Its settings live in the `crowdsec-bouncer` Middleware (`kubernetes/security/crowdsec/deployment.yaml`), which the `websecure` entrypoint applies to every request. If the plugin cannot load, that middleware cannot be built and HTTPS routes are not served.
 - If you already have an ingress controller installed, you can skip Traefik and set `ingressClassName` / annotations accordingly.

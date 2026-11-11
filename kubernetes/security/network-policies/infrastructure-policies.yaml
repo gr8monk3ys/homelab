@@ -21,11 +21,17 @@ spec:
       ports:
         - protocol: TCP
           port: 6060
-    # Allow LAPI access from bouncer
+    # The Local API, for the bouncer plugin running inside Traefik (Middleware
+    # crowdsec-bouncer in kubernetes/security/crowdsec/deployment.yaml): it
+    # pulls decisions and pushes usage metrics on this port. Traefik's own
+    # namespace has no NetworkPolicy, so its egress needs no rule.
     - from:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              component: bouncer
+              kubernetes.io/metadata.name: traefik-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 8080
@@ -99,48 +105,6 @@ spec:
           port: 3900
         - protocol: TCP
           port: 3903
----
-# CrowdSec Bouncer - Connects to Traefik
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: crowdsec-bouncer-policy
-  namespace: crowdsec
-spec:
-  podSelector:
-    matchLabels:
-      component: bouncer
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    # Allow ForwardAuth from Traefik
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: traefik-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: traefik
-      ports:
-        - protocol: TCP
-          port: 8080
-  egress:
-    # Allow DNS
-    - to:
-        - namespaceSelector: {}
-          podSelector: {}
-      ports:
-        - protocol: UDP
-          port: 53
-    # Allow connection to CrowdSec LAPI
-    - to:
-        - podSelector:
-            matchLabels:
-              app: crowdsec
-      ports:
-        - protocol: TCP
-          port: 8080
 ---
 # MetalLB Controller
 apiVersion: networking.k8s.io/v1

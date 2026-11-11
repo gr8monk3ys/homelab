@@ -100,8 +100,12 @@ spec:
             drop:
               - ALL
         env:
-        # The entrypoint registers the Traefik bouncer with this key; without it
-        # the bouncer's key is unknown to the Local API and every check fails.
+        # The entrypoint registers the bouncer "traefik" with this key; the
+        # Traefik plugin (Middleware crowdsec-bouncer below) reads the same key
+        # from this Secret. Without the registration the Local API rejects the
+        # plugin's pulls and, failing closed, Traefik answers 403 to everything.
+        # Registration is skipped when the name already exists, so a rotated key
+        # needs `cscli bouncers delete traefik` and an agent restart.
         - name: BOUNCER_KEY_traefik
           valueFrom:
             secretKeyRef:
@@ -170,77 +174,6 @@ spec:
           path: /var/log/traefik
           type: DirectoryOrCreate
 ---
-# CrowdSec Traefik Bouncer
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: crowdsec-traefik-bouncer
-  namespace: crowdsec
-  labels:
-    app: crowdsec
-    component: bouncer
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: crowdsec
-      component: bouncer
-  template:
-    metadata:
-      labels:
-        app: crowdsec
-        component: bouncer
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-      - name: bouncer
-        image: fbonalair/traefik-crowdsec-bouncer:0.5.0
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-              - ALL
-        env:
-        - name: CROWDSEC_BOUNCER_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: crowdsec-config
-              key: bouncer-api-key
-        - name: CROWDSEC_AGENT_HOST
-          value: "crowdsec-agent:8080"
-        - name: CROWDSEC_BOUNCER_LOG_LEVEL
-          value: "1"
-        - name: GIN_MODE
-          value: "release"
-        ports:
-        - containerPort: 8080
-          name: http
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 200m
-            memory: 128Mi
-        livenessProbe:
-          httpGet:
-            path: /api/v1/ping
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /api/v1/ping
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -275,23 +208,6 @@ spec:
   type: ClusterIP
 ---
 apiVersion: v1
-kind: Service
-metadata:
-  name: crowdsec-bouncer
-  namespace: crowdsec
-  labels:
-    app: crowdsec
-spec:
-  selector:
-    app: crowdsec
-    component: bouncer
-  ports:
-  - name: http
-    port: 8080
-    targetPort: 8080
-  type: ClusterIP
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: crowdsec
@@ -323,16 +239,53 @@ subjects:
   name: crowdsec
   namespace: crowdsec
 ---
-# Traefik ForwardAuth Middleware for CrowdSec
+# The CrowdSec bouncer, run inside Traefik as a plugin
+# (maxlerebourg/crowdsec-bouncer-traefik-plugin, loaded by
+# experimental.plugins.bouncer in kubernetes/ingress/traefik/values.yaml).
+# It replaces the fbonalair/traefik-crowdsec-bouncer Deployment and its
+# forwardAuth hop; that image has had no release since 2023. The name stays
+# crowdsec-bouncer, so the websecure entrypoint still references
+# crowdsec-crowdsec-bouncer@kubernetescrd.
+#
+# Stream mode: Traefik pulls the decision list from the Local API every
+# updateIntervalSeconds and answers each request from memory.
+# Fail closed: with updateMaxFailure 0 the first failed pull marks the stream
+# unhealthy and every request gets 403 until a pull succeeds again, and
+# streamStartupBlock makes Traefik do the first pull before serving (plugin
+# README, UpdateMaxFailure and StreamStartupBlock). Right after a Traefik pod
+# starts, K3s's policy controller may not yet admit its IP to the Local API
+# (see garage-policy in infrastructure-policies.yaml), so expect up to one
+# interval of 403s then; it heals on the next pull.
+#
+# The key: Traefik's Kubernetes CRD provider replaces a urn:k8s:secret:<name>:<key>
+# value anywhere in a plugin's config with that key of a Secret in the
+# Middleware's own namespace, so nothing is committed and no file is
+# mounted into Traefik. The chart's ClusterRole already grants Traefik
+# get/list/watch on Secrets (it reads TLS secrets the same way). Until
+# Traefik v3.7.16 the resolved value shows in Traefik's API and dashboard;
+# the chart publishes neither here (no dashboard IngressRoute, and the
+# internal traefik port is not on the Service).
+#
+# The client IP is the connection's source address: no
+# forwardedHeadersTrustedIPs, so a client cannot choose the IP it is checked
+# as with X-Forwarded-For (the old forwardAuth set trustForwardHeader).
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: crowdsec-bouncer
   namespace: crowdsec
 spec:
-  forwardAuth:
-    address: http://crowdsec-bouncer.crowdsec.svc.cluster.local:8080/api/v1/forwardAuth
-    trustForwardHeader: true
+  plugin:
+    bouncer:
+      enabled: true
+      logLevel: INFO
+      crowdsecMode: stream
+      crowdsecLapiScheme: http
+      crowdsecLapiHost: crowdsec-agent.crowdsec.svc.cluster.local:8080
+      crowdsecLapiKey: urn:k8s:secret:crowdsec-config:bouncer-api-key
+      updateIntervalSeconds: 60
+      updateMaxFailure: 0
+      streamStartupBlock: true
 ---
 # ExternalSecret for CrowdSec configuration
 apiVersion: external-secrets.io/v1

@@ -503,6 +503,12 @@ setup_security() {
     kubectl_apply_rendered_file kubernetes/security/crowdsec/namespace.yaml
     kubectl_apply_rendered_file kubernetes/security/crowdsec/configmap.yaml
     kubectl_apply_rendered_file kubernetes/security/crowdsec/deployment.yaml
+    # The bouncer is a Traefik plugin now (the crowdsec-bouncer Middleware just
+    # applied); remove what the old standalone bouncer left on a cluster that
+    # ran it. Deleted only after the Middleware no longer points at it.
+    kubectl -n crowdsec delete deployment/crowdsec-traefik-bouncer service/crowdsec-bouncer \
+        poddisruptionbudget/crowdsec-bouncer-pdb networkpolicy/crowdsec-bouncer-policy \
+        --ignore-not-found >/dev/null 2>&1 || true
     if crd_exists "servicemonitors.monitoring.coreos.com"; then
         kubectl_apply_rendered_file kubernetes/security/crowdsec/servicemonitor.yaml
     fi

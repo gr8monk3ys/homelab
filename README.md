@@ -86,9 +86,9 @@ Pod Security Admission defaults to `audit` in every namespace (warns, does not
 block; switch to `enforce` once the warnings are clean), Kyverno is
 opt-in, NetworkPolicies default-deny the 28 service namespaces whose
 descriptor declares `networkPolicies:` (Homepage and Home Assistant are left
-open because they need the kube API and the LAN), and the CrowdSec Traefik bouncer is enforced on the `websecure`
+open because they need the kube API and the LAN), and the CrowdSec bouncer is enforced on the `websecure`
 entrypoint (Traefik writes access logs the agent reads; decisions are applied
-via bouncer middleware). See `docs/runbooks/hardening.md` to tighten the rest.
+by the bouncer plugin running inside Traefik, which fails closed). See `docs/runbooks/hardening.md` to tighten the rest.
 
 ## Requirements
 
