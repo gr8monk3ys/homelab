@@ -4,6 +4,12 @@ set -euo pipefail
 # Configure Pi-hole (dnsmasq) to resolve *.<domain> to Traefik's LoadBalancer IP.
 #
 # This avoids per-machine /etc/hosts entries. Clients must use Pi-hole as their DNS server.
+#
+# TRAEFIK_IP=<address> skips the lookup and uses that address instead. Set it
+# when the LoadBalancer IP is not reachable from the LAN: under k3d it is the
+# node's Docker bridge address, and clients reach Traefik on the Docker
+# host's LAN address, where k3d publishes ports 80/443
+# (docs/runbooks/native-linux-host.md).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -109,8 +115,13 @@ main() {
     log "  dnsmasq config:     ${dnsmasq_conf}"
 
     local traefik_ip
-    traefik_ip="$(get_traefik_lb_ip "$traefik_namespace" "$traefik_service" "$wait_seconds")"
-    log "Detected Traefik LoadBalancer IP: ${traefik_ip}"
+    if [[ -n "${TRAEFIK_IP:-}" ]]; then
+        traefik_ip="$TRAEFIK_IP"
+        log "Using TRAEFIK_IP: ${traefik_ip}"
+    else
+        traefik_ip="$(get_traefik_lb_ip "$traefik_namespace" "$traefik_service" "$wait_seconds")"
+        log "Detected Traefik LoadBalancer IP: ${traefik_ip}"
+    fi
 
     # Ensure Pi-hole is up before we exec into it.
     wait_for_pihole_ready "$pihole_namespace" "$pihole_workload" "$wait_seconds"
