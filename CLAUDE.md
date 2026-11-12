@@ -5,9 +5,9 @@ infrastructure layer plus the service catalogue: every directory under
 `kubernetes/services/` has a `service.yaml` descriptor (group, opt-in,
 ordered steps) and `scripts/lib/services.sh` is the one code path that
 installs one. 65 services: 18 install under the default toggles, 38 are
-opt-in by name, the rest wait on a group toggle. Applied end-to-end to a
-live Kubernetes API, but no pod has ever started on a real node — see the
-README status line.
+opt-in by name, the rest wait on a group toggle. Runs live on one PC
+(k3d: K3s in Docker Desktop) since 2026-09-27; never yet on bare metal — see
+the README status line.
 
 ## Run / test
 
@@ -15,7 +15,7 @@ README status line.
 ./setup-v2.sh                    # idempotent installer; generates secrets first
 ./scripts/validate-setup.sh      # cluster health + hardcoded-password check
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
-./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, helm lint, kustomize build
+./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, helm lint, kustomize build, Renovate annotations in tools/versions.env
 ./scripts/services.sh list       # the catalogue; `check` validates descriptors, `render <dir>` renders without a cluster
 ./test/setup-kind.sh             # throwaway KinD cluster; test/validate.sh k8s
 ./test/e2e-default-install.sh    # the default install against a live etcd + kube-apiserver (CI runs it; no kubelet)

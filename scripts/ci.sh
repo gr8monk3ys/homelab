@@ -295,6 +295,31 @@ run_docs_check() {
   fi
 }
 
+# Every pin in tools/versions.env carries a `# renovate:` comment (except the
+# ones that move with another pin), and every chart repo named there is a row
+# of HELM_REPOS in scripts/lib/helm.sh. A new pin without one is never updated.
+run_renovate_annotations_check() {
+  log "Renovate annotations check..."
+  local unannotated=("KUBECTL_VERSION" "KIND_NODE_IMAGE" "ENVTEST_VERSION" "PROMETHEUS_OPERATOR_VERSION")
+  local prev="" line name url bad=()
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    if [[ "$line" =~ ^([A-Z0-9_]+)= ]]; then
+      name="${BASH_REMATCH[1]}"
+      if [[ "$prev" != "# renovate: "* && " ${unannotated[*]} " != *" $name "* ]]; then
+        bad+=("$name has no # renovate: comment")
+      fi
+    fi
+    prev="$line"
+  done < "$REPO_ROOT/tools/versions.env"
+  while IFS= read -r url; do
+    grep -qF "=${url}\"" "$REPO_ROOT/scripts/lib/helm.sh" || bad+=("registryUrl $url is not in HELM_REPOS")
+  done < <(grep -oE 'registryUrl=[^ ]+' "$REPO_ROOT/tools/versions.env" | cut -d= -f2- | tr -d '\r')
+  if [[ ${#bad[@]} -ne 0 ]]; then
+    error "tools/versions.env: ${bad[*]}"
+  fi
+}
+
 main() {
   cd "$REPO_ROOT"
 
@@ -307,6 +332,7 @@ main() {
   run_helm_remote_smoke
   run_kustomize_build
   run_docs_check
+  run_renovate_annotations_check
 
   log "All checks passed."
 }

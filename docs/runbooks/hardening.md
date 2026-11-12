@@ -39,7 +39,8 @@ Where the target levels live (ADR-0009):
 
 ### Promote from audit to enforce
 
-No pod has yet run on a real node, so none of the target levels is verified.
+None of the target levels has been verified, not even on the live k3d
+cluster.
 Stay on `audit` until its warnings are clean, then switch to `enforce`.
 
 See what `audit` reports:

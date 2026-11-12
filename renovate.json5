@@ -1,0 +1,89 @@
+{
+  // Dependency updates for this repo. Read by the hosted Renovate app or by the
+  // opt-in self-hosted CronJob (kubernetes/services/renovate/); either one runs
+  // off GitHub Actions, but every PR it opens still runs ci.yml, so the
+  // schedule and limits below keep the PR count low.
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  timezone: "America/Los_Angeles",
+  // "on monday" (Pacific) also covers the self-hosted CronJob, which runs
+  // daily at 03:00 UTC: Tuesday 03:00 UTC is Monday evening in Los Angeles.
+  schedule: ["on monday"],
+  prConcurrentLimit: 3,
+  prHourlyLimit: 2,
+  labels: ["dependencies"],
+  // Nothing merges by itself; every update is a PR to review.
+  automerge: false,
+
+  // Every image tag in the manifests. The kubernetes manager has no default
+  // file pattern, so name the tree explicitly.
+  kubernetes: {
+    managerFilePatterns: ["/^kubernetes/.+\\.ya?ml$/", "/^helm/.+\\.ya?ml$/"],
+  },
+
+  customManagers: [
+    {
+      // tools/versions.env: each pinned version sits under a comment such as
+      //   # renovate: datasource=helm depName=traefik registryUrl=https://traefik.github.io/charts
+      //   TRAEFIK_CHART_VERSION=39.0.1
+      // Pins with no annotation (KUBECTL, KIND_NODE_IMAGE, ENVTEST,
+      // PROMETHEUS_OPERATOR) move by hand with the pin they depend on.
+      customType: "regex",
+      managerFilePatterns: ["/^tools/versions\\.env$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?( extractVersion=(?<extractVersion>\\S+))?\\r?\\n[A-Z0-9_]+=(?<currentValue>\\S+)",
+      ],
+    },
+  ],
+
+  // Built locally and imported into k3d; not published to a registry.
+  ignoreDeps: ["ghcr.io/gr8monk3ys/laya"],
+
+  packageRules: [
+    // Majors wait for a tick on the Dependency Dashboard issue.
+    {
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    // Database majors need a dump and restore: never proposed.
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: ["postgres", "mariadb", "redis"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
+    // Immich's Postgres image tracks the Immich release notes, not a version line.
+    {
+      matchPackageNames: ["ghcr.io/immich-app/postgres"],
+      enabled: false,
+    },
+    // Minor and patch image bumps across the catalogue: one weekly PR.
+    {
+      matchDatasources: ["docker"],
+      matchFileNames: ["kubernetes/services/**"],
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      groupName: "service images (minor and patch)",
+    },
+    // The groups below come after the catch-all: a later packageRule wins.
+    // Immich server and machine-learning must run the same version.
+    {
+      matchPackageNames: ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"],
+      groupName: "immich",
+    },
+    // One PR for the busybox init containers.
+    {
+      matchPackageNames: ["busybox"],
+      groupName: "busybox",
+    },
+    // The e2e test installs the Prometheus Operator CRDs at the chart's appVersion.
+    {
+      matchPackageNames: ["kube-prometheus-stack"],
+      prBodyNotes: ["Also bump `PROMETHEUS_OPERATOR_VERSION` in `tools/versions.env` to this chart's appVersion."],
+    },
+    // kind's default node image is pinned separately with a digest.
+    {
+      matchPackageNames: ["kubernetes-sigs/kind"],
+      prBodyNotes: ["`KIND_NODE_IMAGE` stays on its own pin; bump it with `KUBECTL_VERSION` if the new kind drops that Kubernetes version."],
+    },
+  ],
+}
