@@ -1,0 +1,66 @@
+---
+# The homelab cluster on one Linux Docker host: K3s in Docker via k3d.
+#
+# Create it through scripts/k3d-cluster.sh (`just k3d-up`), not by hand: the
+# script sets the bulk bind source from BULK_HOST_PATH and the K3s image from
+# tools/versions.env (K3S_IMAGE_TAG), then runs
+# `k3d cluster create --config <rendered copy>`. `just k3d-render` prints the
+# rendered file without touching Docker. Bring-up order and prerequisites:
+# docs/runbooks/native-linux-host.md.
+#
+# Used as is (`k3d cluster create --config k3d/homelab.yaml`) it assumes the
+# bulk disk is mounted at /mnt/bulk on the host.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: homelab
+# One node. The bulk disk is bound into it and it carries the bulk label, so
+# every static bulk PV (kubernetes/storage/bulk-storageclass.yaml) can bind.
+servers: 1
+agents: 0
+image: rancher/k3s:v1.34.13-k3s1
+kubeAPI:
+  # The API server is only for this machine; kubectl reaches it on localhost.
+  hostIP: "127.0.0.1"
+  hostPort: "6550"
+ports:
+  # Traefik's LoadBalancer Service (K3s servicelb on the node) answers on 80
+  # and 443; k3d's load balancer container publishes them on every host
+  # address. Other LoadBalancer Services (Pi-hole 53, WireGuard 51820/udp,
+  # Gitea SSH, Jellyfin discovery) are not published until a port is added
+  # here, and only at cluster creation: see the runbook, "Ports".
+  - port: 80:80
+    nodeFilters: [loadbalancer]
+  - port: 443:443
+    nodeFilters: [loadbalancer]
+volumes:
+  # Bulk data (media, Immich originals, Garage blocks). The node always sees
+  # it at /mnt/bulk, which is the path the PVs name; only the host side
+  # changes. scripts/k3d-cluster.sh replaces this source with BULK_HOST_PATH
+  # (spaces are fine: the rendered value is one quoted YAML string).
+  - volume: "/mnt/bulk:/mnt/bulk"
+    nodeFilters: [server:0]
+options:
+  k3d:
+    wait: true
+    timeout: 180s
+  k3s:
+    extraArgs:
+      # The installer brings its own Traefik (HELM_INFRA_RELEASES); the K3s
+      # bundle would claim 80/443 on the same node.
+      - arg: --disable=traefik
+        nodeFilters: [server:*]
+    nodeLabels:
+      - label: homelab.io/bulk=true
+        nodeFilters: [server:0]
+  kubeconfig:
+    # Writes the k3d-homelab context into ~/.kube/config (or $KUBECONFIG) and
+    # switches to it; every script uses the current context.
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+  # GPU in the cluster (the nvidia-device-plugin service) needs the host's
+  # nvidia-container-toolkit AND a K3s image that carries the NVIDIA container
+  # runtime, which rancher/k3s does not. Until then run GPU work as a plain
+  # Docker container next to the cluster (runbook, "GPU"). With both in place:
+  # runtime:
+  #   gpuRequest: all

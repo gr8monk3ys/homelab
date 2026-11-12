@@ -1,13 +1,16 @@
 # Homelab
 
-**Status: running on one PC (k3d on Docker Desktop) since 2026-09-27; not yet on bare metal.**
-The installer has deployed a working subset to a single-PC k3d cluster (K3s
-in Docker), with a second K3s agent for bulk storage, and a full redeploy from
-`main` reproduces it (2026-09-28: `validate-setup.sh` health 21/0, 31/31
-Prometheus targets up). Helm infrastructure charts, Traefik,
+**Status: no live cluster since 2026-10-29; next target is k3d on native Linux Docker (`docs/runbooks/native-linux-host.md`), not yet brought up; never on bare metal.**
+From 2026-09-27 to 2026-10-29 the installer ran a working subset on a
+single-PC k3d cluster (K3s in Docker Desktop on Windows), with a second K3s
+agent for bulk storage, and a full redeploy from `main` reproduced it
+(2026-09-28: `validate-setup.sh` health 21/0, 31/31 Prometheus targets up).
+That Windows install was wiped; the PC now runs Arch Linux with Docker
+Engine, and `k3d/homelab.yaml` with `scripts/k3d-cluster.sh` creates the
+cluster there. Helm infrastructure charts, Traefik,
 kube-prometheus-stack and Velero among them, install through `helm_release`
 there. Never run so far: a bare-metal or multi-host
-K3s cluster, MetalLB (servicelb stands in), and the opt-in `kind: helm`
+K3s cluster, MetalLB (servicelb stands in; under k3d set `INSTALL_METALLB=false`), and the opt-in `kind: helm`
 services other than Nextcloud (`longhorn`, `node-feature-discovery`,
 `nvidia-device-plugin`, `tailscale-operator`, `volsync`). CI still checks
 every service against a real `kube-apiserver` with no kubelet. Deploy a
@@ -92,7 +95,9 @@ via bouncer middleware). See `docs/runbooks/hardening.md` to tighten the rest.
 
 ## Requirements
 
-- A running Kubernetes cluster (K3s recommended) and `kubectl` access
+- A running Kubernetes cluster (K3s recommended) and `kubectl` access. On one
+  Linux machine with Docker: `BULK_HOST_PATH=<bulk dir> just k3d-up` creates
+  it (`k3d/homelab.yaml`; `docs/runbooks/native-linux-host.md`)
 - `helm` (or let the installer fetch pinned tools into `.tools/`)
 - RAM: ~8 GB for a minimal subset; 32 GB+ recommended for the full stack
   (pod memory *requests* alone total ~25 GiB)
@@ -264,6 +269,7 @@ Actions minutes are capped and nothing runs on a schedule.
 ```
 setup-v2.sh                  # installer (idempotent; safe to re-run)
 config/homelab.yaml          # domain/email/timezone/issuer/GitOps URL (env vars override)
+k3d/homelab.yaml             # the k3d cluster on a Linux Docker host (scripts/k3d-cluster.sh)
 kubernetes/
   ingress/  storage/  backup/  monitoring/  dns/       # infrastructure
   secrets/                   # ExternalSecrets + SOPS store

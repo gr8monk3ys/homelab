@@ -73,6 +73,7 @@ run_yamllint() {
     "$REPO_ROOT/.github" \
     "$REPO_ROOT/ansible" \
     "$REPO_ROOT/config" \
+    "$REPO_ROOT/k3d" \
     "$REPO_ROOT/kubernetes" \
     "$REPO_ROOT/helm"
 }
@@ -144,6 +145,9 @@ run_services_check() {
 
   log "disaster recovery phase order (against setup-v2.sh main())..."
   "$REPO_ROOT/test/dr-phases.sh"
+
+  log "k3d cluster config (bulk bind, image pin)..."
+  "$REPO_ROOT/test/k3d-config.sh"
 
   if ! have kubeconform; then
     return 0

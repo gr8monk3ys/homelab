@@ -1,6 +1,7 @@
 # Runbooks (Day-2 Ops)
 
 This folder is for operational procedures: backup/restore, upgrades, and common break/fix workflows.
+Bringing the cluster up on a Linux Docker host (k3d, the bulk disk, GPU): `native-linux-host.md`.
 
 ## Quick Triage
 

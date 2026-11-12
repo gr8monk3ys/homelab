@@ -16,6 +16,7 @@ source "$HOMELAB_DIR/scripts/lib/helm.sh"
 source "$HOMELAB_DIR/scripts/lib/services.sh"
 source "$HOMELAB_DIR/scripts/lib/netpol.sh"
 source "$HOMELAB_DIR/scripts/lib/health.sh"
+source "$HOMELAB_DIR/scripts/lib/tools.sh"
 
 # DOMAIN, TIMEZONE, ADMIN_EMAIL, CERT_MANAGER_CLUSTER_ISSUER, GITOPS_REPO_URL:
 # defaults <- config/homelab.yaml <- environment (see homelab_load_config).
@@ -85,71 +86,40 @@ check_requirements() {
         error "Kubernetes cluster is not accessible"
     fi
 
+    # k3d (K3s in Docker): K3s's servicelb gives LoadBalancer Services the
+    # node container's address and k3d publishes their ports on the host.
+    # MetalLB would hand out LAN addresses that only exist on a Docker bridge,
+    # and both controllers would claim the same Services.
+    if [[ "$INSTALL_METALLB" == "true" ]] && \
+        kubectl get nodes -o jsonpath='{.items[*].spec.providerID}' 2>/dev/null | grep -q 'k3s://k3d-'; then
+        error "This is a k3d cluster: set INSTALL_METALLB=false (servicelb is the load balancer; docs/runbooks/native-linux-host.md)"
+    fi
+
     success "Requirements check completed"
 }
 
 install_tools() {
     log "Installing/updating tools..."
-    # Pinned versions are sourced from tools/versions.env.
-
-    # Install/update Helm with version pinning
-    if ! command -v helm &> /dev/null; then
-        log "Installing Helm ${HELM_VERSION}..."
-        local helm_script="/tmp/get-helm-3.sh"
-        curl -fsSL -o "$helm_script" "https://raw.githubusercontent.com/helm/helm/${HELM_VERSION}/scripts/get-helm-3"
-        chmod +x "$helm_script"
-        DESIRED_VERSION="${HELM_VERSION}" bash "$helm_script"
-        rm -f "$helm_script"
+    # Pinned versions come from tools/versions.env; a missing tool is installed
+    # into the repo-local $TOOLS_DIR/bin (the table in scripts/lib/tools.sh,
+    # the same one scripts/install-dev-tools.sh uses), so no sudo is needed.
+    local missing=() tool
+    for tool in helm kustomize yq age; do
+        command -v "$tool" &> /dev/null || missing+=("$tool")
+    done
+    if ! command -v age-keygen &> /dev/null && [[ " ${missing[*]} " != *" age "* ]]; then
+        missing+=(age)
     fi
 
-    # Install/update Kustomize with version pinning
-    if ! command -v kustomize &> /dev/null; then
-        log "Installing Kustomize ${KUSTOMIZE_VERSION}..."
-        local kustomize_script="/tmp/install_kustomize.sh"
-        curl -fsSL -o "$kustomize_script" "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/kustomize/${KUSTOMIZE_VERSION}/hack/install_kustomize.sh"
-        chmod +x "$kustomize_script"
-        bash "$kustomize_script" "${KUSTOMIZE_VERSION#v}" /tmp
-        sudo mv /tmp/kustomize /usr/local/bin/
-        rm -f "$kustomize_script"
-    fi
-
-    # Install yq (YAML CLI) for config parsing and rendering
-    if ! command -v yq &> /dev/null; then
-        log "Installing yq ${YQ_VERSION}..."
-        local OS ARCH
-        OS=$(detect_os)
-        ARCH=$(detect_arch)
-        local yq_tmp="/tmp/yq"
-        curl -fsSL -o "$yq_tmp" "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${OS}_${ARCH}"
-        chmod +x "$yq_tmp"
-        sudo mv "$yq_tmp" /usr/local/bin/yq
-    fi
-
-    # Install age (encrypted backups for secrets)
-    if ! command -v age &> /dev/null || ! command -v age-keygen &> /dev/null; then
-        log "Installing age ${AGE_VERSION}..."
-        local OS ARCH
-        OS=$(detect_os)
-        ARCH=$(detect_arch)
-
-        local tmpdir
-        tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/age.XXXXXX")"
-        local tarball="${tmpdir}/age.tar.gz"
-
-        curl -fsSL -o "$tarball" "https://github.com/FiloSottile/age/releases/download/${AGE_VERSION}/age-${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
-        tar -xzf "$tarball" -C "$tmpdir"
-
-        local age_bin age_keygen_bin
-        age_bin="$(find "$tmpdir" -type f -name age -perm -111 2>/dev/null | head -n 1 || true)"
-        age_keygen_bin="$(find "$tmpdir" -type f -name age-keygen -perm -111 2>/dev/null | head -n 1 || true)"
-
-        if [[ -z "${age_bin:-}" || -z "${age_keygen_bin:-}" ]]; then
-            error "Failed to locate age binaries after extraction"
-        fi
-
-        sudo mv "$age_bin" /usr/local/bin/age
-        sudo mv "$age_keygen_bin" /usr/local/bin/age-keygen
-        rm -rf "$tmpdir"
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log "Installing pinned ${missing[*]} into $TOOLS_DIR/bin..."
+        mkdir -p "$TOOLS_DIR/bin"
+        BIN_DIR="$TOOLS_DIR/bin" tools_install "${missing[@]}" || \
+            error "Could not install: ${missing[*]} (see above; scripts/install-dev-tools.sh retries)"
+        case ":$PATH:" in
+            *":$TOOLS_DIR/bin:"*) ;;
+            *) PATH="$TOOLS_DIR/bin:$PATH"; export PATH ;;
+        esac
     fi
 
     success "Tools installation completed"

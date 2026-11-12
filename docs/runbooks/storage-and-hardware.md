@@ -63,45 +63,34 @@ recreates the layout, key and buckets), delete the `garage-meta` and
 `garage-data` claims, then re-run `setup-v2.sh` with `GARAGE_DATA_STORAGE=bulk`
 and copy the contents back.
 
-**k3d on Docker Desktop (Windows).** Give the cluster a second node, a K3s
-agent container with the Windows folder bind-mounted at `/mnt/bulk` and
-`--node-label homelab.io/bulk=true`. Run it as k3d runs its own nodes:
-`--privileged --init`, tmpfs on `/run` and `/var/run`, and
-`mount --make-rshared /` before `k3s agent`. Without `--init`, zombies make
-the container impossible to stop. Without the shared root, node-exporter
-fails with "not a shared or slave mount". Keep `/var/lib/rancher/k3s` and
-`/etc/rancher/node` on named volumes, so a re-created container keeps its
-identity and node password.
+**k3d on a Linux Docker host.** `k3d/homelab.yaml` is the cluster: one node
+with the bulk directory bound at `/mnt/bulk` and the `homelab.io/bulk=true`
+label. The host side is `BULK_HOST_PATH` (any absolute path without `:`;
+spaces are fine), set by `scripts/k3d-cluster.sh`:
 
-Create the container from the **Windows** docker CLI and bind the Windows
-path (`-v 'D:\homelab:/mnt/bulk'`; in Git Bash set `MSYS_NO_PATHCONV=1`).
-Docker Desktop mounts the drive itself (`D:\ on /mnt/bulk type 9p ...
-aname=drvfs`), so the bind does not depend on any WSL distro. Do **not**
-create it from a WSL distro's docker CLI with `/mnt/d/...`: Docker records
-that bind as `/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/<distro>/<hash>`,
-which only resolves while that distro is registered, running and integrated.
-When the distro is removed or renamed, the node silently gets an empty tmpfs
-at `/mnt/bulk`, and every bulk pod fails with "hostPath type check failed: ...
-is not a directory" (this happened on 2026-10-04, when the `Ubuntu` distro the
-node was created from went away). `/run/desktop/mnt/host/d/...` typed from
-inside a distro is not the drive either, but an empty tmpfs directory.
+```bash
+BULK_HOST_PATH="/mnt/raid/50 Dev/52 homelab" just k3d-up
+```
 
-To re-create the node, keep everything except the bind: `docker inspect` it,
-stop it, `docker rename` it to `-old` for rollback, then `docker run` with the
-same image, entrypoint and command, `--privileged --init --cgroupns host
---security-opt label=disable`, network and IP, the two named volumes **and**
-the three anonymous ones (`/var/log`, `/var/lib/cni`, `/var/lib/kubelet`) by
-name, and the `K3S_URL`/`K3S_TOKEN` env (pass it with `--env-file`, never on the
-command line). Once the node is Ready and `/mnt/bulk` lists its directories,
-`docker rm` the old container without `-v`.
+Mount the disk from `/etc/fstab`, not through a desktop automount under
+`/run/media`, and make `docker.service` wait for it, or the node binds an
+empty directory after a reboot. The full bring-up, including a disk shared
+with Windows (NTFS), is `docs/runbooks/native-linux-host.md`.
 
-The two binds behave differently. Bound from the Windows CLI, the mount has
-drvfs `metadata`: new files are owned by root with mode 0644, `chown` and
-`chmod` persist, and hardlinks, symlinks and FIFOs work (checked 2026-10-05).
-Folders created from Windows show as root 0777. Bound from a distro, every file
-shows as UID/GID 1000 with mode 0777, `chown` and `chmod` succeed but change
-nothing, and FIFOs do not work. Either way it is fine for media and object
-blocks, but not for a database.
+**k3d on Docker Desktop (Windows), historical (2026-09-27 to 2026-10-29).**
+That cluster got the bulk disk through a second node, a K3s agent container
+with `D:\homelab` bound at `/mnt/bulk`, created from the Windows docker CLI
+(`-v 'D:\homelab:/mnt/bulk'`, `MSYS_NO_PATHCONV=1` in Git Bash), because a
+bind made from a WSL distro's CLI (`/mnt/d/...`) is recorded under
+`/run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/<distro>/` and turns
+into an empty tmpfs when that distro goes away (it did on 2026-10-04). A
+hand-made node needs what k3d gives its own: `--privileged --init`, tmpfs on
+`/run` and `/var/run`, `mount --make-rshared /` before `k3s agent`, and named
+volumes for `/var/lib/rancher/k3s` and `/etc/rancher/node`. Docker Desktop's
+drvfs bind keeps `chown`/`chmod` and supports hardlinks; a distro bind shows
+every file as 1000:0777 and changes nothing. With `k3d/homelab.yaml` the bind
+is part of the cluster, so none of this is needed on Docker Desktop either:
+pass a Windows path as `BULK_HOST_PATH` from the Windows shell.
 
 ## Longhorn (distributed block storage)
 
@@ -208,7 +197,7 @@ for instance). The device plugins then advertise a schedulable resource:
 | Plugin | Resource | Host prerequisite |
 |---|---|---|
 | Intel | `gpu.intel.com/i915` | kernel i915 driver, `/dev/dri` present |
-| NVIDIA | `nvidia.com/gpu` | NVIDIA driver + container toolkit; K3s creates the `nvidia` RuntimeClass |
+| NVIDIA | `nvidia.com/gpu` | NVIDIA driver + container toolkit; K3s creates the `nvidia` RuntimeClass. Under k3d also a node created with `--gpus all` and a K3s image that carries the NVIDIA container runtime (`rancher/k3s` does not): `docs/runbooks/native-linux-host.md`, "GPU" |
 
 Once a resource is advertised, request it in the workload that needs it:
 
@@ -229,7 +218,7 @@ kubectl describe node <name> | grep -A5 Allocatable
 ## A GPU outside the cluster
 
 When the GPU sits in a host the cluster does not schedule onto (K3s in
-Docker Desktop via k3d, with the GPU on the Windows host), run the GPU
+Docker via k3d, with the GPU on the Docker host), run the GPU
 workload as a plain container on that host and point the cluster at it.
 Two services support this, each through a render rule (ADR-0008) with a key
 in `config/homelab.yaml` and an environment override:
@@ -239,19 +228,29 @@ in `config/homelab.yaml` and an environment override:
 | Open WebUI | `OLLAMA_URL` (`ai.ollama_url`) | Ollama, port 11434 | open-webui -> any address, TCP 11434 |
 | Immich server | `IMMICH_ML_URL` (`ai.immich_ml_url`) | `immich-machine-learning:<server version>-cuda`, port 3003 | immich-server -> any address, TCP 3003 |
 
-Under Docker Desktop, pods reach the host at `host.docker.internal`, and a
-port published on `127.0.0.1` only is still reachable that way, so the
-container need not be exposed on the LAN. For Immich:
+How a pod reaches the Docker host depends on the host:
+
+| Docker host | Address pods use | Publish the container on |
+|---|---|---|
+| Docker Engine on Linux (k3d) | `host.k3d.internal` (k3d adds it to CoreDNS) | the k3d network's gateway, `docker network inspect k3d-homelab -f '{{(index .IPAM.Config 0).Gateway}}'`; `127.0.0.1` is not reachable from the node |
+| Docker Desktop (Windows, macOS) | `host.docker.internal` | `127.0.0.1` is enough |
+
+`--gpus all` needs the NVIDIA container toolkit on the host
+(`nvidia-ctk runtime configure --runtime=docker`). For Immich on Linux:
 
 ```bash
 # Tag must match the immich-server image (kubernetes/services/immich/server-deployment.yaml).
+GW="$(docker network inspect k3d-homelab -f '{{(index .IPAM.Config 0).Gateway}}')"
 docker run -d --name immich-machine-learning-gpu --restart unless-stopped \
-  --gpus all -p 127.0.0.1:3003:3003 -v immich-ml-model-cache:/cache \
+  --gpus all -p "$GW:3003:3003" -v immich-ml-model-cache:/cache \
   ghcr.io/immich-app/immich-machine-learning:v3.2.2-cuda
 
-IMMICH_ML_URL=http://host.docker.internal:3003 ./scripts/services.sh install immich
+IMMICH_ML_URL=http://host.k3d.internal:3003 ./scripts/services.sh install immich
 kubectl -n immich scale deployment immich-machine-learning --replicas=0
 ```
+
+Under Docker Desktop the same works with `-p 127.0.0.1:3003:3003` and
+`IMMICH_ML_URL=http://host.docker.internal:3003`.
 
 The in-cluster `immich-machine-learning` Deployment carries no `replicas:`,
 so a later re-install leaves it at 0; scale it back to 1 (and unset
