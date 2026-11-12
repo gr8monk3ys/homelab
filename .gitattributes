@@ -1,0 +1,2 @@
+# YAML and shell must keep LF endings, also on a Windows checkout.
+* text=auto eol=lf

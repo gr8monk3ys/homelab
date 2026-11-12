@@ -1,9 +1,12 @@
 ---
-# SOPS configuration (age).
+# SOPS with age. Flux decrypts *.sops.yaml in the infrastructure-configs and
+# apps layers with the private key in the flux-system/sops-age Secret.
 #
-# The age private key is intentionally NOT stored in this repo.
-# See docs/runbooks/gitops-secrets.md for bootstrap steps.
+# The private key is never in this repo. It lives at
+# %APPDATA%\sops\age\keys.txt on the PC (sops's default on Windows) and in
+# the owner's password manager. README "Secrets" has the steps.
 creation_rules:
-  - path_regex: kubernetes/secrets/sops/.*\.ya?ml$
+  # No path separator in the regex: on Windows sops matches a backslash path.
+  - path_regex: (clusters|infrastructure|apps).*\.sops\.ya?ml$
     encrypted_regex: '^(data|stringData)$'
-    age: age1k2al72x2mm49jwetctk3t2u3arhhr3t28rv8pvdjzeq6ukjq6clsz7rlt9
+    age: age1cxt4f8dg9y5yjwc83n5mrqyz3lknwh3nhh7gf2d5j6cjm7qw2ess86a80c

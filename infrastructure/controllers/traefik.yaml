@@ -1,0 +1,30 @@
+---
+# K3s installs Traefik itself (its HelmChart kube-system/traefik), so the
+# chart version follows the K3s version in k3d/homelab.yaml, not a HelmRelease.
+# K3s 1.37 also installs the Gateway API CRDs (HelmChart gateway-api-crd,
+# standard channel v1.6.3, the version Traefik 3.7 is built against).
+# This HelmChartConfig is merged into the Traefik chart's values by K3s's helm
+# controller. It turns on the Gateway API provider and keeps the chart's
+# GatewayClass "traefik"; the Gateway itself is in infrastructure/configs.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    providers:
+      kubernetesGateway:
+        enabled: true
+      # Ingress stays on for now; nothing in this repo uses it.
+      kubernetesIngress:
+        enabled: true
+    gatewayClass:
+      enabled: true
+      name: traefik
+    # The chart's default Gateway would only listen on HTTP.
+    gateway:
+      enabled: false
+    logs:
+      general:
+        level: INFO

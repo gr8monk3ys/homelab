@@ -1,0 +1,13 @@
+---
+# Values Flux substitutes into the infrastructure-configs and apps layers
+# (postBuild.substituteFrom in infrastructure.yaml and apps.yaml). A manifest
+# writes ${DOMAIN}; a literal "${" in a manifest must be written "$${".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-settings
+  namespace: flux-system
+data:
+  # RFC 8375 name for home networks. Every app is <app>.${DOMAIN} on the Gateway.
+  DOMAIN: "home.arpa"
+  TIMEZONE: "America/Los_Angeles"

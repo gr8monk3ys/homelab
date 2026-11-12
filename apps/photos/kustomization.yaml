@@ -1,0 +1,6 @@
+---
+# The photos group (rebuild session 3): Immich, with a CloudNativePG cluster
+# on the VectorChord image, and Valkey.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
