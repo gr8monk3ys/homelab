@@ -19,6 +19,17 @@ sops-bootstrap:
 argocd-ksops:
   ./scripts/configure-argocd-ksops.sh
 
+# The k3d cluster on a Linux Docker host (docs/runbooks/native-linux-host.md).
+# BULK_HOST_PATH is the host directory bound at /mnt/bulk in the node.
+k3d-render:
+  ./scripts/k3d-cluster.sh render
+
+k3d-check:
+  ./scripts/k3d-cluster.sh check
+
+k3d-up:
+  ./scripts/k3d-cluster.sh create
+
 setup *ARGS:
   ./setup-v2.sh {{ARGS}}
 
