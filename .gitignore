@@ -19,8 +19,6 @@ tmp/
 # =============================================================================
 # SECURITY - Secrets and credentials (CRITICAL - never commit)
 # =============================================================================
-config/secrets.yaml
-ansible/inventory/host_vars/*/vault.yml
 *.key
 *.pem
 *.crt
@@ -32,6 +30,11 @@ ansible/inventory/host_vars/*/vault.yml
 /.secrets/
 credentials.json
 service-account*.json
+
+# age keys (SOPS). The key lives in %APPDATA%\sopsge, never here.
+*.agekey
+keys.txt
+age.key
 
 # SSH keys
 id_rsa*
@@ -61,10 +64,6 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 
-# Synology NAS
-@eaDir/
-#recycle/
-
 # =============================================================================
 # IDE files
 # =============================================================================
@@ -75,15 +74,6 @@ Desktop.ini
 *.sublime-workspace
 .project
 .settings/
-
-# =============================================================================
-# Ansible
-# =============================================================================
-ansible/roles/*/files/secrets/
-ansible/*.retry
-ansible/inventory/hosts
-!ansible/inventory/hosts.yaml
-!ansible/inventory/hosts.yaml.example
 
 # =============================================================================
 # Kubernetes
@@ -101,35 +91,9 @@ kubeconfig
 local/
 
 # =============================================================================
-# Terraform (if added later)
-# =============================================================================
-*.tfstate
-*.tfstate.*
-.terraform/
-.terraform.lock.hcl
-terraform.tfvars
-*.auto.tfvars
-
-# =============================================================================
-# Helm
-# =============================================================================
-charts/*.tgz
-charts/*/charts/
-
-# =============================================================================
 # Docker
 # =============================================================================
 .docker/
-
-# =============================================================================
-# Test artifacts
-# =============================================================================
-test/output/
-test/*.log
-coverage/
-.coverage
-htmlcov/
-kind-config-local.yaml
 
 # =============================================================================
 # Python (for scripts)
@@ -140,12 +104,6 @@ __pycache__/
 venv/
 .venv/
 .tools/
-
-# =============================================================================
-# Node (for tooling)
-# =============================================================================
-node_modules/
-npm-debug.log*
 
 # =============================================================================
 # Generated files

@@ -1,13 +1,9 @@
 {
-  // Dependency updates for this repo. Read by the hosted Renovate app or by the
-  // opt-in self-hosted CronJob (kubernetes/services/renovate/); either one runs
-  // off GitHub Actions, but every PR it opens still runs ci.yml, so the
-  // schedule and limits below keep the PR count low.
+  // Dependency updates for this repo, read by the hosted Renovate app. Every
+  // PR it opens runs ci.yml, so the schedule and limits keep the PR count low.
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
   timezone: "America/Los_Angeles",
-  // "on monday" (Pacific) also covers the self-hosted CronJob, which runs
-  // daily at 03:00 UTC: Tuesday 03:00 UTC is Monday evening in Los Angeles.
   schedule: ["on monday"],
   prConcurrentLimit: 3,
   prHourlyLimit: 2,
@@ -15,29 +11,36 @@
   // Nothing merges by itself; every update is a PR to review.
   automerge: false,
 
-  // Every image tag in the manifests. The kubernetes manager has no default
-  // file pattern, so name the tree explicitly.
+  // Flux sources and releases: HelmRelease + OCIRepository chart tags. The
+  // flux manager only reads gotk-components.yaml by default, so name the tree.
+  flux: {
+    managerFilePatterns: ["/^(clusters|infrastructure|apps)/.+\\.ya?ml$/"],
+  },
+  // Image tags in plain manifests under the same tree.
   kubernetes: {
-    managerFilePatterns: ["/^kubernetes/.+\\.ya?ml$/", "/^helm/.+\\.ya?ml$/"],
+    managerFilePatterns: ["/^(clusters|infrastructure|apps)/.+\\.ya?ml$/"],
   },
 
   customManagers: [
     {
-      // tools/versions.env: each pinned version sits under a comment such as
-      //   # renovate: datasource=helm depName=traefik registryUrl=https://traefik.github.io/charts
-      //   TRAEFIK_CHART_VERSION=39.0.1
-      // Pins with no annotation (KUBECTL, KIND_NODE_IMAGE, ENVTEST,
-      // PROMETHEUS_OPERATOR) move by hand with the pin they depend on.
+      // The K3s image in the k3d cluster config. K3s also pins the bundled
+      // Traefik chart and Gateway API CRDs, so this PR updates those too.
       customType: "regex",
-      managerFilePatterns: ["/^tools/versions\\.env$/"],
+      managerFilePatterns: ["/^k3d/homelab\\.yaml$/"],
+      matchStrings: ["image: (?<depName>rancher/k3s):(?<currentValue>v[0-9.]+-k3s[0-9]+)"],
+      datasourceTemplate: "docker",
+      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-k3s(?<build>\\d+)$",
+    },
+    {
+      // Tool pins in ci.yml, each under a comment such as
+      //   # renovate: datasource=github-releases depName=yannh/kubeconform extractVersion=^v(?<version>.+)$
+      customType: "regex",
+      managerFilePatterns: ["/^\\.github/workflows/ci\\.yml$/"],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?( extractVersion=(?<extractVersion>\\S+))?\\r?\\n[A-Z0-9_]+=(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( extractVersion=(?<extractVersion>\\S+))?\\s+[A-Z_]+_VERSION: (?<currentValue>\\S+)",
       ],
     },
   ],
-
-  // Built locally and imported into k3d; not published to a registry.
-  ignoreDeps: ["ghcr.io/gr8monk3ys/laya"],
 
   packageRules: [
     // Majors wait for a tick on the Dependency Dashboard issue.
@@ -45,24 +48,31 @@
       matchUpdateTypes: ["major"],
       dependencyDashboardApproval: true,
     },
+    // A K3s minor is a Kubernetes minor: wait for a tick too.
+    {
+      matchPackageNames: ["rancher/k3s"],
+      matchUpdateTypes: ["minor"],
+      dependencyDashboardApproval: true,
+      prBodyNotes: ["Recreate the k3d cluster to apply (README, \"Local cluster\"). K3s also moves the bundled Traefik and Gateway API CRDs; check the Traefik values in `infrastructure/controllers/traefik.yaml` still apply."],
+    },
     // Database majors need a dump and restore: never proposed.
     {
       matchDatasources: ["docker"],
-      matchPackageNames: ["postgres", "mariadb", "redis"],
+      matchPackageNames: ["postgres", "mariadb", "redis", "valkey/valkey"],
       matchUpdateTypes: ["major"],
       enabled: false,
     },
     // Immich's Postgres image tracks the Immich release notes, not a version line.
     {
-      matchPackageNames: ["ghcr.io/immich-app/postgres"],
+      matchPackageNames: ["ghcr.io/immich-app/postgres", "ghcr.io/tensorchord/cloudnative-vectorchord"],
       enabled: false,
     },
-    // Minor and patch image bumps across the catalogue: one weekly PR.
+    // Minor and patch image bumps across the apps: one weekly PR.
     {
       matchDatasources: ["docker"],
-      matchFileNames: ["kubernetes/services/**"],
+      matchFileNames: ["apps/**"],
       matchUpdateTypes: ["minor", "patch", "digest"],
-      groupName: "service images (minor and patch)",
+      groupName: "app images (minor and patch)",
     },
     // The groups below come after the catch-all: a later packageRule wins.
     // Immich server and machine-learning must run the same version.
@@ -70,20 +80,10 @@
       matchPackageNames: ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"],
       groupName: "immich",
     },
-    // One PR for the busybox init containers.
+    // The CI tool pins in ci.yml carry a sha256 that must move with the version.
     {
-      matchPackageNames: ["busybox"],
-      groupName: "busybox",
-    },
-    // The e2e test installs the Prometheus Operator CRDs at the chart's appVersion.
-    {
-      matchPackageNames: ["kube-prometheus-stack"],
-      prBodyNotes: ["Also bump `PROMETHEUS_OPERATOR_VERSION` in `tools/versions.env` to this chart's appVersion."],
-    },
-    // kind's default node image is pinned separately with a digest.
-    {
-      matchPackageNames: ["kubernetes-sigs/kind"],
-      prBodyNotes: ["`KIND_NODE_IMAGE` stays on its own pin; bump it with `KUBECTL_VERSION` if the new kind drops that Kubernetes version."],
+      matchFileNames: [".github/workflows/ci.yml"],
+      prBodyNotes: ["If this bumps KUSTOMIZE_VERSION or KUBECONFORM_VERSION, update the matching *_SHA256 from the release's checksums file."],
     },
   ],
 }

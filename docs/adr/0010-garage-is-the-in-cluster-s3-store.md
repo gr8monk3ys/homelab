@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0011 (2026-11-11); backups are decided again in rebuild session 3
 date: 2026-09-27
 ---
 

@@ -1,0 +1,6 @@
+---
+# The media group (rebuild session 2): Sonarr, Radarr, Prowlarr, Bazarr,
+# qBittorrent behind gluetun, and Seerr. Plex runs natively on Windows.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []

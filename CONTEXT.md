@@ -1,67 +1,46 @@
 # Homelab
 
-A single-node K3s homelab: an installer, a catalogue of self-hosted
-applications, and the platform pieces they share. This glossary fixes the
-words the scripts, manifests and docs use.
+A small single-node K3s homelab on one Windows PC, managed by Flux. This
+glossary fixes the words the manifests and docs use.
 
 ## Language
 
-**Service**:
-One self-hosted application as a directory under `kubernetes/services/<name>/`, deployed as a unit. Its databases and caches belong to it.
-_Avoid_: app, component, workload
+**Cluster**:
+The k3d cluster `homelab` defined by `k3d/homelab.yaml`: one K3s server in Docker Desktop. `clusters/homelab/` is what Flux reconciles on it.
+_Avoid_: environment, stage
 
-**Catalogue**:
-The set of all services, read from their descriptors. The installer, disaster recovery, the KinD harness, the validator, CI and the generated ArgoCD app-of-apps all read the same catalogue.
-_Avoid_: service list, inventory
+**Layer**:
+One of the three Flux Kustomizations in `clusters/homelab/`, applied in order: `infrastructure-controllers` (CRDs and operators), `infrastructure-configs` (objects that need them), `apps`. Each waits for the one before it to be Ready.
+_Avoid_: phase, tier
 
-**Descriptor**:
-The `service.yaml` in a service directory: the only thing the installer needs to know to install that service. A `kind: helm` descriptor names a chart and values file instead of steps.
-_Avoid_: manifest (a descriptor is not applied to the cluster), config
+**Flux Kustomization**:
+A `kustomize.toolkit.fluxcd.io` object: a path in a source that Flux builds and applies. Not the same as a `kustomization.yaml`, which lists the files in one directory.
+_Avoid_: app, sync
 
-**Group**:
-The category a service belongs to (core, media, network, content, productivity, ai, dev, home, communication, monitoring, logging). One row of `SERVICE_GROUPS` in `scripts/lib/services.sh`: its toggle, its default and its ArgoCD project, in install order. A group with no row is a descriptor error.
-_Avoid_: category, stack, tier
+**App group**:
+A directory under `apps/` (`media`, `photos`, `files`) holding related apps. The group's `kustomization.yaml` lists its apps.
+_Avoid_: category, stack
 
-**Toggle**:
-An environment variable (`ENABLE_*_SERVICES`, `INSTALL_*`) read at install time that switches a group or an infrastructure piece on or off. Its default is a column of the table that defines the thing it switches: `SERVICE_GROUPS` for a group, `HELM_INFRA_RELEASES` (`scripts/lib/helm.sh`) for a Helm-installed infrastructure piece, and, for ArgoCD (not a Helm release), the `argocd` row of `_health_infra_local_spec` in `scripts/lib/health.sh` (`ENABLE_GITOPS`). The other rows there (local-path, Garage, CrowdSec) have no toggle: those pieces are always installed. Nothing restates a default.
-_Avoid_: flag, feature flag, option
+**App**:
+One self-hosted application in its own directory and namespace under an app group, with its own volumes, secrets and `HTTPRoute`. Its database (a CloudNativePG `Cluster`) belongs to it.
+_Avoid_: service (a Kubernetes Service is something else)
 
-**Service namespace**:
-The namespace a service's descriptor names. Everything applied into it lives in the service's directory: the Namespace with its Pod Security labels (`namespace.yaml`), its quota (`resourcequota.yaml`), its disruption budgets (`pdb.yaml`) and its NetworkPolicies (`networkPolicies:` templates plus `networkpolicies.yaml`), all applied by `install_service` when the service installs. Nothing under `kubernetes/security/` names one (ADR-0009).
-_Avoid_: app namespace, tenant
+**Gateway**:
+`gateway/homelab`, the one Gateway API Gateway, served by the K3s-bundled Traefik. Every app attaches an `HTTPRoute` to its `https` listener.
+_Avoid_: ingress
 
-**Opt-in service**:
-A service whose descriptor says `optin: true`; it installs only when named in `OPTIN_SERVICES`, even if its group is on.
-_Avoid_: extra, unwired, manifest-only
+**LAN CA**:
+The private certificate authority `homelab-ca` (a cert-manager `ClusterIssuer`). It signs the wildcard certificate for `*.${DOMAIN}`. Devices trust it by importing its certificate.
+_Avoid_: self-signed cert
 
-**Step**:
-One ordered entry in a descriptor: a file to apply, optionally a pod label to wait on and a toggle that must be true.
-_Avoid_: phase, stage
+**Cluster settings**:
+The `cluster-settings` ConfigMap in `clusters/homelab/`. Flux substitutes its keys (`${DOMAIN}`, `${TIMEZONE}`) into the configs and apps layers.
+_Avoid_: config, placeholder
 
-**Placeholder**:
-A literal that manifests carry in git and that is replaced at install time: `homelab.local`, `admin@homelab.local`, `value: "UTC"`, the `homelab-ca` issuer, the example GitOps repo URL, the in-cluster Ollama URL, the in-cluster Immich machine-learning URL.
-_Avoid_: template variable, default
+**Bulk storage**:
+`D:\30 Media\homelab` on the RAID 5 HDD, bound at `/mnt/bulk` on the server node: media, downloads, the photo library. Everything else goes on `local-path` volumes on C:.
+_Avoid_: NAS, shared storage
 
-**Render**:
-Replacing every placeholder in a manifest stream with the effective settings. Nothing from the repo reaches a cluster unrendered.
-_Avoid_: template, substitute
-
-**Installer**:
-`setup-v2.sh`: the one script that takes an empty K3s cluster to a running homelab, idempotently.
-_Avoid_: bootstrap script, deploy script
-
-**Installer phase**:
-One `setup_*` function in the installer that brings up one piece of infrastructure, or `setup_service_group <group>` for one service group; disaster recovery re-runs them in the installer's order.
-_Avoid_: stage, section
-
-**Infrastructure**:
-The pieces every service relies on and that are not services themselves: MetalLB, Traefik, cert-manager, External Secrets, Garage (the in-cluster S3 store), Velero, the monitoring stack, network policies. Each Helm-installed piece is one row of `HELM_INFRA_RELEASES`, which carries its chart, namespace, toggle and health check; the four that are not Helm releases are listed in `scripts/lib/health.sh`.
-_Avoid_: platform, system services
-
-**Policy template**:
-A NetworkPolicy under `kubernetes/security/network-policies/templates/` whose namespace is the literal `PLACEHOLDER_NAMESPACE`; a descriptor names the templates it wants in `networkPolicies:` and the installer renders them into the service's namespace.
-_Avoid_: base policy, generic policy, toolkit
-
-**Generated secret**:
-A credential created by `scripts/generate-secrets.sh` in the central `secrets` namespace and copied into a service's namespace by an ExternalSecret.
-_Avoid_: password, hardcoded secret
+**Sealed file**:
+A `*.sops.yaml` file whose `data`/`stringData` values are encrypted with SOPS and age. The only form a Secret takes in Git.
+_Avoid_: encrypted secret, vault

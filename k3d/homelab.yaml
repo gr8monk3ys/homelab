@@ -1,0 +1,41 @@
+---
+# The homelab cluster on this PC: K3s in Docker Desktop via k3d.
+#   k3d cluster create --config k3d/homelab.yaml
+# Run it from the Windows shell (PowerShell or Git Bash), not from WSL: a bind
+# made from a WSL distro breaks when that distro goes away.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: homelab
+servers: 1
+agents: 0
+# K3s also pins the bundled Traefik (chart 41.6.1, Traefik 3.7.x here).
+image: rancher/k3s:v1.37.2-k3s1
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6550"
+ports:
+  # The Gateway: Traefik's Service answers on 80 and 443.
+  - port: 80:80
+    nodeFilters: [loadbalancer]
+  - port: 443:443
+    nodeFilters: [loadbalancer]
+volumes:
+  # Bulk data (media, downloads, the photo library) on the D: RAID. App
+  # config and Postgres stay on local-path volumes on C:.
+  - volume: "D:/30 Media/homelab:/mnt/bulk"
+    nodeFilters: [server:0]
+options:
+  k3s:
+    extraArgs:
+      # Docker Desktop on WSL 2.4 (kernel 5.15) still runs cgroup v1, and the
+      # kubelet refuses cgroup v1 by default since Kubernetes 1.35. Drop this
+      # once `docker info` shows "Cgroup Version: 2" (README, "Local cluster").
+      - arg: --kubelet-arg=fail-cgroupv1=false
+        nodeFilters: [server:*]
+  k3d:
+    wait: true
+    timeout: 120s
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

@@ -1,0 +1,5 @@
+---
+# The files group (rebuild session 3): OpenCloud.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
