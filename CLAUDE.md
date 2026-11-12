@@ -5,17 +5,20 @@ infrastructure layer plus the service catalogue: every directory under
 `kubernetes/services/` has a `service.yaml` descriptor (group, opt-in,
 ordered steps) and `scripts/lib/services.sh` is the one code path that
 installs one. 65 services: 18 install under the default toggles, 38 are
-opt-in by name, the rest wait on a group toggle. Runs live on one PC
-(k3d: K3s in Docker Desktop) since 2026-09-27; never yet on bare metal — see
-the README status line.
+opt-in by name, the rest wait on a group toggle. Ran live on one PC (k3d:
+K3s in Docker Desktop on Windows) 2026-09-27 to 2026-10-29; that host was
+wiped and now runs Linux with Docker Engine, where `k3d/homelab.yaml` and
+`scripts/k3d-cluster.sh` create the cluster (`docs/runbooks/native-linux-host.md`);
+never yet on bare metal — see the README status line.
 
 ## Run / test
 
 ```bash
-./setup-v2.sh                    # idempotent installer; generates secrets first
+BULK_HOST_PATH=<dir> just k3d-up  # the k3d cluster on a Linux Docker host (scripts/k3d-cluster.sh; never in CI)
+INSTALL_METALLB=false ./setup-v2.sh  # idempotent installer; generates secrets first (MetalLB off on k3d)
 ./scripts/validate-setup.sh      # cluster health + hardcoded-password check
 ./scripts/install-dev-tools.sh   # pinned toolchain into .tools/ (no sudo)
-./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, helm lint, kustomize build, Renovate annotations in tools/versions.env
+./scripts/ci.sh                  # what CI runs: bash -n, shellcheck, yamllint, kubeconform, services check+render, render tests, toggle algebra, secrets drift + credential scan + credential-gate tests, DR phase-order check, k3d config render, helm lint, kustomize build, Renovate annotations in tools/versions.env
 ./scripts/services.sh list       # the catalogue; `check` validates descriptors, `render <dir>` renders without a cluster
 ./test/setup-kind.sh             # throwaway KinD cluster; test/validate.sh k8s
 ./test/e2e-default-install.sh    # the default install against a live etcd + kube-apiserver (CI runs it; no kubelet)
