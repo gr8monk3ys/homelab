@@ -5,6 +5,7 @@ resources:
   - traefik.yaml
   - cert-manager.yaml
   - cloudnative-pg.yaml
+  - snapshot-controller.yaml
   - volsync.yaml
   - kube-prometheus-stack.yaml
   - smartctl-exporter.yaml

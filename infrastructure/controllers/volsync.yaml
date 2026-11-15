@@ -22,6 +22,10 @@ metadata:
   namespace: volsync-system
 spec:
   interval: 1h
+  # VolSync's controller exits unless the VolumeSnapshot CRDs exist.
+  dependsOn:
+    - name: snapshot-controller
+      namespace: snapshot-controller
   chart:
     spec:
       chart: volsync
