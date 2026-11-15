@@ -82,10 +82,18 @@ if [[ "$(k3s --version 2>/dev/null | head -1)" != *"$K3S_VERSION"* ]]; then
   trap 'rm -f "$installer"' EXIT
   curl -fsSL https://get.k3s.io -o "$installer"
   # The installer checks the binary's sha256 against the release's checksums.
-  INSTALL_K3S_VERSION="$K3S_VERSION" sh "$installer"
+  # No kubectl/crictl symlinks to k3s: they read the root-only
+  # /etc/rancher/k3s/k3s.yaml, not ~/.kube/config, so the owner's kubectl
+  # (and hack/bootstrap.sh) would fail with "permission denied".
+  INSTALL_K3S_VERSION="$K3S_VERSION" INSTALL_K3S_SYMLINK=skip sh "$installer"
 fi
 systemctl daemon-reload
 systemctl enable --now k3s
+
+# An earlier run may have created them.
+for link in /usr/local/bin/kubectl /usr/local/bin/crictl /usr/local/bin/ctr; do
+  if [[ -L $link && $(readlink "$link") == k3s ]]; then rm "$link"; fi
+done
 
 echo "== kubeconfig for $owner"
 home=$(getent passwd "$owner" | cut -d: -f6)
