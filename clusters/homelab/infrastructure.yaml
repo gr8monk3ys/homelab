@@ -1,0 +1,77 @@
+---
+# Layer 0: cluster-secrets, the SOPS-encrypted values every later layer
+# substitutes (B2, VPN, ntfy, passwords). Made by hack/cluster-secrets.sh. It
+# is outside clusters/homelab because the flux-system Kustomization that
+# bootstrap generates applies that directory without SOPS decryption.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cluster-secrets
+  namespace: flux-system
+spec:
+  interval: 1h
+  retryInterval: 2m
+  timeout: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./infrastructure/secrets
+  prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+---
+# Layer 1: controllers and their CRDs (the bundled Traefik's settings,
+# cert-manager, CloudNativePG, VolSync, kube-prometheus-stack, the GPU and
+# disk exporters).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-controllers
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: cluster-secrets
+  interval: 1h
+  retryInterval: 2m
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./infrastructure/controllers
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-settings
+      - kind: Secret
+        name: cluster-secrets
+---
+# Layer 2: objects that need layer 1's CRDs and webhooks: the issuers, the
+# Gateway, LAN DNS, alert rules and Flux's own alerts.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-configs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-controllers
+  interval: 1h
+  retryInterval: 2m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./infrastructure/configs
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-settings
+      - kind: Secret
+        name: cluster-secrets

@@ -1,0 +1,73 @@
+---
+# The one Gateway every app attaches its HTTPRoute to:
+#   parentRefs: [{name: homelab, namespace: gateway, sectionName: https}]
+# Traefik implements it (GatewayClass "traefik", from the bundled chart).
+# Listener ports are Traefik's entrypoint ports (web 8000, websecure 8443),
+# which the traefik Service exposes as 80 and 443.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+---
+# One wildcard certificate for every app, signed by the LAN CA.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard
+  namespace: gateway
+spec:
+  secretName: wildcard-tls
+  dnsNames:
+    - "${DOMAIN}"
+    - "*.${DOMAIN}"
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: homelab-ca
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: homelab
+  namespace: gateway
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 8443
+      hostname: "*.${DOMAIN}"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: wildcard-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# Plain HTTP only redirects to HTTPS. Apps attach to the https listener.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: homelab
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

@@ -1,0 +1,28 @@
+---
+# In: the Gateway (K3s's Traefik in kube-system), Prowlarr (indexer sync),
+# Bazarr (subtitles) and Seerr (requests) through Radarr's API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: radarr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: radarr
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [prowlarr, bazarr, seerr]
+      ports:
+        - protocol: TCP
+          port: 7878

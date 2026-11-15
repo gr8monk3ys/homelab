@@ -1,0 +1,15 @@
+---
+# https://docs.immich.app/features/monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: immich
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich
+  endpoints:
+    - port: metrics-api
+      interval: 30s
+    - port: metrics-micro
+      interval: 30s

@@ -1,0 +1,13 @@
+---
+# Config, the SQLite database and library metadata. Backed up nightly to B2
+# (components/volsync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi

@@ -1,9 +1,8 @@
-# Pre-commit hooks for fast local quality gates.
+# Pre-commit hooks for fast local checks.
 # Install: https://pre-commit.com
 #
-# Enable:
 #   pre-commit install
-#   pre-commit install --hook-type pre-push  # optional (runs the full ./scripts/ci.sh gate)
+#   pre-commit install --hook-type pre-push  # optional: runs hack/validate.sh
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -14,10 +13,6 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        exclude: |
-          (?x)^(
-            helm/.*/templates/
-          )
       - id: check-json
       - id: check-merge-conflict
       - id: detect-private-key
@@ -31,20 +26,17 @@ repos:
         args: ["-c", ".yamllint.yaml"]
         files: "\\.(yaml|yml)$"
 
-  - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
-    hooks:
-      - id: shellcheck
-        args: ["-x", "-s", "bash", "-S", "warning"]
-        files: "\\.sh$|^setup\\.sh\\.deprecated$"
-
-  # Optional (opt-in) pre-push gate. Enable with:
-  #   pre-commit install --hook-type pre-push
+  # A commit must not carry an age private key or a plain Secret.
   - repo: local
     hooks:
-      - id: ci-pre-push
-        name: repo ci (pre-push)
-        entry: bash -lc 'CI=true ./scripts/ci.sh'
+      - id: no-age-key
+        name: no age private key
+        entry: "AGE-SECRET-KEY-"
+        language: pygrep
+        exclude: ^\.pre-commit-config\.yaml$
+      - id: validate-pre-push
+        name: hack/validate.sh (pre-push)
+        entry: bash hack/validate.sh
         language: system
         pass_filenames: false
         stages: ["pre-push"]

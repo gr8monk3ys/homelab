@@ -1,0 +1,38 @@
+---
+# A private LAN CA. "selfsigned" signs only the CA certificate; "homelab-ca"
+# signs everything else. Import the CA into a device's trust store to stop
+# browser warnings (README, "Trust the LAN CA").
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: homelab LAN CA
+  secretName: homelab-ca
+  duration: 87600h  # 10 years
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca
+spec:
+  ca:
+    secretName: homelab-ca

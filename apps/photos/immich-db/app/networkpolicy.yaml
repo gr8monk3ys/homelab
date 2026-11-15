@@ -1,0 +1,27 @@
+---
+# In: Immich's server on 5432, and the CNPG operator on the instance
+# manager's status port 8000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: immich-db
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: immich-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: immich
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000

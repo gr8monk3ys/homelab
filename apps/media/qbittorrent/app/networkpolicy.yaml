@@ -1,0 +1,51 @@
+---
+# Under gluetun's kill switch, so a gluetun bug still cannot open a plain
+# path out. In: the Web UI from the Gateway (K3s's Traefik in kube-system)
+# and Sonarr/Radarr.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qbittorrent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: qbittorrent
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sonarr, radarr]
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Out: only UDP to addresses outside private ranges, which is what a
+# WireGuard tunnel is. No TCP, no cluster DNS, nothing to other pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qbittorrent-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: qbittorrent
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: UDP

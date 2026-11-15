@@ -1,0 +1,40 @@
+---
+# The CloudNativePG operator. Only Immich uses Postgres (rebuild session 3);
+# the other apps keep SQLite or no database.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: cloudnative-pg
+  namespace: cnpg-system
+spec:
+  interval: 12h
+  url: oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg
+  ref:
+    tag: 0.29.1
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cloudnative-pg
+  namespace: cnpg-system
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: cloudnative-pg
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3

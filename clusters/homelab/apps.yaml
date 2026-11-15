@@ -1,0 +1,27 @@
+---
+# Layer 3: applies apps/, which holds one Flux Kustomization per app
+# (apps/<group>/<app>/ks.yaml). Each of those applies its app/ directory with
+# its own dependsOn and substitutions, and the VolSync backup component when
+# the app has state (components/volsync).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-configs
+  interval: 1h
+  retryInterval: 2m
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./apps
+  prune: true
+  wait: true
+  # For the group-level objects (the media-data volume's ${BULK_PATH}).
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-settings

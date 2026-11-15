@@ -1,0 +1,86 @@
+---
+# LAN DNS for *.${DOMAIN}. k8s-gateway answers with the Gateway's address for
+# every HTTPRoute hostname and forwards everything else to the host's
+# resolver. K3s's servicelb publishes it on the host's port 53 (UDP).
+# Point clients at it for ${DOMAIN} only: a router "conditional forward" or
+# Tailscale split DNS (docs/runbooks/bring-up.md, "DNS").
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns
+---
+# The project moved from ori-edge (quay.io/oriedge, no longer public) to
+# Codeberg; the chart is OCI there.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: k8s-gateway
+  namespace: dns
+spec:
+  interval: 12h
+  url: oci://codeberg.org/k8s-gateway/charts/k8s-gateway
+  ref:
+    tag: 4.0.1
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: k8s-gateway
+  namespace: dns
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: k8s-gateway
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    serviceType: LoadBalancer
+    servers:
+      - zones:
+          - zone: .
+        port: 53
+        plugins:
+          - name: errors
+          - name: health
+            configBlock: |-
+              lameduck 10s
+          - name: ready
+          - name: k8s_gateway
+            parameters: "${DOMAIN}"
+            configBlock: |-
+              ttl 60
+              resources HTTPRoute
+              fallthrough in-addr.arpa ip6.arpa
+          - name: prometheus
+            parameters: 0.0.0.0:9153
+          - name: forward
+            parameters: . /etc/resolv.conf
+          - name: cache
+            parameters: 30
+          - name: loop
+          - name: reload
+          - name: loadbalance
+---
+# Inside the cluster, *.${DOMAIN} resolves to Traefik's Service, so an app can
+# call another app (or itself: OpenCloud's services log in through its own
+# public URL) by the same name a browser uses. K3s's CoreDNS imports
+# coredns-custom's *.override keys into its main server block.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  gateway.override: |
+    rewrite stop {
+      name regex (.+)\.${DOMAIN} traefik.kube-system.svc.cluster.local
+      answer auto
+    }

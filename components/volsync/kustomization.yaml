@@ -1,0 +1,13 @@
+---
+# Offsite backup of one PersistentVolumeClaim named ${APP} to Backblaze B2
+# with restic. An app opts in from its ks.yaml:
+#   components: [../../../../components/volsync]
+#   postBuild.substitute: {APP: <name>}
+# The PVC is read in place (copyMethod Direct: local-path has no snapshots),
+# so a database file may be caught mid-write; Immich's Postgres is backed up
+# through its own dump job instead, which lands in the backed-up library.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - secret.yaml
+  - replicationsource.yaml

@@ -1,0 +1,21 @@
+---
+# Values Flux substitutes into every layer (postBuild.substituteFrom). A
+# manifest writes ${DOMAIN}; a literal "${" in a manifest must be written "$${".
+# Secret values (B2, VPN, ntfy) are in cluster-secrets.sops.yaml, made by
+# hack/cluster-secrets.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-settings
+  namespace: flux-system
+data:
+  # RFC 8375 name for home networks. Every app is <app>.${DOMAIN} on the Gateway.
+  DOMAIN: "home.arpa"
+  TIMEZONE: "America/Los_Angeles"
+  # The RAID (NTFS via ntfs3, files owned by uid/gid 1000) is mounted at
+  # /mnt/raid by host/setup.sh. Media and downloads live here (replaceable);
+  # app config and Postgres stay on local-path on the SSD.
+  BULK_PATH: "/mnt/raid/50 Dev/52 homelab"
+  # The Immich library (photos are not replaceable) is on the SSD: btrfs with
+  # POSIX owners and snapshots, inside LUKS. ADR 0013.
+  PHOTOS_PATH: "/var/lib/homelab/immich"

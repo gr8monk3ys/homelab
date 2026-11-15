@@ -1,0 +1,91 @@
+---
+# Jellyfin: media server for /data/media, transcoding on the RTX 3090 (shared
+# by time-slicing, infrastructure/controllers/gpu.yaml).
+# First visit: the setup wizard (admin user, libraries /data/media/movies and
+# /data/media/tv), then Dashboard > Playback > Transcoding > NVIDIA NVENC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  labels:
+    app.kubernetes.io/name: jellyfin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jellyfin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jellyfin
+    spec:
+      automountServiceAccountToken: false
+      runtimeClassName: nvidia
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: jellyfin
+          image: jellyfin/jellyfin:12.4
+          env:
+            - name: TZ
+              value: "${TIMEZONE}"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: all
+          ports:
+            - name: http
+              containerPort: 8096
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            # Transcodes and image cache: disposable, so not on the PVC.
+            - name: cache
+              mountPath: /cache
+            - name: data
+              mountPath: /data
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+              nvidia.com/gpu: 1
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: jellyfin
+        - name: cache
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: media-data
+        - name: tmp
+          emptyDir: {}
