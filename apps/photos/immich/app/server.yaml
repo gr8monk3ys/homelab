@@ -21,6 +21,9 @@ spec:
         app.kubernetes.io/name: immich
     spec:
       automountServiceAccountToken: false
+      # A Service named "immich" injects IMMICH_PORT=tcp://..., which Immich
+      # reads as its own port setting and crashes on.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

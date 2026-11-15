@@ -19,6 +19,9 @@ spec:
         app.kubernetes.io/name: immich-machine-learning
     spec:
       automountServiceAccountToken: false
+      # A Service named "immich" injects IMMICH_PORT=tcp://..., which Immich
+      # reads as its own port setting and crashes on.
+      enableServiceLinks: false
       runtimeClassName: nvidia
       securityContext:
         runAsNonRoot: true
