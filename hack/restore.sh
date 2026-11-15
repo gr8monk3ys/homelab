@@ -77,7 +77,12 @@ kubectl -n "$ns" get replicationdestination "$app-restore" -o jsonpath='{.status
 kubectl -n "$ns" delete replicationdestination "$app-restore"
 
 if $test; then
-  kubectl -n "$ns" run "$app-restore-check" --rm -i --restart=Never --image=busybox:1.37 \
-    --overrides='{"spec":{"securityContext":{"runAsUser":1000,"runAsGroup":1000,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["sh","-c","du -sh /r; ls -la /r | head -30"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"r","mountPath":"/r"}]}],"volumes":[{"name":"r","persistentVolumeClaim":{"claimName":"'"$target"'"}}]}}'
+  # Run, wait, then read the logs: an attached `run -i` misses the output of
+  # a pod that finishes this fast.
+  kubectl -n "$ns" run "$app-restore-check" --restart=Never --image=busybox:1.37 \
+    --overrides='{"spec":{"securityContext":{"runAsUser":1000,"runAsGroup":1000,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["sh","-c","du -sh /r; ls -la /r | head -30"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"r","mountPath":"/r"}]}],"volumes":[{"name":"r","persistentVolumeClaim":{"claimName":"'"$target"'"}}]}}' >/dev/null
+  kubectl -n "$ns" wait pod "$app-restore-check" --for=jsonpath='{.status.phase}'=Succeeded --timeout=5m >/dev/null
+  kubectl -n "$ns" logs "$app-restore-check"
+  kubectl -n "$ns" delete pod "$app-restore-check" >/dev/null
   kubectl -n "$ns" delete pvc "$target"
 fi
