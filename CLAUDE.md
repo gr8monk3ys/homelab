@@ -21,6 +21,10 @@ the README status line.
 ./test/e2e-default-install.sh    # the default install against a live etcd + kube-apiserver (CI runs it; no kubelet)
 ```
 
+## Checks
+
+Run `just verify` (`./scripts/ci.sh` then `./test/e2e-default-install.sh`, exactly the CI job) before opening a PR; `./scripts/install-dev-tools.sh` first, with `.tools/bin` on PATH. kubeconform writes JUnit to `reports/`; paste the lines from `python3 scripts/verify_summary.py kubeconform-manifests reports/kubeconform-manifests.xml` and `... kubeconform-services reports/kubeconform-services.xml` into the PR body under "Evidence" (counts are validated resources). CI writes the same `VERIFY stage=...` lines to its job summary.
+
 ## Where things live
 
 - `kubernetes/{ingress,storage,backup,monitoring,dns,secrets,security}/` — infrastructure
