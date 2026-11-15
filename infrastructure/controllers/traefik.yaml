@@ -29,9 +29,9 @@ spec:
       general:
         level: INFO
     # Traefik 3 cuts a request body off after 60s by default, which breaks
-    # large Immich and OpenCloud uploads over a slow link.
+    # large Immich and OpenCloud uploads over a slow link. Long, not unlimited.
     ports:
       websecure:
         transport:
           respondingTimeouts:
-            readTimeout: 0
+            readTimeout: 1h
