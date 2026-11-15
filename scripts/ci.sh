@@ -77,6 +77,27 @@ run_yamllint() {
     "$REPO_ROOT/helm"
 }
 
+# kubeconform_junit <stage> <file>...: validate, writing one JUnit testcase per
+# resource to reports/<stage>.xml, which scripts/verify_summary.py turns into
+# the VERIFY evidence line. The report is printed when validation fails.
+kubeconform_junit() {
+  local stage="$1"
+  shift
+  local report="$REPO_ROOT/reports/$stage.xml"
+  mkdir -p "$REPO_ROOT/reports"
+  if ! kubeconform \
+    -strict \
+    -ignore-missing-schemas \
+    -schema-location default \
+    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    -output junit \
+    "$@" > "$report"; then
+    cat "$report"
+    error "kubeconform found invalid resources ($stage)"
+  fi
+  log "kubeconform ($stage): $(grep -o '<testcase' "$report" | wc -l) resources checked, report in reports/$stage.xml"
+}
+
 run_kubeconform() {
   if ! have kubeconform; then
     return 0
@@ -105,13 +126,7 @@ run_kubeconform() {
     return 0
   fi
 
-  kubeconform \
-    -strict \
-    -ignore-missing-schemas \
-    -schema-location default \
-    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-    -summary \
-    "${files[@]}"
+  kubeconform_junit kubeconform-manifests "${files[@]}"
 }
 
 run_services_check() {
@@ -187,13 +202,7 @@ run_services_check() {
     files+=("$f")
   done < <(find "$render_dir" -type f -name "*.yaml" -print | sort)
 
-  kubeconform \
-    -strict \
-    -ignore-missing-schemas \
-    -schema-location default \
-    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-    -summary \
-    "${files[@]}"
+  kubeconform_junit kubeconform-services "${files[@]}"
 }
 
 run_helm_lint() {

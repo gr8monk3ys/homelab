@@ -156,3 +156,6 @@ npm-debug.log*
 # editor / agent local state
 .claude/settings.local.json
 .DS_Store
+
+# verify evidence (scripts/verify_summary.py)
+reports/

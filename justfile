@@ -10,6 +10,13 @@ default:
 ci:
   ./scripts/ci.sh
 
+# Everything the CI job runs: the lint/validate gate, then the default install
+# against a live API server. Evidence: python3 scripts/verify_summary.py
+# kubeconform-manifests reports/kubeconform-manifests.xml (and kubeconform-services).
+verify:
+  ./scripts/ci.sh
+  ./test/e2e-default-install.sh
+
 dev-tools:
   ./scripts/install-dev-tools.sh
 
