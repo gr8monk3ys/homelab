@@ -1,0 +1,40 @@
+---
+# SMART health and temperature for every disk (the SSD and the three RAID
+# members). Privileged: smartctl talks to the block devices directly. Alerts
+# are in infrastructure/configs/alerts.yaml.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: prometheus-smartctl-exporter
+  namespace: monitoring
+spec:
+  interval: 12h
+  url: oci://ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter
+  ref:
+    tag: 0.19.2
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: smartctl-exporter
+  namespace: monitoring
+spec:
+  interval: 1h
+  # Its ServiceMonitor needs the Prometheus Operator CRDs.
+  dependsOn:
+    - name: kube-prometheus-stack
+  chartRef:
+    kind: OCIRepository
+    name: prometheus-smartctl-exporter
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    serviceMonitor:
+      enabled: true

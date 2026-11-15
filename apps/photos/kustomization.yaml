@@ -1,6 +1,10 @@
 ---
-# The photos group (rebuild session 3): Immich, with a CloudNativePG cluster
-# on the VectorChord image, and Valkey.
+# The photos group: Immich (server, machine learning, Valkey) and its
+# CloudNativePG cluster on the VectorChord image, all in namespace photos.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: []
+resources:
+  - namespace.yaml
+  - immich-library.yaml
+  - immich-db/ks.yaml
+  - immich/ks.yaml

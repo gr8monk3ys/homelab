@@ -1,0 +1,22 @@
+---
+# In: the Gateway (K3s's Traefik in kube-system) only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seerr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: seerr
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 5055

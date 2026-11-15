@@ -1,0 +1,117 @@
+---
+# The RTX 3090. K3s finds nvidia-container-toolkit on the host (host/setup.sh
+# installs it) and creates the RuntimeClass "nvidia" itself. The device plugin
+# advertises nvidia.com/gpu with time-slicing, so Jellyfin (NVENC), Immich
+# machine learning and whatever comes next can share the one card: each asks
+# for nvidia.com/gpu: 1 and sets runtimeClassName: nvidia. Time-slicing has
+# no memory isolation; a workload that fills the 24 GB starves the others.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-system
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: nvidia
+  namespace: gpu-system
+spec:
+  interval: 12h
+  url: https://nvidia.github.io/k8s-device-plugin
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nvidia-device-plugin
+  namespace: gpu-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: nvidia-device-plugin
+      version: 0.20.1
+      sourceRef:
+        kind: HelmRepository
+        name: nvidia
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    runtimeClassName: nvidia
+    config:
+      name: time-slicing
+      map:
+        default: |-
+          version: v1
+          sharing:
+            timeSlicing:
+              resources:
+                - name: nvidia.com/gpu
+                  replicas: 4
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: utkuozdemir
+  namespace: gpu-system
+spec:
+  interval: 12h
+  url: https://utkuozdemir.org/helm-charts
+---
+# GPU temperature, utilisation, memory and power from nvidia-smi (works on
+# GeForce cards, unlike DCGM). Alerts: infrastructure/configs/alerts.yaml.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: gpu-system
+spec:
+  interval: 1h
+  # Its ServiceMonitor needs the Prometheus Operator CRDs.
+  dependsOn:
+    - name: kube-prometheus-stack
+      namespace: monitoring
+  chart:
+    spec:
+      chart: nvidia-gpu-exporter
+      version: 1.0.2
+      sourceRef:
+        kind: HelmRepository
+        name: utkuozdemir
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    serviceMonitor:
+      enabled: true
+    # Arch keeps the NVML library in /usr/lib, not the chart's Debian path.
+    volumes:
+      - name: nvidiactl
+        hostPath:
+          path: /dev/nvidiactl
+      - name: nvidia0
+        hostPath:
+          path: /dev/nvidia0
+      - name: nvidia-smi
+        hostPath:
+          path: /usr/bin/nvidia-smi
+      - name: libnvidia-ml-so-1
+        hostPath:
+          path: /usr/lib/libnvidia-ml.so.1
+    volumeMounts:
+      - name: nvidiactl
+        mountPath: /dev/nvidiactl
+      - name: nvidia0
+        mountPath: /dev/nvidia0
+      - name: nvidia-smi
+        mountPath: /usr/bin/nvidia-smi
+      - name: libnvidia-ml-so-1
+        mountPath: /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1

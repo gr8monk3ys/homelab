@@ -1,0 +1,100 @@
+---
+# OpenCloud: every service in one process ("opencloud server"), with its
+# built-in IDP and LDAP. Log in as "admin" with OPENCLOUD_ADMIN_PASSWORD.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencloud
+  labels:
+    app.kubernetes.io/name: opencloud
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opencloud
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opencloud
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Writes config/opencloud.yaml with generated secrets on first start;
+        # fails once it exists, hence "|| true" (as opencloud-compose does).
+        - name: init
+          image: opencloudeu/opencloud:7.2.5
+          command: [/bin/sh, -c, "opencloud init || true"]
+          env: &env
+            - name: TZ
+              value: "${TIMEZONE}"
+            - name: OC_URL
+              value: "https://cloud.${DOMAIN}"
+            # The services call the IDP at OC_URL through the Gateway, whose
+            # certificate is from the LAN CA that the image does not trust.
+            - name: OC_INSECURE
+              value: "true"
+            # Traefik terminates TLS.
+            - name: PROXY_TLS
+              value: "false"
+            - name: OC_CONFIG_DIR
+              value: /var/lib/opencloud/config
+            - name: OC_BASE_DATA_PATH
+              value: /var/lib/opencloud
+            - name: IDM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud
+                  key: IDM_ADMIN_PASSWORD
+          securityContext: &securityContext
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts: &volumeMounts
+            - name: data
+              mountPath: /var/lib/opencloud
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: opencloud
+          image: opencloudeu/opencloud:7.2.5
+          args: [server]
+          env: *env
+          ports:
+            - name: http
+              containerPort: 9200
+          securityContext: *securityContext
+          volumeMounts: *volumeMounts
+          readinessProbe:
+            httpGet:
+              path: /status.php
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status.php
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: opencloud
+        - name: tmp
+          emptyDir: {}

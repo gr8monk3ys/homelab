@@ -1,0 +1,12 @@
+---
+# Settings and torrent resume data. Backed up nightly to B2 (components/volsync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

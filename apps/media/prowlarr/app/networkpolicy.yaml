@@ -1,0 +1,28 @@
+---
+# In: the Gateway (K3s's Traefik in kube-system), and Sonarr/Radarr, whose
+# synced indexers point at Prowlarr's proxy endpoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prowlarr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prowlarr
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [sonarr, radarr]
+      ports:
+        - protocol: TCP
+          port: 9696

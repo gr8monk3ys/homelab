@@ -8,7 +8,8 @@
   prConcurrentLimit: 3,
   prHourlyLimit: 2,
   labels: ["dependencies"],
-  // Nothing merges by itself; every update is a PR to review.
+  // Patch and digest updates merge themselves once CI passes (packageRules);
+  // everything else is a PR to review.
   automerge: false,
 
   // Flux sources and releases: HelmRelease + OCIRepository chart tags. The
@@ -23,21 +24,14 @@
 
   customManagers: [
     {
-      // The K3s image in the k3d cluster config. K3s also pins the bundled
-      // Traefik chart and Gateway API CRDs, so this PR updates those too.
-      customType: "regex",
-      managerFilePatterns: ["/^k3d/homelab\\.yaml$/"],
-      matchStrings: ["image: (?<depName>rancher/k3s):(?<currentValue>v[0-9.]+-k3s[0-9]+)"],
-      datasourceTemplate: "docker",
-      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-k3s(?<build>\\d+)$",
-    },
-    {
-      // Tool pins in ci.yml, each under a comment such as
+      // Version pins under a comment such as
       //   # renovate: datasource=github-releases depName=yannh/kubeconform extractVersion=^v(?<version>.+)$
+      // in ci.yml (KUBECONFORM_VERSION: 0.8.0) and host/setup.sh
+      // (K3S_VERSION=v1.37.2+k3s1).
       customType: "regex",
-      managerFilePatterns: ["/^\\.github/workflows/ci\\.yml$/"],
+      managerFilePatterns: ["/^\\.github/workflows/ci\\.yml$/", "/^host/setup\\.sh$/"],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( extractVersion=(?<extractVersion>\\S+))?\\s+[A-Z_]+_VERSION: (?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( extractVersion=(?<extractVersion>\\S+))?\\s+[A-Z0-9_]+_VERSION(: |=)(?<currentValue>\\S+)",
       ],
     },
   ],
@@ -48,12 +42,28 @@
       matchUpdateTypes: ["major"],
       dependencyDashboardApproval: true,
     },
-    // A K3s minor is a Kubernetes minor: wait for a tick too.
+    // K3s: a minor is a Kubernetes minor, so it waits for a tick too, and
+    // upgrades go one minor at a time.
     {
-      matchPackageNames: ["rancher/k3s"],
+      matchPackageNames: ["k3s-io/k3s"],
+      versioning: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$",
+      prBodyNotes: ["Apply with `sudo ./host/setup.sh` after merging. K3s also moves the bundled Traefik and Gateway API CRDs; check `infrastructure/controllers/traefik.yaml` still applies."],
+    },
+    {
+      matchPackageNames: ["k3s-io/k3s"],
       matchUpdateTypes: ["minor"],
       dependencyDashboardApproval: true,
-      prBodyNotes: ["Recreate the k3d cluster to apply (README, \"Local cluster\"). K3s also moves the bundled Traefik and Gateway API CRDs; check the Traefik values in `infrastructure/controllers/traefik.yaml` still apply."],
+    },
+    // home-operations publishes the arr apps' prerelease branches under the
+    // same image name: stay on the stable majors until upstream releases.
+    { matchPackageNames: ["ghcr.io/home-operations/sonarr"], allowedVersions: "<5" },
+    { matchPackageNames: ["ghcr.io/home-operations/radarr"], allowedVersions: "<7" },
+    { matchPackageNames: ["ghcr.io/home-operations/prowlarr"], allowedVersions: "<3" },
+    // Patch and digest bumps merge themselves after CI (not K3s, not databases).
+    {
+      matchUpdateTypes: ["patch", "digest"],
+      matchPackageNames: ["!k3s-io/k3s", "!ghcr.io/tensorchord/cloudnative-vectorchord"],
+      automerge: true,
     },
     // Database majors need a dump and restore: never proposed.
     {
@@ -83,7 +93,7 @@
     // The CI tool pins in ci.yml carry a sha256 that must move with the version.
     {
       matchFileNames: [".github/workflows/ci.yml"],
-      prBodyNotes: ["If this bumps KUSTOMIZE_VERSION or KUBECONFORM_VERSION, update the matching *_SHA256 from the release's checksums file."],
+      prBodyNotes: ["If this bumps KUSTOMIZE_VERSION, KUBECONFORM_VERSION or YQ_VERSION, update the matching *_SHA256 from the release's checksums file."],
     },
   ],
 }

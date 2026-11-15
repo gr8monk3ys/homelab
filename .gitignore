@@ -31,7 +31,7 @@ tmp/
 credentials.json
 service-account*.json
 
-# age keys (SOPS). The key lives in %APPDATA%\sopsge, never here.
+# age keys (SOPS). The key lives in ~/.config/sops/age/keys.txt, never here.
 *.agekey
 keys.txt
 age.key

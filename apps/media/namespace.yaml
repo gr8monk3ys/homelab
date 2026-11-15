@@ -1,0 +1,25 @@
+---
+# The media group shares one namespace: the arr apps, qBittorrent, Seerr and
+# Jellyfin call each other and all mount the same media tree (media-data.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+  labels:
+    # gluetun (qBittorrent's VPN sidecar) needs root and NET_ADMIN; every
+    # other pod here meets "restricted". Audit/warn show what would break.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Nothing reaches a pod in this namespace unless an app's own NetworkPolicy
+# allows it (each app's app/networkpolicy.yaml). Egress stays open, except
+# for qBittorrent (UDP through the VPN only).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

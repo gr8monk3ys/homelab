@@ -1,0 +1,28 @@
+---
+# Postgres for Immich. CNPG creates Secret immich-db-app (uri, host,
+# username, password, dbname) and Service immich-db-rw.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-db
+spec:
+  instances: 1
+  # Postgres 17 with VectorChord 1.1 (Immich 3 accepts vchord >= 0.3, < 2).
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:17.11-1.1.1
+  storage:
+    storageClass: local-path
+    size: 10Gi
+  postgresql:
+    shared_preload_libraries:
+      - vchord.so
+  bootstrap:
+    initdb:
+      database: immich
+      owner: immich
+      # Immich's automatic database dumps use pg_dumpall, which needs a
+      # superuser (docs.immich.app/administration/postgres-standalone).
+      postInitSQL:
+        - ALTER ROLE immich WITH SUPERUSER
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS vchord CASCADE
+        - CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE

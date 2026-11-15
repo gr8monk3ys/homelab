@@ -1,4 +1,6 @@
 ---
+# One directory per group. A group's kustomization.yaml lists its namespace,
+# shared volumes and each app's Flux Kustomization (<app>/ks.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

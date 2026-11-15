@@ -1,0 +1,14 @@
+# /etc/rancher/k3s/config.yaml on the Arch host (host/setup.sh installs it).
+# K3s runs natively under systemd: the GPU, the RAID and the LAN address need
+# no container plumbing (ADR 0012).
+
+# Encrypt Secrets at rest in the datastore.
+secrets-encryption: true
+# PersistentVolumes outside /var/lib/rancher: k3s-uninstall.sh deletes that
+# tree, and app config and Postgres must survive a reinstall.
+default-local-storage-path: /var/lib/homelab/volumes
+node-name: homelab
+# The kubeconfig stays root-only; setup.sh copies it to the owner's ~/.kube.
+write-kubeconfig-mode: "0600"
+# Bundled Traefik (Gateway API on via infrastructure/controllers/traefik.yaml)
+# and servicelb (binds 80/443/53 on the host) stay on.

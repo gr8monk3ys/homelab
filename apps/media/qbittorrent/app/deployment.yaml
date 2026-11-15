@@ -1,0 +1,167 @@
+---
+# qBittorrent behind a WireGuard VPN (gluetun sidecar, fail closed).
+# First login: user admin with a temporary password printed to the log on
+# first start (kubectl -n media logs deploy/qbittorrent -c qbittorrent);
+# change it, set the default save path to /data/torrents and add categories
+# tv and movies, so Sonarr/Radarr imports on /data are hardlinks.
+#
+# gluetun and qBittorrent share the pod's network namespace, so gluetun's
+# routes and iptables are qBittorrent's too:
+#   - its firewall drops everything but the tunnel, the WireGuard handshake
+#     and the cluster CIDRs; with the tunnel down there is no route out.
+#   - it is a native sidecar with a startupProbe, so qBittorrent does not
+#     start until the tunnel is up.
+#   - the pod's only resolver is gluetun's (127.0.0.1, DNS-over-TLS through
+#     the tunnel), so tracker lookups never leak.
+# Kernel WireGuard: no /dev/net/tun hostPath, no NET_RAW.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  labels:
+    app.kubernetes.io/name: qbittorrent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: qbittorrent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: qbittorrent
+      annotations:
+        homelab.io/security-exception: "gluetun needs root and NET_ADMIN for the WireGuard interface and kill-switch iptables"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 127.0.0.1
+        options:
+          - name: ndots
+            value: "1"
+      initContainers:
+        - name: gluetun
+          image: qmcgaw/gluetun:v3.41.3
+          restartPolicy: Always
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [NET_ADMIN]
+          # Provider, key, address and countries. Not optional: no secret, no pod.
+          envFrom:
+            - secretRef:
+                name: qbittorrent-vpn
+          # env wins over envFrom, so the secret cannot turn these off.
+          env:
+            - name: TZ
+              value: "${TIMEZONE}"
+            - name: VPN_TYPE
+              value: wireguard
+            - name: WIREGUARD_IMPLEMENTATION
+              value: kernelspace
+            # Inbound on eth0: only the Web UI.
+            - name: FIREWALL_INPUT_PORTS
+              value: "8080"
+            # K3s pod and service CIDRs: Web UI replies and probes. Nothing
+            # else outside the tunnel.
+            - name: FIREWALL_OUTBOUND_SUBNETS
+              value: "10.42.0.0/16,10.43.0.0/16"
+            # The default ICMP check needs NET_RAW; a DNS lookup through the
+            # tunnel does the same job.
+            - name: HEALTH_SMALL_CHECK_TYPE
+              value: dns
+            - name: VERSION_INFORMATION
+              value: "off"
+            # As root there is nothing to chown, and chown needs CAP_CHOWN.
+            - name: PUID
+              value: "0"
+            - name: PGID
+              value: "0"
+          startupProbe:
+            exec:
+              command: ["/gluetun-entrypoint", "healthcheck"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # gluetun creates /tmp/gluetun 0644, which root without
+          # DAC_OVERRIDE cannot enter.
+          volumeMounts:
+            - name: gluetun-tmp
+              mountPath: /tmp/gluetun
+      containers:
+        - name: qbittorrent
+          # home-operations images run as any UID with a read-only root.
+          image: ghcr.io/home-operations/qbittorrent:5.3.0
+          env:
+            - name: TZ
+              value: "${TIMEZONE}"
+            - name: QBT_WEBUI_PORT
+              value: "8080"
+            # Reachable by peers only if the provider forwards a port
+            # (gluetun VPN_PORT_FORWARDING).
+            - name: QBT_TORRENTING_PORT
+              value: "6881"
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: qbittorrent
+        - name: data
+          persistentVolumeClaim:
+            claimName: media-data
+        - name: tmp
+          emptyDir: {}
+        - name: gluetun-tmp
+          emptyDir:
+            sizeLimit: 16Mi

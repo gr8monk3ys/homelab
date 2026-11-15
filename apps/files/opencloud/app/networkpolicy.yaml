@@ -1,0 +1,23 @@
+---
+# In: the Gateway (K3s's Traefik in kube-system). OpenCloud's own calls to
+# OC_URL also come back this way.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opencloud
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opencloud
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 9200

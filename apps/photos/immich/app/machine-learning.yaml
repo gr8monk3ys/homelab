@@ -1,0 +1,93 @@
+---
+# Smart search, faces and OCR on the 3090 (time-sliced, see
+# infrastructure/controllers/gpu.yaml). Models are re-downloaded into the
+# emptyDir after a restart: nothing here is worth a volume or a backup.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-machine-learning
+  labels:
+    app.kubernetes.io/name: immich-machine-learning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich-machine-learning
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: immich-machine-learning
+    spec:
+      automountServiceAccountToken: false
+      runtimeClassName: nvidia
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: machine-learning
+          image: ghcr.io/immich-app/immich-machine-learning:v3.4.1-cuda
+          env:
+            - name: TZ
+              value: "${TIMEZONE}"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: MACHINE_LEARNING_CACHE_FOLDER
+              value: /cache
+            # As in Immich's v3.4.1 docker-compose.yml.
+            - name: MACHINE_LEARNING_MODEL_REVISION
+              value: v2
+          ports:
+            - name: http
+              containerPort: 3003
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            # HOME is / for uid 1000; Hugging Face writes to ~/.cache.
+            - name: home-cache
+              mountPath: /.cache
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 8Gi
+              nvidia.com/gpu: 1
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 10Gi
+        - name: home-cache
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-machine-learning
+spec:
+  selector:
+    app.kubernetes.io/name: immich-machine-learning
+  ports:
+    - name: http
+      port: 3003
+      targetPort: http

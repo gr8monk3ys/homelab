@@ -1,0 +1,31 @@
+---
+# Nightly restic backup of PVC ${APP}. volsync_volume_out_of_sync fires the
+# VolSyncBackupStale alert (infrastructure/configs/alerts.yaml) if it stops.
+# Restore: hack/restore.sh <namespace> <app>.
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: ${APP}
+spec:
+  sourcePVC: ${APP}
+  trigger:
+    schedule: "${VOLSYNC_SCHEDULE:=30 3 * * *}"
+  restic:
+    copyMethod: Direct
+    repository: ${APP}-volsync
+    pruneIntervalDays: 7
+    cacheCapacity: 2Gi
+    cacheStorageClassName: local-path
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    # Every app here runs as 1000:1000, and the RAID is mounted as 1000.
+    # runAsNonRoot and seccomp let the mover run under Pod Security "restricted".
+    moverSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000

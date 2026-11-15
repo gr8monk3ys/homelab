@@ -1,12 +1,12 @@
 ---
-# SOPS with age. Flux decrypts *.sops.yaml in the infrastructure-configs and
-# apps layers with the private key in the flux-system/sops-age Secret.
+# SOPS with age. Flux decrypts *.sops.yaml with the private key in the
+# flux-system/sops-age Secret (hack/bootstrap.sh creates it).
 #
 # The private key is never in this repo. It lives at
-# %APPDATA%\sops\age\keys.txt on the PC (sops's default on Windows) and in
-# the owner's password manager. README "Secrets" has the steps.
+# ~/.config/sops/age/keys.txt on the host (sops's default on Linux) and in
+# the owner's password manager. Without it the secrets in Git are unreadable,
+# so a rebuild needs it: docs/runbooks/disaster-recovery.md.
 creation_rules:
-  # No path separator in the regex: on Windows sops matches a backslash path.
-  - path_regex: (clusters|infrastructure|apps).*\.sops\.ya?ml$
+  - path_regex: (clusters|infrastructure|apps)/.*\.sops\.ya?ml$
     encrypted_regex: '^(data|stringData)$'
-    age: age1cxt4f8dg9y5yjwc83n5mrqyz3lknwh3nhh7gf2d5j6cjm7qw2ess86a80c
+    age: age1gd2q7w28vglxlzamrxtwdy57aarkdsxpekzu8mf0nsmuefdehgmsc0g4lt

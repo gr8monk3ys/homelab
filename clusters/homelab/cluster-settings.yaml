@@ -1,7 +1,8 @@
 ---
-# Values Flux substitutes into the infrastructure-configs and apps layers
-# (postBuild.substituteFrom in infrastructure.yaml and apps.yaml). A manifest
-# writes ${DOMAIN}; a literal "${" in a manifest must be written "$${".
+# Values Flux substitutes into every layer (postBuild.substituteFrom). A
+# manifest writes ${DOMAIN}; a literal "${" in a manifest must be written "$${".
+# Secret values (B2, VPN, ntfy) are in cluster-secrets.sops.yaml, made by
+# hack/cluster-secrets.sh.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,3 +12,7 @@ data:
   # RFC 8375 name for home networks. Every app is <app>.${DOMAIN} on the Gateway.
   DOMAIN: "home.arpa"
   TIMEZONE: "America/Los_Angeles"
+  # The RAID (NTFS via ntfs3, files owned by uid/gid 1000) is mounted at
+  # /mnt/raid by host/setup.sh. Media, downloads and the Immich library live
+  # here; app config and Postgres stay on local-path on the SSD.
+  BULK_PATH: "/mnt/raid/50 Dev/52 homelab"

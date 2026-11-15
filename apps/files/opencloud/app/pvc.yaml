@@ -1,0 +1,14 @@
+---
+# Config (config/) and all files (the rest). On the SSD, not the RAID:
+# OpenCloud's storage driver keeps metadata in extended attributes, which
+# ntfs3 does not support reliably. Backed up nightly (components/volsync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opencloud
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Gi

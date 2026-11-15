@@ -1,0 +1,34 @@
+---
+# Immich's media location on the RAID: ${BULK_PATH}/immich, holding the
+# existing library/, thumbs/, backups/ (nightly database dumps),
+# encoded-video/ and profile/ (NTFS, owned 1000:1000). Mounted at /data.
+# Backed up offsite as PVC immich (components/volsync, APP=immich).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: immich-library
+spec:
+  capacity:
+    storage: 2Ti
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: photos
+    name: immich
+  hostPath:
+    path: "${BULK_PATH}/immich"
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich
+  namespace: photos
+spec:
+  storageClassName: ""
+  volumeName: immich-library
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Ti

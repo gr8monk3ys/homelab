@@ -1,0 +1,78 @@
+---
+# Bazarr: subtitles for Sonarr's and Radarr's libraries.
+# First visit: set authentication in Settings > General, then connect Sonarr (sonarr:8989) and Radarr (radarr:7878) with their API keys.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bazarr
+  labels:
+    app.kubernetes.io/name: bazarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bazarr
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bazarr
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bazarr
+          # home-operations images run as any UID with a read-only root.
+          image: ghcr.io/home-operations/bazarr:1.6.2
+          env:
+            - name: TZ
+              value: "${TIMEZONE}"
+          ports:
+            - name: http
+              containerPort: 6767
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /api/system/ping
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/system/ping
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: bazarr
+        - name: data
+          persistentVolumeClaim:
+            claimName: media-data
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,102 @@
+---
+# The alerts a single box with a RAID 5, an SSD and a GPU actually needs,
+# on top of kube-prometheus-stack's defaults (node filesystem, PVC filling,
+# crash-looping pods, ...). Every alert goes to ntfy.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: homelab
+  namespace: monitoring
+spec:
+  groups:
+    - name: raid
+      rules:
+        - alert: RaidDiskFailed
+          expr: node_md_disks{state="failed"} > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "RAID {{ $labels.device }} has {{ $value }} failed disk(s)"
+            description: "Replace the disk now: RAID 5 survives one more failure, not two. Check `cat /proc/mdstat`."
+        - alert: RaidDegraded
+          # A container device such as the IMSM metadata array (md127)
+          # requires no disks and never matches.
+          expr: (node_md_disks_required - ignoring(state) node_md_disks{state="active"}) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "RAID {{ $labels.device }} is degraded ({{ $value }} disk(s) missing)"
+            description: "`cat /proc/mdstat`. Until it rebuilds, one more disk failure loses the array."
+    - name: disks
+      rules:
+        - alert: SmartFailing
+          expr: smartctl_device_smart_status == 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "SMART reports {{ $labels.device }} as failing"
+            description: "Back up, then replace the disk. `sudo smartctl -a /dev/{{ $labels.device }}`."
+        - alert: SmartReallocatedSectors
+          expr: increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct", attribute_value_type="raw"}[1d]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.device }} reallocated sectors in the last day"
+        - alert: DiskHot
+          expr: smartctl_device_temperature{temperature_type="current"} > 55
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.device }} is at {{ $value }}°C"
+    - name: gpu
+      rules:
+        - alert: GpuHot
+          expr: nvidia_smi_temperature_gpu > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU at {{ $value }}°C for 10 minutes"
+        - alert: GpuExporterDown
+          expr: absent(nvidia_smi_temperature_gpu)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No GPU metrics: the driver, nvidia-container-toolkit or the exporter is broken"
+    - name: backups
+      rules:
+        - alert: VolSyncBackupStale
+          expr: volsync_volume_out_of_sync == 1
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Offsite backup of {{ $labels.obj_namespace }}/{{ $labels.obj_name }} has not completed for over a day"
+            description: "`kubectl -n {{ $labels.obj_namespace }} describe replicationsource {{ $labels.obj_name }}`; check the B2 key in cluster-secrets."
+        - alert: VolSyncMetricsAbsent
+          expr: absent(volsync_volume_out_of_sync)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No VolSync metrics: backups are unmonitored"
+---
+# VolSync's metrics endpoint (the chart has no ServiceMonitor of its own).
+# disableAuth is set in the HelmRelease; the certificate is self-signed.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: volsync
+  namespace: volsync-system
+spec:
+  selector:
+    matchLabels:
+      control-plane: volsync-controller
+  endpoints:
+    - port: https
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true

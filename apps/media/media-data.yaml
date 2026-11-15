@@ -1,0 +1,34 @@
+---
+# The media tree on the RAID: ${BULK_PATH}/data with media/{movies,tv} and
+# torrents/. Every media app mounts it at /data, so qBittorrent's downloads
+# and the arr apps' imports are on one filesystem and imports are hardlinks.
+# Not backed up offsite: it is large and can be downloaded again.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-data
+spec:
+  capacity:
+    storage: 3Ti
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: media
+    name: media-data
+  hostPath:
+    path: "${BULK_PATH}/data"
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-data
+  namespace: media
+spec:
+  storageClassName: ""
+  volumeName: media-data
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 3Ti

@@ -1,16 +1,16 @@
 # Homelab
 
-A small single-node K3s homelab on one Windows PC, managed by Flux. This
+A small single-node K3s homelab on one Arch Linux PC, managed by Flux. This
 glossary fixes the words the manifests and docs use.
 
 ## Language
 
 **Cluster**:
-The k3d cluster `homelab` defined by `k3d/homelab.yaml`: one K3s server in Docker Desktop. `clusters/homelab/` is what Flux reconciles on it.
+The K3s node `homelab`, running natively under systemd on the Arch host (`host/setup.sh`). `clusters/homelab/` is what Flux reconciles on it.
 _Avoid_: environment, stage
 
 **Layer**:
-One of the three Flux Kustomizations in `clusters/homelab/`, applied in order: `infrastructure-controllers` (CRDs and operators), `infrastructure-configs` (objects that need them), `apps`. Each waits for the one before it to be Ready.
+One of the Flux Kustomizations in `clusters/homelab/`, applied in order: `cluster-secrets`, `infrastructure-controllers` (CRDs and operators), `infrastructure-configs` (objects that need them), `apps`. Each waits for the one before it to be Ready.
 _Avoid_: phase, tier
 
 **Flux Kustomization**:
@@ -18,11 +18,11 @@ A `kustomize.toolkit.fluxcd.io` object: a path in a source that Flux builds and 
 _Avoid_: app, sync
 
 **App group**:
-A directory under `apps/` (`media`, `photos`, `files`) holding related apps. The group's `kustomization.yaml` lists its apps.
+A directory under `apps/` (`media`, `photos`, `files`) holding related apps that share one namespace. The group's `kustomization.yaml` lists the namespace, shared volumes and each app's `ks.yaml`.
 _Avoid_: category, stack
 
 **App**:
-One self-hosted application in its own directory and namespace under an app group, with its own volumes, secrets and `HTTPRoute`. Its database (a CloudNativePG `Cluster`) belongs to it.
+One self-hosted application in its own directory under an app group, applied by its own Flux Kustomization (`ks.yaml`), with its own volumes, `HTTPRoute` and NetworkPolicy. Its database (a CloudNativePG `Cluster`) belongs to it.
 _Avoid_: service (a Kubernetes Service is something else)
 
 **Gateway**:
@@ -34,11 +34,19 @@ The private certificate authority `homelab-ca` (a cert-manager `ClusterIssuer`).
 _Avoid_: self-signed cert
 
 **Cluster settings**:
-The `cluster-settings` ConfigMap in `clusters/homelab/`. Flux substitutes its keys (`${DOMAIN}`, `${TIMEZONE}`) into the configs and apps layers.
+The `cluster-settings` ConfigMap in `clusters/homelab/`. Flux substitutes its keys (`${DOMAIN}`, `${TIMEZONE}`, `${BULK_PATH}`) into every layer.
 _Avoid_: config, placeholder
 
+**Cluster secrets**:
+The SOPS-encrypted `cluster-secrets` Secret (`infrastructure/secrets/`), substituted like cluster settings: every credential the cluster uses. Made once by `hack/cluster-secrets.sh`.
+_Avoid_: secret table, vault
+
+**Backup**:
+A VolSync `ReplicationSource` sending PVC `${APP}` to its own restic repository in Backblaze B2 nightly (`components/volsync`). Only something restored by `hack/restore.sh --test` counts as known-good.
+_Avoid_: snapshot, Velero
+
 **Bulk storage**:
-`D:\30 Media\homelab` on the RAID 5 HDD, bound at `/mnt/bulk` on the server node: media, downloads, the photo library. Everything else goes on `local-path` volumes on C:.
+`${BULK_PATH}` (`/mnt/raid/50 Dev/52 homelab`) on the NTFS RAID 5: media, downloads, the photo library, through static hostPath volumes. Everything else goes on `local-path` volumes on the SSD.
 _Avoid_: NAS, shared storage
 
 **Sealed file**:

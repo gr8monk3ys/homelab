@@ -1,0 +1,125 @@
+---
+# Prometheus, Alertmanager, Grafana, node-exporter and kube-state-metrics.
+# Alerts go to ntfy (NTFY_URL in cluster-secrets; subscribe to that topic in
+# the ntfy app). Rules for the RAID, disks, GPU and backups are in
+# infrastructure/configs/alerts.yaml. Grafana is at grafana.${DOMAIN}.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    # node-exporter, smartctl-exporter and the GPU exporter read the host.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 12h
+  url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
+  ref:
+    tag: 93.3.0
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  timeout: 15m
+  chartRef:
+    kind: OCIRepository
+    name: kube-prometheus-stack
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # K3s runs the control plane in one process and embeds etcd/kine: these
+    # targets do not exist as separate endpoints and would only show as down.
+    kubeEtcd:
+      enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    prometheus:
+      prometheusSpec:
+        retention: 14d
+        retentionSize: 18GB
+        scrapeInterval: 60s
+        # Pick up every ServiceMonitor/PodMonitor/PrometheusRule in the
+        # cluster, not only the ones labelled for this release.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: [ReadWriteOnce]
+              resources:
+                requests:
+                  storage: 20Gi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 1Gi
+          limits:
+            memory: 3Gi
+    alertmanager:
+      config:
+        route:
+          receiver: ntfy
+          group_by: [alertname, namespace]
+          group_wait: 1m
+          group_interval: 10m
+          repeat_interval: 12h
+          routes:
+            # Always-firing by design; nothing to act on.
+            - receiver: "null"
+              matchers: ['alertname=~"Watchdog|InfoInhibitor"']
+        receivers:
+          - name: "null"
+          - name: ntfy
+            webhook_configs:
+              # ntfy formats Alertmanager's JSON with its built-in template.
+              - url: "${NTFY_URL}?template=alertmanager"
+                send_resolved: true
+        inhibit_rules:
+          - source_matchers: ['severity="critical"']
+            target_matchers: ['severity="warning"']
+            equal: [alertname, namespace]
+      alertmanagerSpec:
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: [ReadWriteOnce]
+              resources:
+                requests:
+                  storage: 1Gi
+    grafana:
+      adminPassword: "${GRAFANA_ADMIN_PASSWORD}"
+      defaultDashboardsTimezone: "${TIMEZONE}"
+      persistence:
+        enabled: false
+      # Grafana is exposed by an HTTPRoute (infrastructure/configs/routes.yaml).
+      ingress:
+        enabled: false
+    prometheus-node-exporter:
+      # The md collector (RAID state) is on by default; mdadm alerts need it.
+      extraArgs:
+        - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/k3s|var/lib/kubelet/.+)($|/)

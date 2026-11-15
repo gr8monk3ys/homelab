@@ -1,0 +1,28 @@
+---
+# In: the Gateway (K3s's Traefik in kube-system), and Seerr, which reads
+# the library and signs users in through Jellyfin.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jellyfin
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: jellyfin
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [seerr]
+      ports:
+        - protocol: TCP
+          port: 8096

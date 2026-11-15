@@ -4,3 +4,7 @@ kind: Kustomization
 resources:
   - cluster-issuers.yaml
   - gateway.yaml
+  - dns.yaml
+  - routes.yaml
+  - alerts.yaml
+  - flux-alerts.yaml

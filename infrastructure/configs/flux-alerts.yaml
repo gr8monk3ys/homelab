@@ -1,0 +1,27 @@
+---
+# Flux tells ntfy when a Kustomization or HelmRelease fails to reconcile, so a
+# bad commit does not fail silently. The message body is Flux's JSON event.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: ntfy
+  namespace: flux-system
+spec:
+  type: generic
+  address: "${NTFY_URL}?title=Flux"
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: reconcile-failures
+  namespace: flux-system
+spec:
+  providerRef:
+    name: ntfy
+  eventSeverity: error
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+    - kind: HelmRelease
+      name: "*"
+      namespace: "*"

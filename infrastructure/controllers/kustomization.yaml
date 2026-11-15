@@ -5,3 +5,7 @@ resources:
   - traefik.yaml
   - cert-manager.yaml
   - cloudnative-pg.yaml
+  - volsync.yaml
+  - kube-prometheus-stack.yaml
+  - smartctl-exporter.yaml
+  - gpu.yaml
