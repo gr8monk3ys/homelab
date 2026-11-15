@@ -5,9 +5,10 @@
 #   1. nvidia-container-toolkit (K3s detects it and adds the nvidia runtime).
 #   2. The RAID at /mnt/raid through /etc/fstab (by UUID), instead of the
 #      desktop's automount under /run/media, which only exists after login.
-#   3. K3s pinned to K3S_VERSION, config from host/k3s-config.yaml, and a
+#   3. The Immich library directory on the SSD, and ufw rules K3s needs.
+#   4. K3s pinned to K3S_VERSION, config from host/k3s-config.yaml, and a
 #      systemd drop-in so K3s never starts before the RAID is mounted.
-#   4. The kubeconfig copied to the invoking user's ~/.kube/config.
+#   5. The kubeconfig copied to the invoking user's ~/.kube/config.
 set -euo pipefail
 
 # renovate: datasource=github-releases depName=k3s-io/k3s
@@ -16,6 +17,8 @@ RAID_UUID=22A4AE26A4ADFD03
 RAID_MOUNT=/mnt/raid
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+# The K3s installer puts k3s here; pkexec's PATH (unlike sudo's) lacks it.
+PATH=/usr/local/bin:$PATH
 owner=${SUDO_USER:?run through sudo, not as root directly}
 here=$(cd "$(dirname "$0")" && pwd)
 
@@ -34,11 +37,36 @@ fi
 mkdir -p "$RAID_MOUNT"
 if ! mountpoint -q "$RAID_MOUNT"; then
   # The desktop may have it mounted under /run/media; one mount at a time.
-  if auto=$(findmnt -rno TARGET -S "UUID=$RAID_UUID"); then
+  # Not findmnt -r: it escapes the space in "Raid Storage" as \x20.
+  if auto=$(findmnt -no TARGET -S "UUID=$RAID_UUID"); then
     echo "unmounting the desktop automount at $auto"
     umount "$auto"
   fi
   mount "$RAID_MOUNT"
+fi
+
+echo "== Immich library on the SSD (ADR 0013)"
+photos=/var/lib/homelab/immich
+install -d -m 0750 -o 1000 -g 1000 "$photos"
+old="$RAID_MOUNT/50 Dev/52 homelab/immich"
+if [[ -d "$old" && -z "$(ls -A "$photos")" ]]; then
+  # One-time copy; the RAID copy stays until B2 holds a backup of this one.
+  cp -a "$old/." "$photos/"
+  chown -R 1000:1000 "$photos"
+fi
+
+echo "== firewall"
+# Omarchy enables ufw with INPUT and FORWARD set to DROP, which breaks K3s:
+# pods reach the API server and CoreDNS through the host (INPUT), and servicelb
+# DNATs host ports 80/443/53 to pods (FORWARD). Rules from the K3s docs, with
+# forwarding into pods limited to private networks (LAN, Tailscale).
+if ufw status | grep -q 'Status: active'; then
+  ufw allow from 10.42.0.0/16 comment 'k3s pods'
+  ufw allow from 10.43.0.0/16 comment 'k3s services'
+  ufw route allow from 10.42.0.0/16 comment 'k3s pod egress'
+  for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10; do
+    ufw route allow from "$net" to 10.42.0.0/16 comment 'k3s servicelb'
+  done
 fi
 
 echo "== K3s $K3S_VERSION"

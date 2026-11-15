@@ -114,3 +114,7 @@ venv/
 # editor / agent local state
 .claude/settings.local.json
 .DS_Store
+
+# Agent skills are installed per machine (npx skills), not versioned here.
+.claude/skills/
+skills-lock.json

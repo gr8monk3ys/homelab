@@ -1,7 +1,7 @@
 ---
-# Immich's media location on the RAID: ${BULK_PATH}/immich, holding the
-# existing library/, thumbs/, backups/ (nightly database dumps),
-# encoded-video/ and profile/ (NTFS, owned 1000:1000). Mounted at /data.
+# Immich's media location on the SSD: ${PHOTOS_PATH}, holding library/,
+# thumbs/, backups/ (nightly database dumps), encoded-video/ and profile/
+# (owned 1000:1000; host/setup.sh creates it). Mounted at /data. ADR 0013.
 # Backed up offsite as PVC immich (components/volsync, APP=immich).
 apiVersion: v1
 kind: PersistentVolume
@@ -9,7 +9,7 @@ metadata:
   name: immich-library
 spec:
   capacity:
-    storage: 2Ti
+    storage: 250Gi
   accessModes: [ReadWriteOnce]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
@@ -17,7 +17,7 @@ spec:
     namespace: photos
     name: immich
   hostPath:
-    path: "${BULK_PATH}/immich"
+    path: "${PHOTOS_PATH}"
     type: Directory
 ---
 apiVersion: v1
@@ -31,4 +31,4 @@ spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 2Ti
+      storage: 250Gi

@@ -29,8 +29,10 @@ From a wiped or new host to every app running. Order matters. Steps marked
 sudo ./host/setup.sh
 ```
 
-nvidia-container-toolkit, the RAID at `/mnt/raid` via fstab, K3s (pinned in
-the script), and `~/.kube/config`. It ends by checking the node is Ready and
+nvidia-container-toolkit, the RAID at `/mnt/raid` via fstab, the Immich
+library at `/var/lib/homelab/immich` on the SSD (copied once from the RAID),
+the ufw rules K3s needs (pods to host, servicelb forwarding from private
+networks), K3s (pinned in the script), and `~/.kube/config`. It ends by checking the node is Ready and
 that K3s found the nvidia runtime.
 
 ## 3. Secrets (owner)
@@ -79,7 +81,9 @@ sudo trust anchor homelab-ca.crt        # Arch; phones: install as a CA profile
 
 - **Media** is already at `/mnt/raid/50 Dev/52 homelab/data` and appears in
   Sonarr/Radarr/Jellyfin at `/data`.
-- **Immich**: the library is at `.../52 homelab/immich`. The database was lost
+- **Immich**: the library is at `/var/lib/homelab/immich` (setup.sh copied it
+  from `.../52 homelab/immich`, which stays as a fallback until B2 holds a
+  backup). The database was lost
   with the old host; the newest nightly dump is in `.../immich/backups/`.
   With the `immich` Deployment scaled to 0:
 
@@ -88,7 +92,7 @@ sudo trust anchor homelab-ca.crt        # Arch; phones: install as a CA profile
   kubectl -n photos scale deploy immich --replicas=0
   # Immich's dumps are pg_dumpall output; this is Immich's documented restore
   # (https://immich.app/docs/administration/backup-and-restore).
-  gunzip -c "/mnt/raid/50 Dev/52 homelab/immich/backups/<newest>.sql.gz" \
+  gunzip -c "/var/lib/homelab/immich/backups/<newest>.sql.gz" \
     | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
     | kubectl -n photos exec -i immich-db-1 -- psql -U postgres -d postgres
   flux resume kustomization immich

@@ -1,10 +1,10 @@
 # CLAUDE.md
 
 Flux GitOps homelab on one Arch Linux PC (Omarchy; RTX 3090; 3-disk RAID 5,
-NTFS): K3s runs natively under systemd (`host/setup.sh`), Flux pulls `main`
+NTFS, for media): K3s runs natively under systemd (`host/setup.sh`), Flux pulls `main`
 and applies `clusters/homelab/`. The Bash installer this replaced is on the
 `archive/bash-installer` branch (ADR 0011); don't bring its patterns back
-(descriptors, render placeholders, toggles, a secret table). ADR 0012 is the
+(descriptors, render placeholders, toggles, a secret table). ADRs 0012–0013 are the
 current shape: native K3s, VolSync to B2, per-app Flux Kustomizations.
 
 ## Run / test
@@ -31,7 +31,7 @@ context of the cluster is K3s's `default`.
 - `infrastructure/configs/` — LAN CA issuers, wildcard cert, Gateway `gateway/homelab`, k8s-gateway DNS, Grafana route, `PrometheusRule`s, Flux → ntfy alerts.
 - `apps/<group>/` — `namespace.yaml` (one namespace per group, with a default-deny-ingress NetworkPolicy), shared volumes, and `<app>/ks.yaml` + `<app>/app/`. Groups: `media`, `photos`, `files`.
 - `components/volsync/` — nightly restic backup of PVC `${APP}` to B2.
-- `docs/adr/` — 0001–0010 superseded history; 0011 and 0012 current. `docs/runbooks/` — bring-up, disaster recovery.
+- `docs/adr/` — 0011–0013 current; `superseded/` holds 0001–0010. `docs/runbooks/` — bring-up, disaster recovery.
 
 ## Rules
 
@@ -44,9 +44,9 @@ context of the cluster is K3s's `default`.
 - A single-replica Deployment with a PVC uses `strategy: Recreate` (CI enforces).
 - GPU workloads: `runtimeClassName: nvidia`, `limits: {nvidia.com/gpu: 1}` (time-sliced, 4 slots, no memory isolation).
 - Postgres only through CloudNativePG, only where an app needs it (Immich).
-- Storage: app config and Postgres on `local-path` (SSD, `/var/lib/homelab/volumes`). Media, downloads and the Immich library on the RAID under `${BULK_PATH}` via static hostPath PVs. ntfs3 means no Unix owners (everything 1000:1000) and unreliable xattrs: nothing that needs them goes on the RAID.
+- Storage: app config and Postgres on `local-path` (SSD, `/var/lib/homelab/volumes`). Media and downloads on the RAID under `${BULK_PATH}`, the Immich library on the SSD at `${PHOTOS_PATH}`, both via static hostPath PVs (ADR 0013). ntfs3 means no Unix owners (everything 1000:1000) and unreliable xattrs: nothing that needs them goes on the RAID.
 - Flux substitutes `${VAR}`; write a literal `${` as `$${`. Prometheus `{{ $labels.x }}` is safe.
-- No kustomize overlays: one cluster, one environment (ADR 0003's reason still holds).
+- No kustomize overlays: one cluster, one environment (`superseded/0003`'s reason still holds).
 - Repo is private and Actions minutes are capped: keep CI to the one `ci.yml`, nothing scheduled.
 
 ## Agent skills

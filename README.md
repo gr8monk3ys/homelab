@@ -7,7 +7,7 @@ and its 65-service catalogue are on the `archive/bash-installer` branch
 (ADR 0011).
 
 A small single-node Kubernetes homelab: K3s running natively on one Arch Linux
-PC (RTX 3090, a 3-disk RAID 5), managed by [Flux](https://fluxcd.io). Git is the
+PC (RTX 3090, a 3-disk RAID 5 for media; photos on the SSD), managed by [Flux](https://fluxcd.io). Git is the
 desired state; Flux in the cluster pulls `main` and applies it.
 
 ```
@@ -26,13 +26,13 @@ GitHub (main) ──Flux pulls──▶ K3s "homelab" (systemd on the Arch host)
 
 | Path | What |
 |---|---|
-| `host/` | `setup.sh` (run with sudo): nvidia-container-toolkit, the RAID at `/mnt/raid`, K3s pinned and configured. |
+| `host/` | `setup.sh` (run with sudo): nvidia-container-toolkit, the RAID at `/mnt/raid`, the Immich library on the SSD, ufw rules for K3s, K3s pinned and configured. |
 | `clusters/homelab/` | What Flux reconciles: `cluster-secrets` → `infrastructure-controllers` → `infrastructure-configs` → `apps`, and `cluster-settings`. `flux bootstrap` adds `flux-system/`. |
 | `infrastructure/` | `secrets/` (the one SOPS file), `controllers/` (operators, charts, exporters), `configs/` (issuers, Gateway, DNS, alert rules). |
 | `apps/<group>/<app>/` | `ks.yaml` (the app's Flux Kustomization) and `app/` (its manifests). A group shares a namespace. |
 | `components/volsync/` | Nightly restic backup of PVC `${APP}` to B2; an app opts in from its `ks.yaml`. |
 | `hack/` | `validate.sh` (CI), `cluster-secrets.sh`, `bootstrap.sh`, `restore.sh`. |
-| `docs/` | ADRs (0011, 0012 are current), runbooks. |
+| `docs/` | ADRs (0011–0013 current; `adr/superseded/` is the installer's history), runbooks. |
 
 ## Backups
 

@@ -1,0 +1,7 @@
+# Tools hack/validate.sh needs, at the versions CI pins (.github/workflows/ci.yml).
+[tools]
+flux2 = "2.10.0"
+kustomize = "5.8.3"
+kubeconform = "0.8.0"
+yq = "4.54.3"
+"pipx:yamllint" = "1.35.1"
