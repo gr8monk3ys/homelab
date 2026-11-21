@@ -13,7 +13,7 @@ not reach. We rejected it.
 Two separate review passes went looking for the motivating case: a descriptor
 somewhere in the catalogue forced to hardcode a value the seam could not
 express. Neither found one. The five rules cover every placeholder
-`CONTEXT.md` names — the domain, the admin email, the timezone, the
+`GLOSSARY.md` names — the domain, the admin email, the timezone, the
 cert-manager ClusterIssuer, the GitOps repo URL — and those are the only
 things that vary between one homelab and another (ADR-0003: variation is
 placeholders and toggles, not overlays). The one place a descriptor does
