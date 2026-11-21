@@ -39,7 +39,7 @@ Run `just verify` (`./scripts/ci.sh` then `./test/e2e-default-install.sh`, exact
 - `scripts/lib/secrets.sh` — the secret table; `generate-secrets.sh` and `sops-bootstrap.sh` are its two adapters
 - `scripts/` — secrets, backup/restore, validation, DR; `tools/versions.env` pins every tool and chart version
 - two tables carry "what is enabled": `SERVICE_GROUPS` in `scripts/lib/services.sh` (group → toggle, default, ArgoCD project, in install order) and `HELM_INFRA_RELEASES` in `scripts/lib/helm.sh` (release → chart, namespace, toggle, health check); ArgoCD's `ENABLE_GITOPS` default is the `argocd` row of `_health_infra_local_spec` in `scripts/lib/health.sh` (the other rows there, local-path, Garage and CrowdSec, have no toggle and always install). Add a row; never restate a default elsewhere
-- `CONTEXT.md` — the glossary (service, descriptor, group, opt-in, placeholder, render); `docs/adr/` — decisions; `docs/research/` — research notes
+- `GLOSSARY.md` — the glossary (service, descriptor, group, opt-in, placeholder, render); `docs/adr/` — decisions; `docs/research/` — research notes
 - `docs/credentials.md` documents how to read every generated secret (`generate-secrets.sh --list` is the authoritative list, not the doc); `docs/runbooks/` are day-2 docs
 - `archive/legacy` branch — the removed `legacy/` and `extras/` trees
 
@@ -68,4 +68,4 @@ The five canonical roles, label string equal to role name. See `docs/agents/tria
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
