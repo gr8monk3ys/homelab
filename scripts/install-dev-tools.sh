@@ -41,6 +41,7 @@ install_python_tools() {
   pip install \
     "pre-commit==${PRE_COMMIT_VERSION}" \
     "yamllint==${YAMLLINT_VERSION}" \
+    "ruff==${RUFF_VERSION}" \
     "shellcheck-py==${SHELLCHECK_PY_VERSION}" >/dev/null
   deactivate || true
 }

@@ -74,7 +74,7 @@ def main(argv):
             counts, ids = junit(path) if path.endswith(".xml") else from_json(path)
         except Exception as e:  # any unreadable report fails the step
             sys.exit(f"verify_summary: cannot parse {path}: {e}")
-        totals = [a + b for a, b in zip(totals, counts)]
+        totals = [a + b for a, b in zip(totals, counts, strict=True)]
         passed_ids |= ids
     if totals[0] == 0:
         sys.exit(f"verify_summary: {stage} reported zero tests")
@@ -89,7 +89,7 @@ def main(argv):
         os.makedirs(stage_dir, exist_ok=True)
         keys = ("tests", "passed", "failed", "skipped")
         with open(os.path.join(stage_dir, stage + ".json"), "w", encoding="utf-8") as f:
-            json.dump({"stage": stage, **dict(zip(keys, totals)), "passed_ids": sorted(passed_ids)}, f)
+            json.dump({"stage": stage, **dict(zip(keys, totals, strict=True)), "passed_ids": sorted(passed_ids)}, f)
             f.write("\n")
 
 

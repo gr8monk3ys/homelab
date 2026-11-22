@@ -17,6 +17,9 @@ verify:
   ./scripts/ci.sh
   ./test/e2e-default-install.sh
 
+lint:
+  ruff check .
+
 dev-tools:
   ./scripts/install-dev-tools.sh
 

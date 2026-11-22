@@ -98,6 +98,15 @@ kubeconform_junit() {
   log "kubeconform ($stage): $(grep -o '<testcase' "$report" | wc -l) resources checked, report in reports/$stage.xml"
 }
 
+run_ruff() {
+  if ! have ruff; then
+    return 0
+  fi
+
+  log "ruff..."
+  ruff check "$REPO_ROOT"
+}
+
 run_kubeconform() {
   if ! have kubeconform; then
     return 0
@@ -335,6 +344,7 @@ main() {
   run_bash_syntax
   run_shellcheck
   run_yamllint
+  run_ruff
   run_kubeconform
   run_services_check
   run_helm_lint
