@@ -44,7 +44,7 @@ catalogue is a menu, not a target. Pick the handful you actually want.
   Kubernetes Secrets (`generate-secrets.sh`) or SOPS-encrypted files for
   GitOps (`sops-bootstrap.sh`). `scripts/secrets-check.sh` fails CI when an
   `ExternalSecret` asks for a secret nobody produces, or vice versa.
-- **Decisions** are in `docs/adr/`; the vocabulary is in `CONTEXT.md`.
+- **Decisions** are in `docs/adr/`; the vocabulary is in `GLOSSARY.md`.
 
 ## Secrets design
 
@@ -273,7 +273,7 @@ kubernetes/
   gitops/argocd/             # optional ArgoCD app-of-apps
 helm/nextcloud/              # the one Helm chart; installed like any service via kubernetes/services/nextcloud/service.yaml (kind: helm)
 scripts/                     # installer libraries (scripts/lib/: common, render, services, netpol, helm, secrets, tools), backup/restore, validation, DR
-docs/adr/                    # decisions; docs/research/ holds research notes; CONTEXT.md is the glossary
+docs/adr/                    # decisions; docs/research/ holds research notes; GLOSSARY.md is the glossary
 ansible/                     # host prep for K3s nodes: packages, hardening, host backups (just ansible-prep)
 docs/                        # credentials reference, day-2 runbooks, ADRs, research
 test/                        # KinD harness configs and the validation suite

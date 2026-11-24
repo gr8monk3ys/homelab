@@ -134,7 +134,7 @@ infra_enabled() {
 # infra_toggles_apply: give every infrastructure toggle its effective value,
 # from the environment or from the table that defines the piece it switches
 # (HELM_INFRA_RELEASES, or _health_infra_local_spec above). The installer
-# calls this instead of restating a default; see CONTEXT.md "Toggle" and
+# calls this instead of restating a default; see GLOSSARY.md "Toggle" and
 # service_group_toggles_apply, which does the same for the service groups.
 infra_toggles_apply() {
     local piece pair toggle default
